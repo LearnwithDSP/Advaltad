@@ -232,6 +232,17 @@ export const AmbassadorSection: React.FC = () => {
                     </p>
                     
                     <button
+                      id="registry-dashboard-btn"
+                      onClick={() => {
+                        window.location.hash = "#/growth-ambassadors";
+                      }}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 hover:text-white font-bold text-xs transition-all shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Icon name="Compass" size={14} className="animate-spin-slow" />
+                      Access Partner & Ambassador Dashboard
+                    </button>
+
+                    <button
                       id="registry-another-btn"
                       onClick={() => setIsRegistered(false)}
                       className="w-full py-2.5 rounded-xl border border-white/20 hover:bg-white/5 text-white/80 hover:text-white text-xs font-bold transition-all cursor-pointer"
