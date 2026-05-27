@@ -1,0 +1,109 @@
+import React from "react";
+import {
+  Building2,
+  Compass,
+  Users,
+  Shield,
+  TrendingUp,
+  GraduationCap,
+  Heart,
+  Home,
+  Globe,
+  Sparkles,
+  Award,
+  FileSpreadsheet,
+  Image,
+  Video,
+  FileText,
+  HandHelping,
+  Coins,
+  UserCheck,
+  HeartHandshake,
+  Cpu,
+  Lightbulb,
+  HeartPulse,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Lock,
+  Menu,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Gift,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Twitter,
+  Facebook,
+  Instagram,
+  Linkedin,
+  Clock,
+  ExternalLink,
+  ChevronRight,
+  Send,
+  AlertCircle
+} from "lucide-react";
+
+const iconMap: { [key: string]: React.ComponentType<any> } = {
+  Building2,
+  Compass,
+  Users,
+  Shield,
+  TrendingUp,
+  GraduationCap,
+  Heart,
+  Home,
+  Globe,
+  Sparkles,
+  Award,
+  FileSpreadsheet,
+  Image,
+  Video,
+  FileText,
+  HandHelping,
+  Coins,
+  UserCheck,
+  HeartHandshake,
+  Cpu,
+  Lightbulb,
+  HeartPulse,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Lock,
+  Menu,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Gift,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Twitter,
+  Facebook,
+  Instagram,
+  Linkedin,
+  Clock,
+  ExternalLink,
+  ChevronRight,
+  Send,
+  AlertCircle
+};
+
+interface IconProps extends React.SVGProps<SVGSVGElement> {
+  name: string;
+  className?: string;
+  size?: number | string;
+}
+
+export const Icon: React.FC<IconProps> = ({ name, className = "", size = 20, ...props }) => {
+  const IconComponent = iconMap[name];
+  if (!IconComponent) {
+    // Return a default icon or null if not found
+    return <AlertCircle className={className} size={size} {...props} />;
+  }
+  return <IconComponent className={className} size={size} {...props} />;
+};
