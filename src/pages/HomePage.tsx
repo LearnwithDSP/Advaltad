@@ -1,7 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
 import { Hero } from "../components/Hero";
-import { ImpactByNumbers } from "../components/ImpactByNumbers";
 import { CtaStrip } from "../components/CtaStrip";
 import { Icon } from "../components/Icon";
 
@@ -23,16 +22,6 @@ export const HomePage: React.FC<HomePageProps> = ({
         onDonateClick={onDonateClick}
         onAmbassadorClick={onAmbassadorClick}
       />
-
-      {/* Trust & Impact in Solid Numbers */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        viewport={{ once: true, margin: "-120px" }}
-        transition={{ duration: 0.6 }}
-      >
-        <ImpactByNumbers />
-      </motion.div>
 
       {/* Brief Focus Pillars Overview */}
       <section className="py-20 bg-white border-y border-slate-50 relative overflow-hidden">
