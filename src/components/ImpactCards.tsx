@@ -1,102 +1,100 @@
-import React, { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { PROGRAM_CARDS } from "../data";
+import React from "react";
+import { motion } from "motion/react";
 import { Icon } from "./Icon";
 
-export const ImpactCards: React.FC = () => {
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+interface Pillar {
+  id: string;
+  iconName: string;
+  title: string;
+  sentence: string;
+}
 
+const PILLARS: Pillar[] = [
+  {
+    id: "education",
+    iconName: "GraduationCap",
+    title: "Education",
+    sentence: "Providing educational scholarships, digital laboratories, and rebuilt school facilities to empower Sub-Saharan youth."
+  },
+  {
+    id: "healthcare",
+    iconName: "HeartPulse",
+    title: "Healthcare",
+    sentence: "Deploying responsive mobile medical structures and specialized healthcare clinics deep within isolated provinces."
+  },
+  {
+    id: "empowerment",
+    iconName: "TrendingUp",
+    title: "Economic Empowerment",
+    sentence: "Fostering local tech hubs, digital mastery incubators, and startup seed grants for grassroot co-operatives."
+  },
+  {
+    id: "sustainability",
+    iconName: "Globe",
+    title: "Sustainability",
+    sentence: "Constructing hybrid water systems and mini solar microgrids to fuel long-term ecological agricultural assets."
+  }
+];
+
+export const ImpactCards: React.FC = () => {
   return (
-    <section id="programs" className="py-24 bg-gray-50 relative overflow-hidden">
-      {/* Structural backgrounds */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-emerald-50/20 to-white/0 pointer-events-none" />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+    <section id="impact-pillars" className="py-24 sm:py-32 bg-[#F7F8FA] relative overflow-hidden">
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between mb-16 gap-6">
-          <div className="max-w-2xl space-y-3">
-            <span className="text-xs uppercase font-bold tracking-widest text-emerald-600 font-sans flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              Pillars of Sustainable Development
+        <div className="max-w-2xl mb-16 sm:mb-20 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+            <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
+              IMPACT PILLARS
             </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-950 tracking-tight leading-none">
-              Transformative Impact Programs
-            </h2>
-            <p className="text-gray-500 font-sans text-sm sm:text-base">
-              Explore how we translate donations into tangible socio-economic self-reliance solutions across Sub-Saharan Africa.
-            </p>
           </div>
           
-          <div className="flex items-center gap-2">
-            <p className="text-xs text-gray-400 font-mono">Filter Status: All Assets Deployments Live</p>
-          </div>
+          <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight leading-none">
+            Our Key Areas of Focus
+          </h2>
+          <p className="text-slate-500 font-sans text-base max-w-[600px] leading-relaxed">
+            We structure long-term interventions across Sub-Saharan Africa. Guided by local knowledge and operated by native talents.
+          </p>
         </div>
 
-        {/* Bento/Modern Grid for Program Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {PROGRAM_CARDS.map((program, idx) => {
-            const isHovered = hoveredCard === program.id;
+        {/* 4 Premium Cards Grid */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          {PILLARS.map((pillar, idx) => {
             return (
               <motion.div
-                key={program.id}
-                initial={{ opacity: 0, y: 20 }}
+                key={pillar.id}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
-                transition={{ delay: idx * 0.08, duration: 0.5 }}
-                onMouseEnter={() => setHoveredCard(program.id)}
-                onMouseLeave={() => setHoveredCard(null)}
-                className="group rounded-2xl bg-white border border-gray-100/80 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-emerald-950/5 hover:-translate-y-1.5 transition-all duration-300 flex flex-col h-full"
+                transition={{ delay: idx * 0.1, duration: 0.6 }}
+                className="bg-white p-8 rounded-[32px] shadow-[0_4px_25px_rgba(0,0,0,0.02)] border border-slate-50 hover:shadow-[0_16px_40px_rgba(0,0,0,0.04)] hover:-translate-y-2 transition-all duration-300 flex flex-col justify-between h-full group"
               >
-                {/* Visual Image Header */}
-                <div className="relative h-48 sm:h-52 overflow-hidden bg-slate-100 flex-shrink-0">
-                  <div className="absolute inset-0 bg-gradient-to-t from-gray-950/80 via-gray-950/20 to-transparent z-10" />
-                  <img
-                    src={program.image}
-                    alt={program.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  
-                  {/* Category Tag overlay */}
-                  <div className="absolute top-4 left-4 z-20 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg border border-white/20 text-[10px] font-bold tracking-widest text-emerald-800 uppercase shadow-sm">
-                    {program.category}
+                <div>
+                  {/* Large Icon Container */}
+                  <div className="w-14 h-14 rounded-2xl bg-[#DDEBE5] text-brand-primary flex items-center justify-center mb-8 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-300">
+                    <Icon name={pillar.iconName} size={24} />
                   </div>
 
-                  {/* Icon Indicator overlay */}
-                  <div className="absolute bottom-4 right-4 z-20 w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/20">
-                    <Icon name={program.iconName} size={18} />
-                  </div>
+                  {/* Title */}
+                  <h3 className="text-lg font-display font-extrabold text-[#1E293B] tracking-tight">
+                    {pillar.title}
+                  </h3>
+
+                  {/* One-sentence explanation */}
+                  <p className="text-slate-500 text-sm mt-3 leading-relaxed font-sans">
+                    {pillar.sentence}
+                  </p>
                 </div>
 
-                {/* Substantive Content */}
-                <div className="p-6 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-995 line-clamp-1 tracking-tight group-hover:text-emerald-700 transition-colors">
-                      {program.title}
-                    </h3>
-                    <p className="text-gray-500 text-xs mt-3.5 leading-relaxed font-sans line-clamp-3">
-                      {program.description}
-                    </p>
-                  </div>
-
-                  {/* Quantitative verified stats metrics */}
-                  <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Verified Achievements</p>
-                      <p className="text-sm font-bold text-emerald-700 tracking-tight mt-0.5">
-                        {program.impactMetric}
-                      </p>
-                    </div>
-
-                    <a
-                      href="#donate"
-                      className="p-2 rounded-lg bg-gray-50 text-gray-400 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-all duration-200"
-                      aria-label={`Donate to support ${program.title}`}
-                    >
-                      <Icon name="ArrowRight" size={16} />
-                    </a>
-                  </div>
+                {/* Learn More arrow at foot */}
+                <div className="mt-8 flex items-center gap-1.5 text-brand-primary text-xs font-bold font-display cursor-pointer hover:underline">
+                  <span>Learn More</span>
+                  <Icon
+                    name="ChevronRight"
+                    size={14}
+                    className="transform group-hover:translate-x-1.5 transition-transform duration-300"
+                  />
                 </div>
               </motion.div>
             );

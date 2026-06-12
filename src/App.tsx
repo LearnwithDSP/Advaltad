@@ -12,6 +12,7 @@ import { ImpactCards } from "./components/ImpactCards";
 import { CtaStrip } from "./components/CtaStrip";
 import { FeaturedStory } from "./components/FeaturedStory";
 import { DonationPanel } from "./components/DonationPanel";
+import { ImpactByNumbers } from "./components/ImpactByNumbers";
 import { AmbassadorSection } from "./components/AmbassadorSection";
 import { Footer } from "./components/Footer";
 import { AmbassadorLogin } from "./components/AmbassadorLogin";
@@ -128,6 +129,16 @@ export default function App() {
               <FeaturedStory />
             </motion.div>
 
+            {/* Impact stats by the numbers */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true, margin: "-120px" }}
+              transition={{ duration: 0.6 }}
+            >
+              <ImpactByNumbers />
+            </motion.div>
+
             {/* Core trustworthy SSL integrated Donation Panels */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -150,38 +161,18 @@ export default function App() {
           </main>
 
           {/* Modern responsive Footer */}
-          <Footer />
+          <Footer
+            onDonateClick={handleDonateTrigger}
+            onAmbassadorClick={handleAmbassadorTrigger}
+          />
         </>
       ) : (
         <>
-          {/* Dynamic dashboard routing page banner bar */}
-          <div className="fixed top-0 left-0 w-full bg-white border-b border-gray-200 py-3.5 px-6 shadow-sm flex items-center justify-between z-50">
-            <a
-              href="#home"
-              onClick={(e) => {
-                e.preventDefault();
-                window.location.hash = "#home";
-              }}
-              className="flex items-center gap-2 group focus:outline-none"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold flex items-center justify-center font-serif text-base">
-                A
-              </div>
-              <div>
-                <span className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">Advaltad</span>
-                <span className="text-[10px] text-emerald-600 tracking-wider block leading-none font-bold uppercase font-sans">Back to Home page</span>
-              </div>
-            </a>
-            
-            <button
-              onClick={() => {
-                window.location.hash = "#home";
-              }}
-              className="px-4 py-1.5 rounded-xl border border-gray-200 text-xs font-bold hover:bg-gray-50 flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              Back To Main Site
-            </button>
-          </div>
+          {/* Dynamic Header & Mega Menu Navigation system */}
+          <MegaMenu
+            onDonateClick={handleDonateTrigger}
+            onAmbassadorClick={handleAmbassadorTrigger}
+          />
 
           <AnimatePresence mode="wait">
             {!isAuthenticated ? (
@@ -207,7 +198,11 @@ export default function App() {
             )}
           </AnimatePresence>
           
-          <Footer />
+          {/* Modern responsive Footer */}
+          <Footer
+            onDonateClick={handleDonateTrigger}
+            onAmbassadorClick={handleAmbassadorTrigger}
+          />
         </>
       )}
 

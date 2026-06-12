@@ -2,7 +2,12 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 
-export const Footer: React.FC = () => {
+interface FooterProps {
+  onDonateClick: () => void;
+  onAmbassadorClick: () => void;
+}
+
+export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick }) => {
   const [email, setEmail] = useState("");
   const [subscribed, setSubscribed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,243 +21,178 @@ export const Footer: React.FC = () => {
       setIsSubmitting(false);
       setSubscribed(true);
       setEmail("");
-    }, 1200);
+    }, 1000);
   };
 
-  const handleQuickLinkClick = (href: string) => {
-    const el = document.querySelector(href);
+  const handleQuickLinkClick = (id: string) => {
+    const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView({ behavior: "smooth" });
     }
   };
 
   return (
-    <footer id="footer" className="bg-white border-t border-gray-100 overflow-hidden relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        
-        {/* Main Columns Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-8 items-start pb-12 border-b border-gray-100">
-          
-          {/* Logo Brand / About */}
-          <div className="lg:col-span-4 space-y-5">
-            <a
-              href="#home"
-              onClick={(e) => {
-                e.preventDefault();
-                handleQuickLinkClick("#home");
-              }}
-              className="flex items-center gap-2.5 focus:outline-none max-w-max"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold font-serif text-sm">
-                A
-              </div>
-              <div className="flex flex-col">
-                <span className="text-gray-900 font-sans font-extrabold text-sm leading-none tracking-tight">Advaltad</span>
-                <span className="text-[10px] text-emerald-600 uppercase font-bold tracking-widest font-sans">Foundation</span>
-              </div>
-            </a>
-            
-            <p className="text-xs text-gray-500 font-normal leading-relaxed font-sans max-w-sm">
-              An international-standard impact platform adding value to Sub-Saharan Africa’s development via technological skill labs, solar utility pumps, maternal mobile health vans, and eco-adobe shelters.
+    <div className="bg-white">
+      {/* FINAL CTA SECTION - Large Elegant Segment */}
+      <section className="py-24 sm:py-32 bg-[#F7F8FA] border-t border-slate-100 relative overflow-hidden text-center">
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
+          <div className="max-w-3xl mx-auto space-y-6">
+            <h2 className="text-4xl sm:text-5xl font-display font-black text-brand-charcoal tracking-tight leading-none">
+              Together We Can Shape Africa's Future
+            </h2>
+            <p className="text-slate-500 font-sans text-base max-w-[620px] mx-auto leading-relaxed">
+              Every school desk financed, every solar panel wired, and every eco-home built builds self-determination. Join our global coalition of impact builders.
             </p>
+            
+            <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button
+                onClick={onDonateClick}
+                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-brand-primary hover:bg-emerald-950 text-[#FFFFFF] font-display font-black text-xs tracking-widest uppercase transition-all duration-200 shadow-lg shadow-brand-primary/10 cursor-pointer"
+              >
+                Donate Now
+              </button>
+              
+              <button
+                onClick={onAmbassadorClick}
+                className="w-full sm:w-auto px-8 py-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-brand-charcoal font-display font-black text-xs tracking-widest uppercase transition-all duration-200 cursor-pointer"
+              >
+                Partner With Us
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            {/* Social Media Vectors */}
-            <div className="flex items-center gap-3 pt-2">
-              <a href="#" className="p-2 rounded-xl bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors" aria-label="Advaltad Twitter">
-                <Icon name="Twitter" size={16} />
-              </a>
-              <a href="#" className="p-2 rounded-xl bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors" aria-label="Advaltad Facebook">
-                <Icon name="Facebook" size={16} />
-              </a>
-              <a href="#" className="p-2 rounded-xl bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors" aria-label="Advaltad Instagram">
-                <Icon name="Instagram" size={16} />
-              </a>
-              <a href="#" className="p-2 rounded-xl bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors" aria-label="Advaltad LinkedIn">
-                <Icon name="Linkedin" size={16} />
-              </a>
+      {/* MINIMAL FOOTER SECTION */}
+      <footer className="py-16 bg-white border-t border-slate-100 relative overflow-hidden">
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 pb-12 border-b border-slate-100">
+            
+            {/* Column 1: Brand & Social */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleQuickLinkClick("home")}>
+                <div className="w-8 h-8 rounded-lg bg-brand-primary text-white font-display font-black flex items-center justify-center text-sm">
+                  A
+                </div>
+                <div>
+                  <span className="text-sm font-display font-black tracking-tight text-brand-charcoal">Advaltad</span>
+                  <span className="text-[10px] text-brand-primary tracking-widest block font-extrabold uppercase leading-none">Foundation</span>
+                </div>
+              </div>
+
+              <p className="text-slate-500 text-xs leading-relaxed max-w-sm font-sans">
+                A premier global nonprofit adding value to Africa's development through long-term educational pipelines, tech labs, primary clinics, and ecological grids.
+              </p>
+
+              {/* Social links */}
+              <div className="flex items-center gap-3">
+                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Twitter">
+                  <Icon name="Twitter" size={14} />
+                </a>
+                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Facebook">
+                  <Icon name="Facebook" size={14} />
+                </a>
+                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Instagram">
+                  <Icon name="Instagram" size={14} />
+                </a>
+                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Linkedin">
+                  <Icon name="Linkedin" size={14} />
+                </a>
+              </div>
+            </div>
+
+            {/* Column 2: Only core links (About, Programs, Stories) */}
+            <div className="lg:col-span-4 grid grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase font-display">Resources</h4>
+                <ul className="space-y-2 text-xs text-slate-500 font-sans">
+                  <li>
+                    <button onClick={() => handleQuickLinkClick("about")} className="hover:text-brand-primary transition-colors cursor-pointer">
+                      About Us
+                    </button>
+                  </li>
+                  <li>
+                    <button onClick={() => handleQuickLinkClick("featured-programs")} className="hover:text-brand-primary transition-colors cursor-pointer">
+                      Our Programs
+                    </button>
+                  </li>
+                  <li>
+                    <button onClick={() => handleQuickLinkClick("story")} className="hover:text-brand-primary transition-colors cursor-pointer">
+                      Impact Stories
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase font-display">Contact</h4>
+                <ul className="space-y-2 text-xs text-slate-500 font-sans">
+                  <li className="flex items-center gap-1.5">
+                    <Icon name="Mail" size={12} className="text-brand-primary" />
+                    <a href="mailto:contact@advaltad.org" className="hover:text-brand-primary transition-colors">contact@advaltad.org</a>
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <Icon name="Phone" size={12} className="text-brand-primary" />
+                    <span>+234 812 345 6789</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Column 3: Newsletter (subscribed trigger) */}
+            <div className="lg:col-span-4 space-y-4">
+              <h4 className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase font-display">Newsletter</h4>
+              <p className="text-slate-500 text-xs font-sans leading-relaxed">
+                Receive quarterly verified field audits, resource charts, and story dispatches. No spam.
+              </p>
+
+              <AnimatePresence mode="wait">
+                {!subscribed ? (
+                  <form onSubmit={handleSubscribe} className="flex gap-2">
+                    <input
+                      type="email"
+                      required
+                      placeholder="Your Email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="flex-1 px-4 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-brand-charcoal font-medium font-sans"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="px-4 py-2.5 rounded-xl bg-brand-primary hover:bg-emerald-950 text-white font-display font-black text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center"
+                    >
+                      {isSubmitting ? "..." : "Join"}
+                    </button>
+                  </form>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-3.5 bg-brand-secondary/30 rounded-xl border border-brand-secondary/50 text-[10px] text-brand-primary font-sans font-bold flex items-center gap-1.5"
+                  >
+                    <Icon name="CheckCircle2" size={14} />
+                    <span>Added directly to dispatch list.</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+          </div>
+
+          {/* Copyright ribbon */}
+          <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] text-slate-400 font-display font-semibold">
+            <span>© Advaltad Growth and Support Foundation. All Rights Reserved.</span>
+            <div className="flex gap-4">
+              <a href="#privacy" className="hover:text-[#0E5A45]">Privacy Charter</a>
+              <span>•</span>
+              <a href="#terms" className="hover:text-[#0E5A45]">Terms of Synergy</a>
             </div>
           </div>
 
-          {/* Quick links Columns */}
-          <div className="lg:col-span-2 space-y-4">
-            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest font-sans">Organization</h4>
-            <ul className="space-y-2.5 text-xs text-gray-500">
-              <li>
-                <a
-                  href="#about"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleQuickLinkClick("#about");
-                  }}
-                  className="hover:text-emerald-600 transition-colors"
-                >
-                  Who We Are
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#programs"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleQuickLinkClick("#programs");
-                  }}
-                  className="hover:text-emerald-600 transition-colors"
-                >
-                  Our Programs
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#story"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleQuickLinkClick("#story");
-                  }}
-                  className="hover:text-emerald-600 transition-colors"
-                >
-                  Impact Stories
-                </a>
-              </li>
-              <li>
-                <a href="#annual-reports" className="hover:text-emerald-600 transition-colors">
-                  Annual Reports
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          <div className="lg:col-span-2 space-y-4">
-            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest font-sans">Get Involved</h4>
-            <ul className="space-y-2.5 text-xs text-gray-500">
-              <li>
-                <a
-                  href="#donate"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleQuickLinkClick("#donate");
-                  }}
-                  className="hover:text-emerald-600 transition-colors"
-                >
-                  Donate Directly
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#ambassador"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleQuickLinkClick("#ambassador");
-                  }}
-                  className="hover:text-emerald-600 transition-colors"
-                >
-                  Ambassador Program
-                </a>
-              </li>
-              <li>
-                <a href="#partner" className="hover:text-emerald-600 transition-colors">
-                  Corporate Synergy
-                </a>
-              </li>
-              <li>
-                <a href="#volunteer" className="hover:text-emerald-600 transition-colors">
-                  Field Volunteer
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Contact Details Column */}
-          <div className="lg:col-span-2 space-y-4">
-            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest font-sans">Contact</h4>
-            <ul className="space-y-3 text-xs text-gray-500 font-sans">
-              <li className="flex items-start gap-2.5">
-                <Icon name="MapPin" size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-                <span>12 Advaltad Avenue, Lekki Phase 1, Lagos, Nigeria.</span>
-              </li>
-              <li className="flex items-center gap-2.5">
-                <Icon name="Mail" size={14} className="text-emerald-600 flex-shrink-0" />
-                <a href="mailto:contact@advaltad.org" className="hover:text-emerald-600 transition-colors">contact@advaltad.org</a>
-              </li>
-              <li className="flex items-center gap-2.5">
-                <Icon name="Phone" size={14} className="text-emerald-600 flex-shrink-0" />
-                <a href="tel:+2348123456789" className="hover:text-emerald-600 transition-colors">+234 812 345 6789</a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Newsletter Form Column */}
-          <div className="lg:col-span-2 space-y-4">
-            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest font-sans">Global Digests</h4>
-            <p className="text-[11px] text-gray-400 font-sans leading-relaxed">
-              Subscribe to receive verified field audits, reports & photos quarterly.
-            </p>
-            
-            <AnimatePresence mode="wait">
-              {!subscribed ? (
-                <motion.form
-                  key="form"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onSubmit={handleSubscribe}
-                  className="space-y-2"
-                >
-                  <div className="relative">
-                    <input
-                      id="newsletter-email"
-                      type="email"
-                      required
-                      placeholder="e.g. user@domain.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-3 pr-10 py-2.5 text-xs rounded-xl bg-gray-50 border border-gray-100 focus:border-emerald-600 focus:outline-none text-gray-900 font-medium font-sans"
-                    />
-                    <button
-                      id="newsletter-submit-btn"
-                      type="submit"
-                      disabled={isSubmitting || !email}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 hover:bg-emerald-600 hover:text-white rounded-lg text-emerald-600 transition-all cursor-pointer flex items-center justify-center"
-                      aria-label="Submit newsletter subscription"
-                    >
-                      {isSubmitting ? (
-                        <div className="w-3.5 h-3.5 rounded-full border border-current border-t-transparent animate-spin" />
-                      ) : (
-                        <Icon name="Send" size={12} />
-                      )}
-                    </button>
-                  </div>
-                </motion.form>
-              ) : (
-                <motion.div
-                  key="subscribed"
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-3 bg-emerald-50 rounded-xl border border-emerald-100/50 flex items-start gap-2 text-[10px] text-emerald-800"
-                >
-                  <Icon name="CheckCircle2" size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-bold">Subscription certified!</p>
-                    <p className="text-gray-500 font-sans mt-0.5">We've added your terminal to the global dispatch list successfully.</p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
         </div>
-
-        {/* Bottom copyright line with leafy accents */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-gray-400 font-sans">
-          <span>© Advaltad Growth and Support Foundation. All Rights Reserved.</span>
-          
-          <div className="flex items-center gap-4 text-gray-400">
-            <a href="#privacy" className="hover:text-emerald-600 transition-colors">Privacy Charter</a>
-            <span className="w-1 h-1 rounded-full bg-gray-200"></span>
-            <a href="#terms" className="hover:text-emerald-600 transition-colors">Terms of Synergy</a>
-          </div>
-        </div>
-
-      </div>
-    </footer>
+      </footer>
+    </div>
   );
 };

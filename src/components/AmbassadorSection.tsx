@@ -17,237 +17,207 @@ export const AmbassadorSection: React.FC = () => {
     setTimeout(() => {
       setIsSubmitting(false);
       setIsRegistered(true);
-    }, 1500);
+    }, 1200);
   };
 
   const BENEFITS = [
     {
-      title: "Global Leadership Development",
-      desc: "Receive curated mentorship protocols, sovereign development education modules, and direct quarterly syncs with top international builders.",
-      iconName: "Compass"
+      title: "Leadership Development",
+      desc: "Curated mentor alignments, training programs, and direct briefings with international standard NGO experts."
     },
     {
-      title: "Active Community Involvement",
-      desc: "Represent Advaltad in your local region. Launch localized surveys, host digital workshops, and supervise field asset deliveries.",
-      iconName: "Globe"
+      title: "Global Network",
+      desc: "Connect seamlessly with peer advocates, regional specialists, and social builders in over 15+ world nations."
     },
     {
-      title: "Official Audited Credentials",
-      desc: "Earn certified Ambassador Badges, global recommendation letters, and cryptographic certificates acknowledging your active development advocacy.",
-      iconName: "Award"
+      title: "Community Recognition",
+      desc: "Validating recommendations, physical badges, and certified credentials of global developmental contribution."
+    },
+    {
+      title: "Exclusive Opportunities",
+      desc: "Access to sponsored community builds, global summit invitations, and localized campaign asset co-ownership."
     }
   ];
 
   return (
-    <section id="ambassador" className="py-24 bg-white relative overflow-hidden">
-      {/* Abstract circles */}
-      <div className="absolute bottom-0 left-0 w-[450px] h-[450px] rounded-full bg-emerald-500/5 blur-[100px] pointer-events-none" />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+    <section id="ambassador" className="py-24 sm:py-32 bg-white relative overflow-hidden">
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
         
-        <div className="grid lg:grid-cols-12 gap-12 items-center">
+        <div className="grid lg:grid-cols-12 gap-12 lg:gap-20 items-center">
           
           {/* Left Column: Benefits Listing */}
-          <div className="lg:col-span-6 space-y-8">
-            <div className="space-y-3 text-center lg:text-left">
-              <span className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold uppercase tracking-widest inline-block">
-                The Advaltad Fellowship
-              </span>
-              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-extrabold text-gray-950 tracking-tight leading-tight">
-                Become a Growth Ambassador
+          <div className="lg:col-span-6 space-y-8 text-left">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+                <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
+                  GROWTH CORRIDOR
+                </span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight leading-none">
+                Become an Ambassador
               </h2>
-              <p className="text-gray-500 text-sm sm:text-base leading-relaxed">
-                We are building an active network of motivated advocates who represent the mission of sovereign development globally. Translate your deep professional skills into local structural progress.
+              <p className="text-slate-500 font-sans text-base leading-relaxed">
+                Join our elite fellowship of motivated leaders advancing Sub-Saharan local development. Translate your expertise into sustainable progress.
               </p>
             </div>
 
-            {/* Benefits Block List */}
-            <div className="space-y-6">
-              {BENEFITS.map((benefit, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, x: -15 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: idx * 0.1, duration: 0.5 }}
-                  className="flex items-start gap-4 p-5 rounded-2xl bg-gray-50 border border-gray-100 hover:bg-white hover:shadow-xl hover:shadow-emerald-950/5 hover:-translate-y-0.5 transition-all duration-350"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 flex-shrink-0 border border-emerald-100/50">
-                    <Icon name={benefit.iconName} size={18} />
+            {/* Benefits Block List with check icons */}
+            <div className="space-y-6 pt-4">
+              {BENEFITS.map((b, idx) => (
+                <div key={idx} className="flex items-start gap-4">
+                  <div className="w-6 h-6 rounded-full bg-[#DDEBE5] text-brand-primary flex items-center justify-center flex-shrink-0 mt-1">
+                    <Icon name="Check" size={12} className="stroke-2" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-base font-extrabold text-gray-900 tracking-tight">{benefit.title}</h4>
-                    <p className="text-xs text-gray-500 font-sans leading-relaxed">{benefit.desc}</p>
+                    <h3 className="font-display font-black text-sm text-[#1E293B]">
+                      {b.title}
+                    </h3>
+                    <p className="text-slate-500 text-xs leading-relaxed font-sans max-w-[480px]">
+                      {b.desc}
+                    </p>
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Right Column: Dynamic Registration Portal Card */}
+          {/* Right Column: Beautiful Membership registry card */}
           <div className="lg:col-span-6">
             <AnimatePresence mode="wait">
               {!isRegistered ? (
                 <motion.div
-                  key="reg-card"
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                  key="form-panel"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.98 }}
-                  className="p-8 sm:p-10 rounded-3xl bg-white border border-gray-100/80 shadow-2xl relative"
+                  className="bg-[#F7F8FA] rounded-[32px] p-8 sm:p-10 border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)]"
                 >
-                  <div className="pb-6 border-b border-gray-100">
-                    <h3 className="text-xl font-bold text-gray-900">Fellowship Registry</h3>
-                    <p className="text-xs text-gray-500 mt-1">Submit your details to instantly generate your Ambassador badge.</p>
+                  <div className="pb-6 border-b border-slate-200">
+                    <h3 className="text-lg font-display font-black text-brand-charcoal">Enrollment Registry</h3>
+                    <p className="text-xs text-slate-400 mt-1">Create your digital badge to access ambassador portals.</p>
                   </div>
 
                   <form onSubmit={handleSubmit} className="space-y-5 pt-6 font-sans">
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Your Professional name</label>
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Professional Name</label>
                       <input
-                        id="reg-name"
                         type="text"
                         required
                         placeholder="e.g. Ramon Bisola"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 focus:border-emerald-500 focus:outline-none text-sm transition-all text-gray-900 font-medium"
+                        className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Your Base City</label>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Base City</label>
                         <input
-                          id="reg-city"
                           type="text"
                           required
                           placeholder="e.g. Lagos, Nigeria"
                           value={city}
                           onChange={(e) => setCity(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 focus:border-emerald-500 focus:outline-none text-sm transition-all text-gray-900 font-medium"
+                          className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Primary Interest Area</label>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Focus Interest</label>
                         <select
-                          id="reg-field"
                           value={field}
                           onChange={(e) => setField(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 focus:border-emerald-500 focus:outline-none text-sm transition-all text-gray-900 font-medium"
+                          className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                         >
-                          <option>Youth Technology Hubs</option>
+                          <option>Youth Technology Labs</option>
                           <option>Scholastic Scholarships</option>
                           <option>Eco-sustainable housing</option>
-                          <option>Mobile clinics hygiene</option>
+                          <option>Mobile health clinics</option>
                         </select>
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-gray-50 text-[11px] text-gray-400 font-sans border border-gray-100">
-                      <Icon name="Shield" size={14} className="text-emerald-600 mt-0.5" />
-                      <p>By registering, you commit to upholding the values of sovereign leadership development and positive impact across your field of choice.</p>
-                    </div>
-
                     <button
-                      id="btn-submit-registration"
                       type="submit"
                       disabled={isSubmitting || !name || !city}
-                      className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-sm font-bold text-white shadow-lg shadow-emerald-600/10 hover:shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-2"
+                      className="w-full py-4 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-xs font-display font-black tracking-widest text-white shadow-lg shadow-brand-primary/10 transition-colors uppercase cursor-pointer flex items-center justify-center gap-2"
                     >
-                      {isSubmitting ? (
-                        <>
-                          <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
-                          Processing credentials...
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="UserCheck" size={16} />
-                          Generate My Fellowship Credentials
-                        </>
-                      )}
+                      {isSubmitting ? "Generating Credentials..." : "Generate Fellowship Credentials"}
                     </button>
                   </form>
                 </motion.div>
               ) : (
                 <motion.div
-                  key="badge-card"
+                  key="badge-panel"
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="p-8 rounded-3xl bg-slate-950 text-white border border-emerald-500/30 shadow-2xl relative overflow-hidden flex flex-col items-center text-center space-y-6"
+                  className="bg-brand-charcoal text-white rounded-[32px] p-8 sm:p-10 shadow-2xl relative overflow-hidden flex flex-col items-center text-center space-y-6"
                 >
-                  {/* Digital Badge Card Layout */}
-                  <div className="absolute inset-0 z-0 pointer-events-none opacity-20">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.3)_0,transparent_75%)]" />
-                    <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:100%_4px]" />
-                  </div>
+                  {/* Subtle vector grid */}
+                  <div className="absolute inset-0 z-0 opacity-10 pointer-events-none bg-[linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_4px]" />
 
                   <div className="relative z-10 w-full">
-                    {/* Top alignment and emblem */}
-                    <div className="flex justify-between items-start w-full border-b border-white/10 pb-4">
+                    {/* Header bar of credential */}
+                    <div className="flex justify-between items-center w-full border-b border-white/10 pb-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold font-serif text-sm">A</div>
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Advaltad Fellowship</span>
+                        <div className="w-7 h-7 rounded-lg bg-brand-primary text-white font-display font-black flex items-center justify-center text-xs">
+                          A
+                        </div>
+                        <span className="text-[10px] font-extrabold tracking-wider text-slate-300 uppercase">Advaltad Fellowship</span>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">ID: {Math.floor(Math.random() * 899999 + 100000)}</span>
+                      <span className="text-[9px] font-mono font-bold text-brand-accent bg-brand-accent/10 px-2 py-0.5 rounded-md">ID: {Math.floor(Math.random() * 899999 + 100000)}</span>
                     </div>
 
-                    {/* Central Certificate Badge Visual */}
+                    {/* Principal details */}
                     <div className="py-8 flex flex-col items-center">
-                      <div className="w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 mb-4 scale-110 shadow-lg shadow-emerald-500/20">
-                        <Icon name="Award" size={32} className="animate-pulse" />
+                      <div className="w-16 h-16 rounded-full bg-brand-primary/10 border border-brand-primary text-brand-primary flex items-center justify-center mb-4 shadow-lg shadow-brand-primary/20">
+                        <Icon name="Award" size={28} className="animate-pulse" />
                       </div>
-                      <h4 className="text-xl font-black tracking-tight">{name}</h4>
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        <Icon name="MapPin" size={10} className="text-emerald-500" />
+                      
+                      <h4 className="text-xl font-display font-black tracking-tight">{name}</h4>
+                      <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                        <Icon name="MapPin" size={10} className="text-brand-primary" />
                         <span>{city}</span>
                       </p>
-                      
-                      <div className="mt-4 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+
+                      <div className="mt-4 px-4 py-1 bg-white/5 border border-white/10 text-[10px] font-display font-extrabold text-brand-accent rounded-full">
                         {field} Advocate
                       </div>
                     </div>
 
-                    {/* Bottom stamp */}
-                    <div className="border-t border-white/10 pt-4 flex items-center justify-between text-[11px] text-gray-500">
-                      <div className="space-y-0.5">
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Commission Date</p>
+                    {/* Commission Stamps */}
+                    <div className="border-t border-white/10 pt-4 flex items-center justify-between text-[10px] text-slate-500 font-display">
+                      <div className="space-y-0.5 text-left">
+                        <p className="text-[9px] font-extrabold tracking-widest uppercase">COMMISSION DATE</p>
                         <p className="font-mono text-white text-[10px]">MAY 27, 2026</p>
                       </div>
                       <div className="space-y-0.5 text-right">
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ambassador Status</p>
-                        <p className="font-bold text-emerald-400 uppercase flex items-center gap-1 text-[10px]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                          VALIDATED
+                        <p className="text-[9px] font-extrabold tracking-widest uppercase">AMBASSADOR STATUS</p>
+                        <p className="font-mono text-emerald-400 text-[10px] uppercase flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> ACTIVE
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="w-full relative z-10 space-y-3">
-                    <p className="text-xs text-emerald-100/70 font-sans leading-relaxed">
-                      Congratulations! Your digital credentials have been registered in our global database. We’ve dispatched an introductory toolkit and advocacy booklet to your registered terminal email.
-                    </p>
-                    
+                  <div className="w-full relative z-10 space-y-3.5">
                     <button
-                      id="registry-dashboard-btn"
                       onClick={() => {
                         window.location.hash = "#/growth-ambassadors";
                       }}
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 hover:text-white font-bold text-xs transition-all shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                      className="w-full py-4.5 rounded-xl bg-brand-primary hover:bg-[#0A4233] text-white font-display font-bold text-xs tracking-widest uppercase transition-colors cursor-pointer flex items-center justify-center gap-2"
                     >
                       <Icon name="Compass" size={14} className="animate-spin-slow" />
-                      Access Partner & Ambassador Dashboard
+                      ACCESS PEER DEPLOYMENT DASHBOARD
                     </button>
 
                     <button
-                      id="registry-another-btn"
                       onClick={() => setIsRegistered(false)}
-                      className="w-full py-2.5 rounded-xl border border-white/20 hover:bg-white/5 text-white/80 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                      className="w-full py-3 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer font-sans"
                     >
-                      Register Another Fellow
+                      Register New Member
                     </button>
                   </div>
                 </motion.div>

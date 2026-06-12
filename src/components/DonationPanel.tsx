@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { DONATION_TIERS } from "../data";
 import { Icon } from "./Icon";
 
 export const DonationPanel: React.FC = () => {
@@ -13,318 +12,242 @@ export const DonationPanel: React.FC = () => {
 
   const activeAmount = customAmount ? parseFloat(customAmount) || 0 : selectedAmount;
 
-  // Dynamically compute estimated impact statements based on arbitrary donation values!
+  // Exact requested impact statements
   const getDynamicImpact = (amount: number) => {
-    if (amount <= 0) return "Please enter an amount to visualize your global developmental impact.";
-    if (amount < 25) {
-      return `Provides essential writing tools and scholastic exercises for 1 pupil for 1 academic year.`;
-    }
-    if (amount < 50) {
-      return `Provides complete school bags, premium textbooks, and local solar study lanterns for 3 kids.`;
-    }
-    if (amount < 150) {
-      return `Funds 1 month of developer laboratory coaching, high-speed internet, and startup mentors for 2 youth.`;
-    }
-    if (amount < 400) {
-      return `Directly implements safe solar drinking water filtration tubes for 15 citizens in remote villages.`;
-    }
-    if (amount < 1000) {
-      return `Directly funds compressed-earth Eco-Adobe blocks and structural metal roofing plates for a stable family home.`;
-    }
-    return `Sponsors a complete communal solar water pump or 4 high-demand technological developer scholarships. Saving lives and unlocking futures!`;
+    if (amount <= 0) return "Choose or enter an amount to see your impact.";
+    if (amount === 25) return "School supplies for one child.";
+    if (amount === 50) return "Provides solar study lamps for two families.";
+    if (amount === 100) return "Supports healthcare outreach.";
+    if (amount === 250) return "Finances deep clean water filters for school facilities.";
+    
+    // Formula for custom values
+    if (amount < 25) return "Supports basic classroom materials for young learners.";
+    if (amount < 100) return "Provides digital school packets and textbooks for kids.";
+    if (amount < 250) return "Funds healthcare counselor audits and mobile wellness hours.";
+    return "Sponsors deep water boreholes and clean power systems for local hubs.";
   };
 
-  const handleTierSelect = (amt: number) => {
+  const handleSelectAmount = (amt: number) => {
     setSelectedAmount(amt);
     setCustomAmount("");
   };
 
   const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    if (/^\d*\.?\d*$/.test(val)) {
+    if (/^\d*$/.test(val)) {
       setCustomAmount(val);
       setSelectedAmount(0);
     }
   };
 
-  const handleDonationSubmit = (e: React.FormEvent) => {
+  const handleDonateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setCheckoutStep("form");
-  };
-
-  const executeSimulatedPayment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!donorName || !donorEmail) return;
-
-    setCheckoutStep("confirming");
-    setTimeout(() => {
-      setCheckoutStep("success");
-    }, 2000);
-  };
-
-  const resetCheckout = () => {
-    setCheckoutStep("idle");
-    setDonorName("");
-    setDonorEmail("");
-    setCustomAmount("");
-    setSelectedAmount(100);
+    if (activeAmount > 0) {
+      setCheckoutStep("form");
+    }
   };
 
   return (
-    <section id="donate" className="py-24 bg-slate-900 text-white relative overflow-hidden">
-      {/* Visual Ambient Grid and Lights */}
-      <div className="absolute inset-0 pointer-events-none z-0">
-        <div className="absolute -top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[700px] rounded-full bg-emerald-700/10 blur-[130px]" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:100%_4px]" />
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+    <section id="donate" className="py-24 sm:py-32 bg-[#F7F8FA] relative overflow-hidden">
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
         
-        <div className="grid lg:grid-cols-12 gap-12 items-center">
+        {/* Core Header */}
+        <div className="max-w-xl mx-auto text-center mb-16 sm:mb-20 space-y-4">
+          <div className="inline-flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+            <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
+              MAKE A DIFFERENCE
+            </span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight">
+            Support Our Mission
+          </h2>
+          <p className="text-slate-500 font-sans text-base max-w-[500px] mx-auto">
+            100% of public donations are allocated directly to Sub-Saharan field initiatives. Bypassing administrative friction.
+          </p>
+        </div>
+
+        {/* Premium Centered White Card with 32px Rounded Corners */}
+        <div className="max-w-2xl mx-auto bg-white rounded-[32px] p-8 sm:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-slate-50">
           
-          {/* Left Block: Trust & Narrative */}
-          <div className="lg:col-span-5 space-y-8">
-            <div className="space-y-3">
-              <span className="text-xs uppercase font-bold tracking-widest text-emerald-400 font-sans flex items-center gap-1.5 justify-center lg:justify-start">
-                <Icon name="Lock" size={12} className="text-emerald-400" />
-                Audited & Trustworthy Charity
-              </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight text-center lg:text-left">
-                Empower Africa. Support Our Mission.
-              </h2>
-              <p className="text-slate-300 text-sm sm:text-base text-center lg:text-left leading-relaxed">
-                Your direct contribution sponsors foundational infrastructure programs. By maintaining an audited 91% direct-to-field delivery ratio, we bypass redundant administrative weights and implement directly to local hubs.
+          {/* Once / Monthly Toggle */}
+          <div className="flex bg-slate-50 p-1 rounded-2xl mb-10 max-w-xs mx-auto">
+            <button
+              onClick={() => setFrequency("monthly")}
+              className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                frequency === "monthly" ? "bg-brand-primary text-white shadow-sm" : "text-slate-400 hover:text-brand-charcoal"
+              }`}
+            >
+              Give Monthly
+            </button>
+            <button
+              onClick={() => setFrequency("once")}
+              className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                frequency === "once" ? "bg-brand-primary text-white shadow-sm" : "text-slate-400 hover:text-brand-charcoal"
+              }`}
+            >
+              One-time Gift
+            </button>
+          </div>
+
+          {/* Minimal Preset Donation Amounts */}
+          <div className="grid grid-cols-4 gap-4">
+            {[25, 50, 100, 250].map((amt) => {
+              const active = selectedAmount === amt && !customAmount;
+              return (
+                <button
+                  key={amt}
+                  onClick={() => handleSelectAmount(amt)}
+                  className={`py-5 rounded-2xl border transition-all text-center cursor-pointer font-display font-black text-lg ${
+                    active
+                      ? "border-brand-primary bg-brand-secondary/40 text-brand-primary"
+                      : "border-slate-100 hover:bg-slate-50 text-slate-700"
+                  }`}
+                >
+                  ${amt}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Custom Amount Form Field */}
+          <div className="mt-6 relative">
+            <span className="absolute left-5 top-1/2 -translate-y-1/2 font-display font-black text-slate-400">$</span>
+            <input
+              type="text"
+              placeholder="Custom Amount"
+              value={customAmount}
+              onChange={handleCustomChange}
+              className="w-full pl-10 pr-16 py-4 rounded-2xl bg-slate-50/50 border border-slate-100 focus:border-brand-primary focus:outline-none text-base font-bold text-[#1E293B] transition-all font-sans"
+            />
+            <span className="absolute right-5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 tracking-wider">USD</span>
+          </div>
+
+          {/* Dynamic Impact Statement Card Box updates instantly when amount updates */}
+          <div className="mt-8 p-6 rounded-2xl bg-brand-secondary/30 border border-brand-secondary/60 flex items-start gap-3.5">
+            <div className="p-2 rounded-xl bg-brand-primary text-white flex-shrink-0">
+              <Icon name="Gift" size={16} />
+            </div>
+            <div>
+              <p className="text-[10px] font-extrabold tracking-wider text-brand-primary uppercase">Tangible Resource Allocation</p>
+              <p className="text-sm text-brand-charcoal mt-1.5 font-sans font-semibold leading-relaxed">
+                {getDynamicImpact(activeAmount)}
               </p>
-            </div>
-
-            {/* Strategic trustworthy details */}
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center gap-4 bg-white/[0.02] border border-white/5 rounded-2xl p-4 hover:border-emerald-500/10 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                  <Icon name="Shield" size={18} />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm">Audited Transparency Rating</h4>
-                  <p className="text-xs text-slate-400">Recipient of the 2026 Sovereign NGO Financial Transparency Gold Standard.</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 bg-white/[0.02] border border-white/5 rounded-2xl p-4 hover:border-emerald-500/10 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                  <Icon name="Lock" size={18} />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm">AES-256 Fully Secure Checkout</h4>
-                  <p className="text-xs text-slate-400">Payments are safely routed via standard token protocols natively.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Dynamic visual indicator representing SSL trust badges */}
-            <div className="flex items-center justify-center lg:justify-start gap-6 border-t border-white/5 pt-6 text-slate-500 text-xs">
-              <span className="flex items-center gap-1"><Icon name="CheckCircle2" size={12} className="text-emerald-500" /> Guidestar Platinum</span>
-              <span className="flex items-center gap-1"><Icon name="CheckCircle2" size={12} className="text-emerald-500" /> SSL Secured</span>
-              <span className="flex items-center gap-1"><Icon name="CheckCircle2" size={12} className="text-emerald-500" /> 501(c)(3) Compliant</span>
             </div>
           </div>
 
-          {/* Right Block: Dynamic Functional Donation Panel Card */}
-          <div className="lg:col-span-7">
-            <div className="rounded-3xl bg-white text-slate-900 border border-gray-100 p-8 sm:p-10 shadow-2xl relative">
-              
-              {/* Frequency Toggle Once/Monthly */}
-              <div className="flex bg-gray-100 p-1 rounded-xl mb-8 max-w-xs mx-auto">
-                <button
-                  id="freq-monthly-btn"
-                  onClick={() => setFrequency("monthly")}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    frequency === "monthly" ? "bg-emerald-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  Give Monthly (Recommend)
-                </button>
-                <button
-                  id="freq-once-btn"
-                  onClick={() => setFrequency("once")}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    frequency === "once" ? "bg-emerald-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  One-time Gift
-                </button>
-              </div>
+          {/* Submit Trigger Actions */}
+          <form onSubmit={handleDonateSubmit} className="mt-10">
+            <button
+              type="submit"
+              disabled={activeAmount <= 0}
+              className="w-full py-4.5 rounded-2xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed font-display font-extrabold text-[#FFFFFF] text-sm tracking-widest shadow-xl shadow-brand-primary/10 hover:shadow-brand-primary/20 hover:-translate-y-0.5 disabled:translate-y-0 transition-all duration-300 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Icon name="Coins" size={16} />
+              DONATE ${activeAmount > 0 ? activeAmount : ""} NOW
+            </button>
+          </form>
 
-              {/* Donation Tiers Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {DONATION_TIERS.map((tier) => {
-                  const active = selectedAmount === tier.amount;
-                  return (
-                    <button
-                      id={`dn-tier-${tier.amount}`}
-                      key={tier.amount}
-                      onClick={() => handleTierSelect(tier.amount)}
-                      className={`p-4 rounded-xl border-2 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                        active
-                          ? "border-emerald-600 bg-emerald-50/40 text-emerald-950"
-                          : "border-gray-100 hover:bg-gray-50 text-gray-700"
-                      }`}
-                    >
-                      <span className="text-xs uppercase font-extrabold text-emerald-600">{tier.label.split(" ")[0]}</span>
-                      <span className="text-xl sm:text-2xl font-black font-sans leading-none mt-1">
-                        ${tier.amount}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Custom Numeric Value Input Box */}
-              <div className="mt-4 relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-gray-400 text-lg">$</span>
-                <input
-                  id="custom-donation-input"
-                  type="text"
-                  placeholder="Enter custom donation amount"
-                  value={customAmount}
-                  onChange={handleCustomChange}
-                  className="w-full pl-8 pr-12 py-4 rounded-xl bg-gray-50 border-2 border-slate-100 focus:border-emerald-500 focus:outline-none text-base font-bold text-gray-900 transition-all font-sans"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 uppercase tracking-widest font-mono">USD</span>
-              </div>
-
-              {/* Live Dynamic Impact Statement Card description */}
-              <div className="mt-6 p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100/60 flex items-start gap-3">
-                <div className="p-1.5 rounded-lg bg-emerald-600 text-white mt-1">
-                  <Icon name="Gift" size={14} className="fill-white/10" />
-                </div>
-                <div>
-                  <p className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Estimated Tangible Impact</p>
-                  <p className="text-xs md:text-sm text-gray-700 mt-1 font-sans leading-relaxed font-medium">
-                    {getDynamicImpact(activeAmount)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Submit triggers Checkouts */}
-              <form onSubmit={handleDonationSubmit} className="mt-8">
-                <button
-                  id="submit-donation-checkout"
-                  type="submit"
-                  disabled={activeAmount <= 0}
-                  className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed font-extrabold text-sm text-white shadow-xl shadow-emerald-600/10 hover:shadow-emerald-600/25 hover:-translate-y-0.5 disabled:translate-y-0 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Icon name="Coins" size={16} />
-                  Donate ${activeAmount > 0 ? activeAmount : ""} Now
-                </button>
-              </form>
-
-            </div>
+          {/* AES Fully Secure Tag Indicators */}
+          <div className="mt-6 flex justify-center items-center gap-5 text-[10px] text-slate-400 font-display font-medium">
+            <span className="flex items-center gap-1">
+              <Icon name="Lock" size={12} className="text-brand-primary" /> SECURED AES-256
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <Icon name="CheckCircle2" size={12} className="text-brand-primary" /> 501(C)(3) COMPLIANT
+            </span>
           </div>
 
         </div>
 
       </div>
 
-      {/* Simulated Production Checkout Modal Overlay */}
+      {/* Simulated Secure Payment Checkout Dialogue Overlay */}
       <AnimatePresence>
         {checkoutStep !== "idle" && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            {/* Backdrop */}
+            
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.6 }}
               exit={{ opacity: 0 }}
-              onClick={resetCheckout}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setCheckoutStep("idle")}
+              className="absolute inset-0 bg-brand-charcoal/70 backdrop-blur-sm"
             />
 
-            {/* Modal Box */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative z-10 w-full max-w-md bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8 border border-gray-100 max-h-[90vh] overflow-y-auto"
+              className="relative z-10 w-full max-w-md bg-white text-brand-charcoal rounded-[32px] p-8 border border-slate-100 shadow-2xl"
             >
               <button
-                id="close-checkout"
-                onClick={resetCheckout}
-                className="absolute top-4 right-4 p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                onClick={() => setCheckoutStep("idle")}
+                className="absolute top-5 right-5 p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
               >
-                <Icon name="X" size={18} />
+                <Icon name="X" size={16} />
               </button>
 
               {checkoutStep === "form" && (
                 <div className="space-y-6">
                   <div className="text-center">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3">
-                      <Icon name="Lock" size={20} />
+                    <div className="w-12 h-12 rounded-2xl bg-brand-secondary text-brand-primary flex items-center justify-center mx-auto mb-3">
+                      <Icon name="Lock" size={18} />
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900">Secure Payment Details</h3>
-                    <p className="text-xs text-gray-500 mt-1">Sponsoring ${activeAmount} {frequency === "monthly" ? "monthly" : "once"}</p>
+                    <h3 className="text-xl font-display font-black text-brand-charcoal">Secure Checkout</h3>
+                    <p className="text-xs text-slate-400 mt-1">Sponsoring ${activeAmount} {frequency === "monthly" ? "monthly" : "once"}</p>
                   </div>
 
-                  <form onSubmit={executeSimulatedPayment} className="space-y-4 font-sans">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (donorName && donorEmail) {
+                        setCheckoutStep("confirming");
+                        setTimeout(() => {
+                          setCheckoutStep("success");
+                        }, 1800);
+                      }
+                    }}
+                    className="space-y-4 font-sans text-left"
+                  >
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Your Full Name</label>
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Your Full Name</label>
                       <input
-                        id="chk-name"
                         type="text"
                         required
                         placeholder="e.g. Ramon Bisola"
                         value={donorName}
                         onChange={(e) => setDonorName(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 focus:border-emerald-500 focus:outline-none text-sm transition-all text-gray-900 font-medium"
+                        className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email Address</label>
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Your Email</label>
                       <input
-                        id="chk-email"
                         type="email"
                         required
                         placeholder="e.g. ramonbisola1@gmail.com"
                         value={donorEmail}
                         onChange={(e) => setDonorEmail(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 focus:border-emerald-500 focus:outline-none text-sm transition-all text-gray-900 font-medium"
+                        className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                       />
                     </div>
 
-                    {/* Card Mock details fields */}
-                    <div className="border border-emerald-100 bg-emerald-50/30 p-4 rounded-xl space-y-3">
-                      <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">Test Card Credentials (Secured Demo)</p>
-                      
-                      <div>
-                        <input
-                          type="text"
-                          disabled
-                          value="••••  ••••  ••••  4242"
-                          className="w-full px-3 py-2 bg-white/70 border border-emerald-100 rounded-lg text-xs font-mono text-gray-600"
-                        />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          disabled
-                          value="12 / 28"
-                          className="px-3 py-2 bg-white/70 border border-emerald-100 rounded-lg text-xs font-mono text-center text-gray-600"
-                        />
-                        <input
-                          type="text"
-                          disabled
-                          value="CVC: 332"
-                          className="px-3 py-2 bg-white/70 border border-emerald-100 rounded-lg text-xs font-mono text-center text-gray-600"
-                        />
+                    <div className="p-4 bg-brand-secondary/30 rounded-2xl border border-brand-secondary/50 space-y-2">
+                      <p className="text-[9px] font-extrabold text-brand-primary uppercase tracking-wider">SECURE SANDBOX TRANSACTION</p>
+                      <div className="font-mono text-xs text-slate-500 flex justify-between">
+                        <span>CARD: •••• •••• •••• 4242</span>
+                        <span>ZIP: 10001</span>
                       </div>
                     </div>
 
                     <button
-                      id="execute-checkout-btn"
                       type="submit"
-                      className="w-full py-3.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-md transition-all cursor-pointer"
+                      className="w-full py-4 rounded-xl bg-brand-primary hover:bg-[#0A4233] text-white font-bold text-xs tracking-wider uppercase cursor-pointer transition-colors"
                     >
-                      Authorize Demonstration Payment
+                      Authorize Sandbox Donation
                     </button>
                   </form>
                 </div>
@@ -332,37 +255,36 @@ export const DonationPanel: React.FC = () => {
 
               {checkoutStep === "confirming" && (
                 <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
-                  <div className="w-12 h-12 rounded-full border-4 border-emerald-200 border-t-emerald-600 animate-spin" />
-                  <h3 className="text-lg font-bold text-gray-900">Configuring secure bank handshake...</h3>
-                  <p className="text-xs text-gray-500">Democratizing growth funds transparently.</p>
+                  <div className="w-12 h-12 rounded-full border-4 border-brand-secondary border-t-brand-primary animate-spin" />
+                  <h3 className="text-lg font-display font-extrabold">Contacting secure gateways...</h3>
+                  <p className="text-xs text-slate-400">Verifying bank allocations safely.</p>
                 </div>
               )}
 
               {checkoutStep === "success" && (
-                <div className="text-center space-y-6 py-6 font-sans">
-                  <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto scale-110">
-                    <Icon name="Check" size={32} />
+                <div className="text-center space-y-6 pt-4">
+                  <div className="w-16 h-16 rounded-full bg-brand-secondary text-brand-primary flex items-center justify-center mx-auto scale-110">
+                    <Icon name="Check" size={28} />
                   </div>
                   
                   <div className="space-y-2">
-                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">Support Success!</h3>
-                    <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Transaction receipt fully verified</p>
-                    <p className="text-sm text-gray-500 px-4 leading-relaxed mt-2">
-                      Thank you, <span className="font-bold text-gray-800">{donorName}</span> ({donorEmail}). Your gift of <span className="font-bold text-emerald-800">${activeAmount}</span> is allocated directly to our field initiatives. It is fully tax-deductible under standard provisions.
+                    <h3 className="text-2xl font-display font-black text-brand-charcoal">Bless You!</h3>
+                    <p className="text-xs font-bold text-brand-primary uppercase tracking-widest">Transaction fully verified</p>
+                    <p className="text-sm text-slate-500 leading-relaxed max-w-[320px] mx-auto mt-2 font-sans">
+                      Thank you, <span className="font-semibold text-brand-charcoal">{donorName}</span>. Your {frequency === "monthly" ? "monthly recurring" : "one-time"} gift of <span className="font-semibold text-brand-primary">${activeAmount}</span> is allocated directly to our field initiatives.
                     </p>
                   </div>
 
-                  <div className="border border-gray-100 bg-gray-50 p-4 rounded-xl text-left text-xs text-gray-400 space-y-1">
-                    <p className="font-bold text-slate-700">Audit Checksum:</p>
-                    <p className="font-mono text-[10px] truncate">SHA256: advaltad_foundation_{Date.now()}_audit_success_certified_ok</p>
-                  </div>
-
                   <button
-                    id="success-checkout-ok"
-                    onClick={resetCheckout}
-                    className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-800 transition-colors cursor-pointer"
+                    onClick={() => {
+                      setCheckoutStep("idle");
+                      setDonorName("");
+                      setDonorEmail("");
+                      setCustomAmount("");
+                    }}
+                    className="w-full py-3.5 rounded-xl bg-brand-charcoal hover:bg-slate-800 text-white font-bold text-xs tracking-wider uppercase cursor-pointer"
                   >
-                    Done
+                    Return to Main Site
                   </button>
                 </div>
               )}
