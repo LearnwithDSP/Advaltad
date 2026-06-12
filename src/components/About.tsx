@@ -72,7 +72,7 @@ export const About: React.FC = () => {
           className="mt-16 rounded-[32px] overflow-hidden relative aspect-[21/9] bg-slate-100 shadow-[0_12px_45px_rgba(0,0,0,0.02)]"
         >
           <img
-            src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?q=80&w=2000"
+            src="https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?q=80&w=2000"
             alt="Local community collaboration on development projects in Sub-Saharan Africa"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"

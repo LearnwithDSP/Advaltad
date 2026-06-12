@@ -41,10 +41,27 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
     setActiveDropdown(null);
     setMobileMenuOpen(false);
 
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
+    let path = href;
+    if (href.startsWith("#")) {
+      const anchor = href.slice(1);
+      if (anchor === "home") {
+        path = "#/home";
+      } else if (anchor.includes("about") || anchor.includes("mission") || anchor.includes("leadership") || anchor.includes("values")) {
+        path = "#/about";
+      } else if (anchor.includes("programs")) {
+        path = "#/programs";
+      } else if (anchor.includes("story") || anchor.includes("annual-reports")) {
+        path = "#/story";
+      } else if (anchor.includes("gallery") || anchor.includes("videos") || anchor.includes("press") || anchor.includes("media")) {
+        path = "#/media";
+      } else if (anchor.includes("donate")) {
+        path = "#/donate";
+      } else if (anchor.includes("ambassador") || anchor.includes("partner")) {
+        path = "#/ambassador";
+      }
     }
+
+    window.location.hash = path;
   };
 
   const handleMobileSectionToggle = (key: string) => {
@@ -83,7 +100,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
           </a>
 
           {/* Desktop Navigation */}
-          <nav id="desktop-nav" className="hidden lg:flex items-center space-x-1" ref={dropdownRef}>
+          <nav id="desktop-nav" className="hidden lg:flex items-center space-x-0.5 xl:space-x-1.5" ref={dropdownRef}>
             {Object.entries(NAVIGATION_DATA).map(([key, value]) => {
               const isActiveDropdown = activeDropdown === key;
               return (
@@ -105,7 +122,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                         handleNavClick(value.href);
                       }
                     }}
-                    className={`px-4 py-2 rounded-lg text-xs tracking-wider uppercase font-display font-bold flex items-center gap-1 transition-all duration-200 ${
+                    className={`px-2.5 py-2 rounded-lg text-[10.5px] tracking-wider uppercase font-display font-bold flex items-center gap-1 whitespace-nowrap transition-all duration-200 ${
                       isActiveDropdown
                         ? "text-brand-primary bg-brand-secondary/40"
                         : "text-slate-500 hover:text-brand-primary hover:bg-slate-50"
@@ -195,11 +212,11 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
           </nav>
 
           {/* Action CTAs Desktop */}
-          <div className="hidden lg:flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-2.5 xl:gap-4">
             <button
               id="cta-become-ambassador"
               onClick={onAmbassadorClick}
-              className="text-xs font-display font-bold tracking-wider uppercase text-slate-500 hover:text-brand-primary px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-all duration-205 cursor-pointer"
+              className="px-4.5 py-3 rounded-xl border border-brand-primary text-brand-primary hover:bg-brand-primary hover:text-white font-display font-bold text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer whitespace-nowrap"
             >
               Become Ambassador
             </button>

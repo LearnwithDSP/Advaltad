@@ -6,37 +6,34 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MegaMenu } from "./components/MegaMenu";
-import { Hero } from "./components/Hero";
-import { About } from "./components/About";
-import { ImpactCards } from "./components/ImpactCards";
-import { CtaStrip } from "./components/CtaStrip";
-import { FeaturedStory } from "./components/FeaturedStory";
-import { DonationPanel } from "./components/DonationPanel";
-import { ImpactByNumbers } from "./components/ImpactByNumbers";
-import { AmbassadorSection } from "./components/AmbassadorSection";
 import { Footer } from "./components/Footer";
 import { AmbassadorLogin } from "./components/AmbassadorLogin";
 import { AmbassadorDashboard } from "./components/AmbassadorDashboard";
 
+// Import new modular independent page components
+import { HomePage } from "./pages/HomePage";
+import { AboutPage } from "./pages/AboutPage";
+import { ProgramsPage } from "./pages/ProgramsPage";
+import { StoriesPage } from "./pages/StoriesPage";
+import { MediaPage } from "./pages/MediaPage";
+import { DonatePage } from "./pages/DonatePage";
+import { AmbassadorPage } from "./pages/AmbassadorPage";
+
 export default function App() {
-  const [currentView, setCurrentView] = useState<"landing" | "growth-ambassadors">("landing");
+  const [route, setRoute] = useState<string>("#home");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
     const checkRoute = () => {
-      const hash = window.location.hash;
-      const path = window.location.pathname;
-      if (path === "/growth-ambassadors" || hash.includes("growth-ambassadors")) {
-        setCurrentView("growth-ambassadors");
-      } else {
-        setCurrentView("landing");
-      }
+      const hash = window.location.hash || "#home";
+      setRoute(hash);
+
+      // Auto-jump view scroll to page absolute top on transitions
+      window.scrollTo({ top: 0, behavior: "instant" as any });
     };
 
-    // Check on startup
     checkRoute();
 
-    // Monitor hash transitions and back history clicks
     window.addEventListener("hashchange", checkRoute);
     window.addEventListener("popstate", checkRoute);
     return () => {
@@ -45,24 +42,12 @@ export default function App() {
     };
   }, []);
 
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
   const handleDonateTrigger = () => {
-    if (currentView !== "landing") {
-      window.location.hash = "#donate";
-      setTimeout(() => scrollToSection("donate"), 150);
-    } else {
-      scrollToSection("donate");
-    }
+    window.location.hash = "#/donate";
   };
 
   const handleAmbassadorTrigger = () => {
-    window.location.hash = "#/growth-ambassadors";
+    window.location.hash = "#/ambassador";
   };
 
   const handleLoginSuccess = (name: string, region: string) => {
@@ -74,136 +59,97 @@ export default function App() {
     window.location.hash = "#home";
   };
 
+  const lowercaseRoute = route.toLowerCase();
+  const isDashboardView = lowercaseRoute.includes("growth-ambassadors");
+  const hideHeaderFooter = isDashboardView && isAuthenticated;
+
+  const renderContent = () => {
+    if (isDashboardView) {
+      return (
+        <AnimatePresence mode="wait">
+          {!isAuthenticated ? (
+            <motion.div
+              key="login-subview"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+            >
+              <AmbassadorLogin onLoginSuccess={handleLoginSuccess} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="dashboard-subview"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+            >
+              <AmbassadorDashboard onLogout={handleLogout} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      );
+    }
+
+    if (lowercaseRoute.includes("about") || lowercaseRoute.includes("mission") || lowercaseRoute.includes("leadership") || lowercaseRoute.includes("values")) {
+      return <AboutPage />;
+    }
+
+    if (lowercaseRoute.includes("programs")) {
+      return <ProgramsPage />;
+    }
+
+    if (lowercaseRoute.includes("story") || lowercaseRoute.includes("stories") || lowercaseRoute.includes("annual-reports")) {
+      return <StoriesPage />;
+    }
+
+    if (lowercaseRoute.includes("media") || lowercaseRoute.includes("gallery") || lowercaseRoute.includes("videos") || lowercaseRoute.includes("press")) {
+      return <MediaPage />;
+    }
+
+    if (lowercaseRoute.includes("donate")) {
+      return <DonatePage />;
+    }
+
+    if (lowercaseRoute.includes("ambassador") || lowercaseRoute.includes("partner")) {
+      return <AmbassadorPage />;
+    }
+
+    // Default to Home page content
+    return (
+      <HomePage
+        onNavigate={(targetHash) => {
+          window.location.hash = targetHash;
+        }}
+        onDonateClick={handleDonateTrigger}
+        onAmbassadorClick={handleAmbassadorTrigger}
+      />
+    );
+  };
+
   return (
     <div className="min-h-screen bg-white text-gray-900 selection:bg-emerald-600 selection:text-white font-sans overflow-x-hidden antialiased scroll-smooth">
       
-      {currentView === "landing" ? (
-        <>
-          {/* Dynamic Header & Mega Menu Navigation system */}
-          <MegaMenu
-            onDonateClick={handleDonateTrigger}
-            onAmbassadorClick={handleAmbassadorTrigger}
-          />
+      {/* MegaMenu is hidden only when Ambassador signs in on Dashboard */}
+      {!hideHeaderFooter && (
+        <MegaMenu
+          onDonateClick={handleDonateTrigger}
+          onAmbassadorClick={handleAmbassadorTrigger}
+        />
+      )}
 
-          {/* Main Layout Content Blocks with unified entrance motion */}
-          <main>
-            {/* Cinematic Hero */}
-            <Hero
-              onDonateClick={handleDonateTrigger}
-              onAmbassadorClick={handleAmbassadorTrigger}
-            />
+      {/* Main Container of App Pages */}
+      <main className="flex-1">
+        {renderContent()}
+      </main>
 
-            {/* Narrative / Who We Are Section */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: 0.6 }}
-            >
-              <About />
-            </motion.div>
-
-            {/* Dynamic Bento Highlights of key mission programs */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: 0.6 }}
-            >
-              <ImpactCards />
-            </motion.div>
-
-            {/* Contrasting Action Splitter Segment */}
-            <CtaStrip
-              onDonateClick={handleDonateTrigger}
-              onAmbassadorClick={handleAmbassadorTrigger}
-            />
-
-            {/* Storyboards from active communities */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: 0.6 }}
-            >
-              <FeaturedStory />
-            </motion.div>
-
-            {/* Impact stats by the numbers */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: 0.6 }}
-            >
-              <ImpactByNumbers />
-            </motion.div>
-
-            {/* Core trustworthy SSL integrated Donation Panels */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: 0.6 }}
-            >
-              <DonationPanel />
-            </motion.div>
-
-            {/* Ambassador program details & certificate generator */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: 0.6 }}
-            >
-              <AmbassadorSection />
-            </motion.div>
-          </main>
-
-          {/* Modern responsive Footer */}
-          <Footer
-            onDonateClick={handleDonateTrigger}
-            onAmbassadorClick={handleAmbassadorTrigger}
-          />
-        </>
-      ) : (
-        <>
-          {/* Dynamic Header & Mega Menu Navigation system */}
-          <MegaMenu
-            onDonateClick={handleDonateTrigger}
-            onAmbassadorClick={handleAmbassadorTrigger}
-          />
-
-          <AnimatePresence mode="wait">
-            {!isAuthenticated ? (
-              <motion.div
-                key="login-subview"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.25 }}
-              >
-                <AmbassadorLogin onLoginSuccess={handleLoginSuccess} />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="dashboard-subview"
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.98 }}
-                transition={{ duration: 0.3 }}
-              >
-                <AmbassadorDashboard onLogout={handleLogout} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-          
-          {/* Modern responsive Footer */}
-          <Footer
-            onDonateClick={handleDonateTrigger}
-            onAmbassadorClick={handleAmbassadorTrigger}
-          />
-        </>
+      {/* Footer is hidden only when Ambassador signs in on Dashboard */}
+      {!hideHeaderFooter && (
+        <Footer
+          onDonateClick={handleDonateTrigger}
+          onAmbassadorClick={handleAmbassadorTrigger}
+        />
       )}
 
     </div>

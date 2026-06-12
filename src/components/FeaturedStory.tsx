@@ -24,7 +24,7 @@ const STORIES: Story[] = [
     location: "Enugu, Nigeria",
     author: "Advaltad Media Team",
     date: "May 12, 2026",
-    image: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200"
   },
   {
     id: "story-fatima",
@@ -35,7 +35,7 @@ const STORIES: Story[] = [
     location: "Mombasa, Kenya",
     author: "Grace Adebayo, Field Architect",
     date: "April 20, 2026",
-    image: "https://images.unsplash.com/photo-1448630360428-65456885c650?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200"
   },
   {
     id: "story-kigali",
@@ -46,7 +46,7 @@ const STORIES: Story[] = [
     location: "Kigali, Rwanda",
     author: "Emmanuel Nkurunziza",
     date: "March 15, 2026",
-    image: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1542810634-71277d95dcbb?q=80&w=1200"
   },
   {
     id: "story-mombasa-solar",
@@ -57,7 +57,7 @@ const STORIES: Story[] = [
     location: "Mombasa, Kenya",
     author: "Kofi Mensah, Energy Lead",
     date: "February 28, 2026",
-    image: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?q=80&w=1200"
   }
 ];
 

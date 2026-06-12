@@ -13,8 +13,8 @@ export const Hero: React.FC<HeroProps> = ({ onDonateClick, onAmbassadorClick }) 
       {/* Cinematic Background Row */}
       <div className="absolute inset-0 z-0">
         <img
-          src="https://images.unsplash.com/photo-1542810634-71277d95dcbb?q=80&w=2000"
-          alt="African youth, innovation, and learning"
+          src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?q=80&w=2000"
+          alt="African children smiling, hopeful futures"
           className="w-full h-full object-cover object-center filter brightness-[0.95]"
           referrerPolicy="no-referrer"
         />
@@ -79,7 +79,7 @@ export const Hero: React.FC<HeroProps> = ({ onDonateClick, onAmbassadorClick }) 
             <button
               id="hero-impact-cta"
               onClick={() => {
-                document.getElementById("about")?.scrollIntoView({ behavior: "smooth" });
+                window.location.hash = "#/about";
               }}
               className="w-full sm:w-auto px-8 py-4 rounded-xl border border-slate-200 bg-white/60 hover:bg-slate-50 text-slate-800 font-bold text-sm hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2"
             >

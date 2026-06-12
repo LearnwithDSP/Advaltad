@@ -24,11 +24,8 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
     }, 1000);
   };
 
-  const handleQuickLinkClick = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth" });
-    }
+  const handleQuickLinkClick = (hash: string) => {
+    window.location.hash = hash;
   };
 
   return (
@@ -62,7 +59,7 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
           </div>
         </div>
       </section>
-
+ 
       {/* MINIMAL FOOTER SECTION */}
       <footer className="py-16 bg-white border-t border-slate-100 relative overflow-hidden">
         <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
@@ -71,7 +68,7 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
             
             {/* Column 1: Brand & Social */}
             <div className="lg:col-span-4 space-y-6">
-              <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleQuickLinkClick("home")}>
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleQuickLinkClick("#/home")}>
                 <div className="w-8 h-8 rounded-lg bg-brand-primary text-white font-display font-black flex items-center justify-center text-sm">
                   A
                 </div>
@@ -108,17 +105,17 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                 <h4 className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase font-display">Resources</h4>
                 <ul className="space-y-2 text-xs text-slate-500 font-sans">
                   <li>
-                    <button onClick={() => handleQuickLinkClick("about")} className="hover:text-brand-primary transition-colors cursor-pointer">
+                    <button onClick={() => handleQuickLinkClick("#/about")} className="hover:text-brand-primary transition-colors cursor-pointer">
                       About Us
                     </button>
                   </li>
                   <li>
-                    <button onClick={() => handleQuickLinkClick("featured-programs")} className="hover:text-brand-primary transition-colors cursor-pointer">
+                    <button onClick={() => handleQuickLinkClick("#/programs")} className="hover:text-brand-primary transition-colors cursor-pointer">
                       Our Programs
                     </button>
                   </li>
                   <li>
-                    <button onClick={() => handleQuickLinkClick("story")} className="hover:text-brand-primary transition-colors cursor-pointer">
+                    <button onClick={() => handleQuickLinkClick("#/story")} className="hover:text-brand-primary transition-colors cursor-pointer">
                       Impact Stories
                     </button>
                   </li>

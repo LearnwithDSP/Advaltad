@@ -100,7 +100,7 @@ export const PROGRAM_CARDS: ProgramCard[] = [
     description: "Establishing standard technical labs providing high-demand training in software development, design, and micro-entrepreneurship for Africa's energetic youth.",
     impactMetric: "12,500+ Graduates Certified",
     iconName: "Cpu",
-    image: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1531482615713-2afd69097998?q=80&w=1200"
   },
   {
     id: "education",
@@ -109,7 +109,7 @@ export const PROGRAM_CARDS: ProgramCard[] = [
     description: "Rehabilitating public schools, distributing modernized digital learning modules, and granting fully-funded scholarships to exceptional underprivileged kids.",
     impactMetric: "85 Schools Supported",
     iconName: "GraduationCap",
-    image: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1588072432836-e10032774350?q=80&w=1200"
   },
   {
     id: "humanitarian-housing",
@@ -118,7 +118,7 @@ export const PROGRAM_CARDS: ProgramCard[] = [
     description: "Building resilient micro-housing using safe, locally-sourced materials, providing dignity and clean sanitation facilities for displaced families.",
     impactMetric: "450 Families Re-homed",
     iconName: "Home",
-    image: "https://images.unsplash.com/photo-1448630360428-65456885c650?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200"
   },
   {
     id: "community-dev",
@@ -127,7 +127,7 @@ export const PROGRAM_CARDS: ProgramCard[] = [
     description: "Delivering community solar grids and drilling hybrid solarboreholes for clean drinking water to jumpstart localized agricultural cooperatives.",
     impactMetric: "32 Off-grid Communities Powered",
     iconName: "Lightbulb",
-    image: "https://images.unsplash.com/photo-1489749798305-4fea3ae63d43?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?q=80&w=1200"
   },
   {
     id: "health-wellbeing",
@@ -136,7 +136,7 @@ export const PROGRAM_CARDS: ProgramCard[] = [
     description: "Bridging the accessibility gap with fully equipped mobile clinic networks and wellness centers specializing in preventive medicine and maternal hygiene instruction.",
     impactMetric: "48,000+ Health Interventions",
     iconName: "HeartPulse",
-    image: "https://images.unsplash.com/photo-1547082299-de196ea013d6?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?q=80&w=1200"
   }
 ];
 
@@ -150,7 +150,7 @@ export const IMPACT_STORIES: ImpactStory[] = [
     location: "Enugu, Nigeria",
     author: "Advaltad Media Core",
     date: "April 14, 2026",
-    image: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200"
   },
   {
     id: "story-2",
@@ -161,7 +161,7 @@ export const IMPACT_STORIES: ImpactStory[] = [
     location: "Mombasa, Kenya",
     author: "Grace Adebayo, Field Architect",
     date: "March 22, 2026",
-    image: "https://images.unsplash.com/photo-1448630360428-65456885c650?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200"
   }
 ];
 

@@ -13,21 +13,21 @@ interface FeaturedProgram {
 const FEATURED_PROGRAMS: FeaturedProgram[] = [
   {
     id: "tech-hubs",
-    image: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1200",
+    image: "https://images.unsplash.com/photo-1531482615713-2afd69097998?q=80&w=1200",
     title: "Youth Tech-Hubs & Accelerator",
     desc: "Establishing advanced digital learning labs to teach programming, software design, and modern entrepreneurship.",
     impact: "12,500+ Graduates Certified"
   },
   {
     id: "scholarships",
-    image: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1200",
+    image: "https://images.unsplash.com/photo-1588072432836-e10032774350?q=80&w=1200",
     title: "NextGen Education Support",
     desc: "Distributing modernized curriculum bundles and fully funding secondary academic scholarships for disadvantaged youth.",
     impact: "85 Public Schools Supported"
   },
   {
     id: "shelter",
-    image: "https://images.unsplash.com/photo-1448630360428-65456885c650?q=80&w=1200",
+    image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200",
     title: "Eco-Adobe Sustainable Shelter",
     desc: "Constructing safe, low-impact compressed-earth housing units for rural and climate-displaced households.",
     impact: "450 Families Re-homed"
@@ -64,7 +64,7 @@ export const CtaStrip: React.FC<CtaStripProps> = ({ onDonateClick, onAmbassadorC
           <div>
             <button
               onClick={() => {
-                document.getElementById("donate")?.scrollIntoView({ behavior: "smooth" });
+                window.location.hash = "#/programs";
               }}
               className="px-6 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-brand-charcoal font-bold text-xs transition-colors cursor-pointer"
             >
