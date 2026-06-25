@@ -15,6 +15,127 @@ export const AmbassadorSection: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  // Ambassador Login states
+  const [isLogin, setIsLogin] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) return;
+
+    setLoginError("");
+    setIsLoggingIn(true);
+    try {
+      const user = await db.findAmbassadorByEmail(loginEmail);
+      if (!user) {
+        setLoginError("This email is not registered in our Ambassador database. Please register first!");
+        setIsLoggingIn(false);
+        return;
+      }
+      
+      if (user.password && user.password !== loginPassword) {
+        setLoginError("Incorrect password. Please verify your credentials and try again.");
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // If Supabase is configured, sign in via Supabase Auth as well
+      if (isSupabaseConfigured && supabase) {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword
+        });
+        if (authError) {
+          setLoginError("Authentication failed: " + authError.message);
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
+      // Store active session email in localStorage
+      localStorage.setItem("advaltad_session_email", loginEmail);
+      
+      // Redirect to dashboard (this will trigger state check in App.tsx and show dashboard)
+      window.location.hash = "#/ambassador/dashboard";
+    } catch (err: any) {
+      setLoginError(err?.message || "An error occurred during authentication. Please try again.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const loadApprovedDemo = async () => {
+    try {
+      const email = "ramon@example.com";
+      const password = "password123";
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.auth.signUp({ email, password });
+        } catch (_) {}
+        await supabase.auth.signInWithPassword({ email, password });
+      }
+
+      const existing = await db.findAmbassadorByEmail(email);
+      if (!existing) {
+        await db.createAmbassador({
+          name: "Ramon Bisola",
+          city: "Lagos, Nigeria",
+          field: "Enriching African youths initiative",
+          email: email,
+          phone: "+234 801 234 5678",
+          password: password
+        });
+        const ramon = await db.findAmbassadorByEmail(email);
+        if (ramon) {
+          await db.updateStatus(ramon.id, "approved");
+        }
+      } else {
+        await db.updateStatus(existing.id, "approved");
+      }
+      localStorage.setItem("advaltad_session_email", email);
+      window.location.hash = "#/ambassador/dashboard";
+    } catch (e) {
+      localStorage.setItem("advaltad_session_email", "ramon@example.com");
+      window.location.hash = "#/ambassador/dashboard";
+    }
+  };
+
+  const loadPendingDemo = async () => {
+    const pendingEmail = "pending_demo@advaltad.org";
+    const password = "password123";
+    try {
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.auth.signUp({ email: pendingEmail, password });
+        } catch (_) {}
+        await supabase.auth.signInWithPassword({ email: pendingEmail, password });
+      }
+
+      const existing = await db.findAmbassadorByEmail(pendingEmail);
+      if (!existing) {
+        await db.createAmbassador({
+          name: "Chidi Okafor",
+          city: "Enugu, Nigeria",
+          field: "Schools (Stem and Robotic education)",
+          email: pendingEmail,
+          phone: "+234 902 345 6789",
+          password: password
+        });
+      } else {
+        await db.updateStatus(existing.id, "pending");
+      }
+      localStorage.setItem("advaltad_session_email", pendingEmail);
+      window.location.hash = "#/ambassador/dashboard";
+    } catch (e) {
+      localStorage.setItem("advaltad_session_email", pendingEmail);
+      window.location.hash = "#/ambassador/dashboard";
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -196,145 +317,253 @@ export const AmbassadorSection: React.FC = () => {
           <div className="lg:col-span-6">
             <AnimatePresence mode="wait">
               {!isRegistered ? (
-                <motion.div
-                  key="form-panel"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  className="bg-[#F7F8FA] rounded-[32px] p-8 sm:p-10 border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)]"
-                >
-                  <div className="pb-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div>
-                      <h3 className="text-lg font-display font-black text-brand-charcoal">Enrollment Registry</h3>
-                      <p className="text-xs text-slate-400 mt-1">Create your digital badge to access ambassador portals.</p>
-                    </div>
-                    <div className="text-left sm:text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.location.hash = "#/ambassador/dashboard";
-                        }}
-                        className="text-xs font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none flex items-center gap-1"
-                      >
-                        <Icon name="Lock" size={12} />
-                        Ambassador Login
-                      </button>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSubmit} className="space-y-4 pt-6 font-sans">
-                    {errorMessage && (
-                      <div className="p-3 bg-red-50 border border-red-100 text-xs text-red-800 rounded-xl flex items-start gap-2 text-left">
-                        <Icon name="AlertCircle" size={14} className="mt-0.5 flex-shrink-0" />
-                        <span>{errorMessage}</span>
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Professional Name</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Ramon Bisola"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                isLogin ? (
+                  <motion.div
+                    key="login-panel"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    className="bg-[#F7F8FA] rounded-[32px] p-8 sm:p-10 border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] text-left"
+                  >
+                    <div className="pb-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <div>
-                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Base City</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Lagos, Nigeria"
-                          value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
-                        />
+                        <h3 className="text-lg font-display font-black text-brand-charcoal">Ambassador Login</h3>
+                        <p className="text-xs text-slate-400 mt-1">Sign in to access your custom peer dashboard.</p>
                       </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Focus Interest</label>
-                        <select
-                          value={field}
-                          onChange={(e) => setField(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                      <div className="text-left sm:text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsLogin(false);
+                          }}
+                          className="text-xs font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none flex items-center gap-1"
                         >
-                          <option>Enriching African youths initiative</option>
-                          <option>Schools (Stem and Robotic education)</option>
-                          <option>Green/Agriculture</option>
-                          <option>Humanitarian housing scheme</option>
-                          <option>Teen club</option>
-                          <option>Sponsorship</option>
-                          <option>Emergency relief</option>
-                          <option>Care for the aged</option>
-                        </select>
+                          <Icon name="UserPlus" size={12} />
+                          Create Badge
+                        </button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <form onSubmit={handleLoginSubmit} className="space-y-4 pt-6 font-sans">
+                      {loginError && (
+                        <div className="p-3 bg-red-50 border border-red-100 text-xs text-red-800 rounded-xl flex items-start gap-2 text-left animate-shake">
+                          <Icon name="AlertCircle" size={14} className="mt-0.5 flex-shrink-0" />
+                          <span>{loginError}</span>
+                        </div>
+                      )}
+                      
                       <div>
-                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Email</label>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Registered Email</label>
                         <input
                           type="email"
                           required
                           placeholder="e.g. ramon@example.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
                           className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Phone Number</label>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Password</label>
                         <input
-                          type="tel"
+                          type="password"
                           required
-                          placeholder="e.g. +234 801 234 5678"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="••••••••"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
                           className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                         />
                       </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Create Password</label>
-                      <input
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
-                      />
-                    </div>
+                      <button
+                        type="submit"
+                        disabled={isLoggingIn || !loginEmail || !loginPassword}
+                        className="w-full py-4 mt-2 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-xs font-display font-black tracking-widest text-white shadow-lg shadow-brand-primary/10 transition-colors uppercase cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        {isLoggingIn ? "Signing In..." : "Sign In to Corridor"}
+                      </button>
 
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !name || !city || !email || !phone || !password}
-                      className="w-full py-4 mt-2 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-xs font-display font-black tracking-widest text-white shadow-lg shadow-brand-primary/10 transition-colors uppercase cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      {isSubmitting ? "Becoming an Ambassador..." : "Become an Ambassador."}
-                    </button>
+                      {/* Fast-Tracks inside embedded login */}
+                      <div className="pt-4 border-t border-slate-200 mt-4 space-y-2">
+                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-center">Fast-Track Interactive Prototypes</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={loadApprovedDemo}
+                            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 rounded-xl text-[10px] font-bold text-emerald-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Icon name="CheckCircle" size={11} />
+                            Ramon (Approved)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={loadPendingDemo}
+                            className="px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-100 rounded-xl text-[10px] font-bold text-amber-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Icon name="Clock" size={11} />
+                            Demo (Pending)
+                          </button>
+                        </div>
+                      </div>
 
-                    <div className="pt-4 text-center border-t border-slate-200 mt-4">
-                      <p className="text-xs text-slate-500">
-                        Already registered?{" "}
+                      <div className="pt-2 text-center">
+                        <p className="text-xs text-slate-500">
+                          Need an account?{" "}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsLogin(false);
+                            }}
+                            className="font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none"
+                          >
+                            Register here
+                          </button>
+                        </p>
+                      </div>
+                    </form>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="form-panel"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    className="bg-[#F7F8FA] rounded-[32px] p-8 sm:p-10 border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] text-left"
+                  >
+                    <div className="pb-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <h3 className="text-lg font-display font-black text-brand-charcoal">Enrollment Registry</h3>
+                        <p className="text-xs text-slate-400 mt-1">Create your digital badge to access ambassador portals.</p>
+                      </div>
+                      <div className="text-left sm:text-right">
                         <button
                           type="button"
                           onClick={() => {
-                            window.location.hash = "#/ambassador/dashboard";
+                            setIsLogin(true);
                           }}
-                          className="font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none"
+                          className="text-xs font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none flex items-center gap-1"
                         >
-                          Login to Dashboard
+                          <Icon name="Lock" size={12} />
+                          Ambassador Login
                         </button>
-                      </p>
+                      </div>
                     </div>
-                  </form>
-                </motion.div>
+
+                    <form onSubmit={handleSubmit} className="space-y-4 pt-6 font-sans">
+                      {errorMessage && (
+                        <div className="p-3 bg-red-50 border border-red-100 text-xs text-red-800 rounded-xl flex items-start gap-2 text-left">
+                          <Icon name="AlertCircle" size={14} className="mt-0.5 flex-shrink-0" />
+                          <span>{errorMessage}</span>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Professional Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Ramon Bisola"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Base City</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Lagos, Nigeria"
+                            value={city}
+                            onChange={(e) => setCity(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Focus Interest</label>
+                          <select
+                            value={field}
+                            onChange={(e) => setField(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          >
+                            <option>Enriching African youths initiative</option>
+                            <option>Schools (Stem and Robotic education)</option>
+                            <option>Green/Agriculture</option>
+                            <option>Humanitarian housing scheme</option>
+                            <option>Teen club</option>
+                            <option>Sponsorship</option>
+                            <option>Emergency relief</option>
+                            <option>Care for the aged</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Email</label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="e.g. ramon@example.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Phone Number</label>
+                          <input
+                            type="tel"
+                            required
+                            placeholder="e.g. +234 801 234 5678"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Create Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !name || !city || !email || !phone || !password}
+                        className="w-full py-4 mt-2 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-xs font-display font-black tracking-widest text-white shadow-lg shadow-brand-primary/10 transition-colors uppercase cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        {isSubmitting ? "Becoming an Ambassador..." : "Become an Ambassador."}
+                      </button>
+
+                      <div className="pt-4 text-center border-t border-slate-200 mt-4">
+                        <p className="text-xs text-slate-500">
+                          Already registered?{" "}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsLogin(true);
+                            }}
+                            className="font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none"
+                          >
+                            Login to Dashboard
+                          </button>
+                        </p>
+                      </div>
+                    </form>
+                  </motion.div>
+                )
               ) : (
                 <motion.div
                   key="badge-panel"

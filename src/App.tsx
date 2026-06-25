@@ -36,15 +36,6 @@ export default function App() {
       const hasSession = !!localStorage.getItem("advaltad_session_email");
       setIsAuthenticated(hasSession);
 
-      const lowercaseRoute = hash.toLowerCase();
-      const isDashboard = lowercaseRoute.includes("growth-ambassadors") || lowercaseRoute.includes("ambassador/dashboard");
-
-      if (isDashboard && !hasSession) {
-        // Automatically redirect a logged-out user to the homepage
-        window.location.href = "/";
-        return;
-      }
-
       // Auto-jump view scroll to page absolute top on transitions
       window.scrollTo({ top: 0, behavior: "instant" as any });
     };
