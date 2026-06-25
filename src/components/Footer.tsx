@@ -181,10 +181,12 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
           {/* Copyright ribbon */}
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] text-slate-400 font-display font-semibold">
             <span>© Advaltad Growth and Support Foundation. All Rights Reserved.</span>
-            <div className="flex gap-4">
+            <div className="flex items-center gap-4">
               <a href="#privacy" className="hover:text-[#0E5A45]">Privacy Charter</a>
               <span>•</span>
               <a href="#terms" className="hover:text-[#0E5A45]">Terms of Synergy</a>
+              <span>•</span>
+              <a href="#/admin" className="text-emerald-700 hover:text-emerald-800 font-bold bg-emerald-50/70 border border-emerald-100 px-2 py-0.5 rounded transition-all">Admin Portal</a>
             </div>
           </div>
 

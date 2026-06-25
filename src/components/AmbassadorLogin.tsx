@@ -1,26 +1,103 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Icon } from "./Icon";
+import { db } from "../lib/supabase";
 
 interface AmbassadorLoginProps {
-  onLoginSuccess: (name: string, region: string) => void;
+  onLoginSuccess: (email: string) => void;
 }
 
 export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess }) => {
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [region, setRegion] = useState("");
-  const [field, setField] = useState("Youth Technology Labs");
-  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !region || !agreeTerms) return;
-    onLoginSuccess(name, region);
+    if (!email || !password) return;
+
+    setErrorMsg("");
+    setIsLoggingIn(true);
+    try {
+      const user = await db.findAmbassadorByEmail(email);
+      if (!user) {
+        setErrorMsg("This email is not registered in our Ambassador database. Please register first!");
+        setIsLoggingIn(false);
+        return;
+      }
+      
+      // Check password (simple comparison for prototyping; fits local/Supabase database)
+      if (user.password && user.password !== password) {
+        setErrorMsg("Incorrect password. Please verify your credentials and try again.");
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Store active session email in localStorage
+      localStorage.setItem("advaltad_session_email", email);
+      onLoginSuccess(email);
+    } catch (err) {
+      setErrorMsg("An error occurred during authentication. Please try again.");
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
-  const loadDemo = () => {
-    onLoginSuccess("Ramon Bisola", "Lagos, Nigeria");
+  const loadApprovedDemo = async () => {
+    // Make sure Ramon is in DB, then log him in
+    try {
+      const existing = await db.findAmbassadorByEmail("ramon@example.com");
+      if (!existing) {
+        await db.createAmbassador({
+          name: "Ramon Bisola",
+          city: "Lagos, Nigeria",
+          field: "Enriching African youths initiative",
+          email: "ramon@example.com",
+          phone: "+234 801 234 5678",
+          password: "password123"
+        });
+        // Auto approve Ramon
+        const ramon = await db.findAmbassadorByEmail("ramon@example.com");
+        if (ramon) {
+          await db.updateStatus(ramon.id, "approved");
+        }
+      } else {
+        // Ensure Ramon is approved for approved demo
+        await db.updateStatus(existing.id, "approved");
+      }
+      localStorage.setItem("advaltad_session_email", "ramon@example.com");
+      onLoginSuccess("ramon@example.com");
+    } catch (e) {
+      localStorage.setItem("advaltad_session_email", "ramon@example.com");
+      onLoginSuccess("ramon@example.com");
+    }
+  };
+
+  const loadPendingDemo = async () => {
+    // Create or locate a pending demo user
+    const pendingEmail = "pending_demo@advaltad.org";
+    try {
+      const existing = await db.findAmbassadorByEmail(pendingEmail);
+      if (!existing) {
+        await db.createAmbassador({
+          name: "Chidi Okafor",
+          city: "Enugu, Nigeria",
+          field: "Schools (Stem and Robotic education)",
+          email: pendingEmail,
+          phone: "+234 902 345 6789",
+          password: "password123"
+        });
+      } else {
+        // Ensure status is pending for pending demo
+        await db.updateStatus(existing.id, "pending");
+      }
+      localStorage.setItem("advaltad_session_email", pendingEmail);
+      onLoginSuccess(pendingEmail);
+    } catch (e) {
+      localStorage.setItem("advaltad_session_email", pendingEmail);
+      onLoginSuccess(pendingEmail);
+    }
   };
 
   return (
@@ -39,7 +116,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
             </div>
             <h3 className="text-2xl font-black font-serif leading-tight">Advaltad Global Networks</h3>
             <p className="text-xs text-gray-300 leading-relaxed font-sans mt-2">
-              Join 1,200+ global ambassadors directing solar power systems, block compressors, and curriculum packages across active on-field grids.
+              Access the exclusive digital corridor of certified ambassadors overseeing real on-field regional development schemes.
             </p>
           </div>
 
@@ -83,89 +160,68 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         {/* Right authenticating form column */}
         <div className="md:col-span-7 p-8 sm:p-12 flex flex-col justify-center space-y-6">
           <div className="space-y-1">
-            <h4 className="text-xl font-bold text-gray-900 tracking-tight">Become a Growth Ambassador</h4>
-            <p className="text-xs text-slate-500">Sign up or enter existing credentials to launch your local dashboard segment instantly.</p>
+            <h4 className="text-xl font-bold text-gray-900 tracking-tight">Growth Ambassador Portal</h4>
+            <p className="text-xs text-slate-500">Sign in to your authorized secure desk or examine interactive prototypes.</p>
           </div>
+
+          {errorMsg && (
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5">
+              <Icon name="AlertCircle" size={16} className="mt-0.5 flex-shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4 text-xs font-sans">
             <div>
-              <label className="block text-gray-500 font-bold uppercase mb-1">Your Full Name</label>
+              <label className="block text-gray-500 font-bold uppercase mb-1">Email Address</label>
               <input
-                id="login-name"
+                id="login-email"
                 required
-                type="text"
-                placeholder="e.g. Ramon Bisola"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                type="email"
+                placeholder="e.g. ramon@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-100 hover:border-gray-200 focus:border-emerald-600 rounded-xl font-medium text-sm text-gray-900 focus:outline-none transition-all"
               />
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-500 font-bold uppercase mb-1">Email Address</label>
-                <input
-                  id="login-email"
-                  required
-                  type="email"
-                  placeholder="ramon@gmail.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-100 hover:border-gray-200 focus:border-emerald-600 rounded-xl font-medium text-sm text-gray-900 focus:outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-500 font-bold uppercase mb-1">State & Country</label>
-                <input
-                  id="login-region"
-                  required
-                  type="text"
-                  placeholder="e.g. Lagos, Nigeria"
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-100 hover:border-gray-200 focus:border-emerald-600 rounded-xl font-medium text-sm text-gray-900 focus:outline-none transition-all"
-                />
-              </div>
             </div>
 
             <div>
-              <label className="block text-gray-500 font-bold uppercase mb-1">Primary Field Fellowship Core</label>
-              <select
-                id="login-field"
-                value={field}
-                onChange={(e) => setField(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 hover:border-gray-200 focus:border-emerald-600 rounded-xl font-medium text-sm text-gray-900 focus:outline-none transition-all"
-              >
-                <option>Youth Technology Labs</option>
-                <option>NextGen Scholarships</option>
-                <option>Eco-sustainable housing</option>
-                <option>Mobile clinics hygiene</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
+              <label className="block text-gray-500 font-bold uppercase mb-1">Your Password</label>
               <input
-                id="login-agree"
+                id="login-password"
                 required
-                type="checkbox"
-                checked={agreeTerms}
-                onChange={(e) => setAgreeTerms(e.target.checked)}
-                className="w-4 h-4 rounded text-emerald-600 border-gray-200 focus:ring-emerald-500 cursor-pointer"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 hover:border-gray-200 focus:border-emerald-600 rounded-xl font-medium text-sm text-gray-900 focus:outline-none transition-all"
               />
-              <span className="text-[11px] text-gray-500 leading-none">
-                I agree to uphold the global peer audit commitment and code of service ethics.
-              </span>
             </div>
 
             <button
               id="login-submit-btn"
               type="submit"
-              disabled={!name || !email || !region || !agreeTerms}
-              className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-150 disabled:text-gray-400 text-white font-bold tracking-tight text-xs shadow-md transition-all cursor-pointer"
+              disabled={isLoggingIn || !email || !password}
+              className="w-full py-3.5 mt-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-150 disabled:text-gray-400 text-white font-bold tracking-tight text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
             >
-              Initialize Ambassador Profile & Sync Ledger
+              {isLoggingIn ? (
+                <>
+                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  Authenticating profile...
+                </>
+              ) : (
+                "Verify and Access Private Corridor"
+              )}
             </button>
+
+            <div className="text-center pt-1">
+              <p className="text-xs text-slate-500">
+                Don't have an account?{" "}
+                <a href="#/ambassador" className="font-bold text-emerald-600 hover:underline">
+                  Enroll in the registry
+                </a>
+              </p>
+            </div>
           </form>
 
           <div className="relative flex py-2 items-center">
@@ -174,16 +230,29 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
             <div className="flex-grow border-t border-gray-100"></div>
           </div>
 
-          <button
-            id="login-demo-btn"
-            onClick={loadDemo}
-            className="w-full py-3.5 rounded-xl border border-gray-200 hover:bg-gray-50 font-bold text-xs text-gray-700 flex items-center justify-center gap-2 cursor-pointer transition-all"
-          >
-            Launch Interactive Ambassador Demo Directly
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              id="login-approved-demo-btn"
+              onClick={loadApprovedDemo}
+              className="py-3 px-2 rounded-xl border border-gray-200 hover:bg-gray-50 font-bold text-[10px] sm:text-xs text-gray-700 flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:border-emerald-200"
+            >
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+              Approved Demo
+            </button>
+
+            <button
+              id="login-pending-demo-btn"
+              onClick={loadPendingDemo}
+              className="py-3 px-2 rounded-xl border border-gray-200 hover:bg-gray-50 font-bold text-[10px] sm:text-xs text-gray-700 flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:border-amber-200"
+            >
+              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+              Pending Demo
+            </button>
+          </div>
         </div>
 
       </div>
     </div>
   );
 };
+

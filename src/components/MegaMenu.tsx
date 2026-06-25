@@ -48,8 +48,8 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
         path = "#/home";
       } else if (anchor.includes("about") || anchor.includes("mission") || anchor.includes("leadership") || anchor.includes("values")) {
         path = "#/about";
-      } else if (anchor.includes("programs")) {
-        path = "#/programs";
+      } else if (anchor.startsWith("programs")) {
+        path = `#/${anchor}`;
       } else if (anchor.includes("story") || anchor.includes("annual-reports")) {
         path = "#/story";
       } else if (anchor.includes("gallery") || anchor.includes("videos") || anchor.includes("press") || anchor.includes("media")) {

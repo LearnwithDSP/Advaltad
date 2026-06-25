@@ -28,18 +28,21 @@ export const NAVIGATION_DATA: NavigationMenu = {
     href: "#programs",
     columns: [
       {
-        title: "Focus Areas",
+        title: "Youth, Education & Support",
         items: [
-          { label: "Youth Empowerment", href: "#programs?category=youth", description: "Skills, technology training & leadership labs.", iconName: "TrendingUp" },
-          { label: "Education Initiatives", href: "#programs?category=education", description: "Shaping the future through standard education.", iconName: "GraduationCap" },
-          { label: "Health Programs", href: "#programs?category=health", description: "Access to clean water, clinics, & wellness coaching.", iconName: "Heart" }
+          { label: "Enriching African youths initiative", href: "#programs?category=youth", description: "Practical vocational training, tech, and software skills.", iconName: "Cpu" },
+          { label: "Schools (Stem and Robotic education)", href: "#programs?category=schools", description: "Robotics and STEM integration in regional schools.", iconName: "GraduationCap" },
+          { label: "Teen club", href: "#programs?category=teen-club", description: "Mentorship and safe, creative hubs for growing teenagers.", iconName: "Users" },
+          { label: "Sponsorship", href: "#programs?category=sponsorship", description: "Direct support connecting donors to vulnerable children.", iconName: "Heart" }
         ]
       },
       {
-        title: "Sustainable Dev",
+        title: "Sustainability & Relief",
         items: [
-          { label: "Housing Projects", href: "#programs?category=housing", description: "Constructing safe, modern, and affordable houses.", iconName: "Home" },
-          { label: "Community Development", href: "#programs?category=community", description: "Eco-friendly, self-sustaining community grids.", iconName: "Globe" }
+          { label: "Green/Agriculture", href: "#programs?category=green-agri", description: "Climate-smart seeds, water boreholes, and agritech.", iconName: "Globe" },
+          { label: "Humanitarian housing scheme", href: "#programs?category=housing", description: "Dignified eco-adobe shelter for climate-displaced families.", iconName: "Home" },
+          { label: "Emergency relief", href: "#programs?category=relief", description: "Rapid distribution of hygiene, water, food, and first-aid packs.", iconName: "AlertCircle" },
+          { label: "Care for the aged", href: "#programs?category=aged-care", description: "Mobile clinical checkups and nutrition for senior citizens.", iconName: "HeartHandshake" }
         ]
       }
     ]
@@ -96,47 +99,74 @@ export const PROGRAM_CARDS: ProgramCard[] = [
   {
     id: "youth-empowerment",
     category: "YOUTH EMPOWERMENT",
-    title: "Youth Tech-Hubs & Accelerator",
-    description: "Establishing standard technical labs providing high-demand training in software development, design, and micro-entrepreneurship for Africa's energetic youth.",
-    impactMetric: "12,500+ Graduates Certified",
+    title: "Enriching African youths initiative",
+    description: "Equipping the next generation of African leaders with practical vocational training, high-demand software development modules, digital engineering skills, and creative business bootcamps to build self-reliance.",
+    impactMetric: "12,500+ Youths Graduated",
     iconName: "Cpu",
     image: "https://images.unsplash.com/photo-1531482615713-2afd69097998?q=80&w=1200"
   },
   {
-    id: "education",
-    category: "EDUCATION & LITERACY",
-    title: "NextGen Scholarship & Literacy",
-    description: "Rehabilitating public schools, distributing modernized digital learning modules, and granting fully-funded scholarships to exceptional underprivileged kids.",
-    impactMetric: "85 Schools Supported",
+    id: "schools-stem",
+    category: "EDUCATION & TECHNOLOGY",
+    title: "Schools (Stem and Robotic education)",
+    description: "Integrating world-class robotics instruction, artificial intelligence workshops, and practical Science, Technology, Engineering, and Math curricula into underprivileged public and regional schools across Sub-Saharan climates.",
+    impactMetric: "85 Schools Standardized",
     iconName: "GraduationCap",
-    image: "https://images.unsplash.com/photo-1588072432836-e10032774350?q=80&w=1200"
+    image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200"
   },
   {
-    id: "humanitarian-housing",
+    id: "green-agri",
+    category: "AGRICULTURE & ENVIRONMENT",
+    title: "Green/Agriculture",
+    description: "Empowering rural agrarian cooperatives with climate-smart seeds, hybrid solar-powered irrigation wells, sustainable land-handling training, and modern agritech utilities.",
+    impactMetric: "42 Active Agritech Hubs",
+    iconName: "Globe",
+    image: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?q=80&w=1200"
+  },
+  {
+    id: "housing",
     category: "HUMANITARIAN HOUSING",
-    title: "Eco-Adobe Sustainable Shelter",
-    description: "Building resilient micro-housing using safe, locally-sourced materials, providing dignity and clean sanitation facilities for displaced families.",
-    impactMetric: "450 Families Re-homed",
+    title: "Humanitarian housing scheme",
+    description: "Constructing safe, climate-resilient, energy-efficient housing modules using eco-adobe masonry and integrated solar panels, restoring dignity for displaced communities.",
+    impactMetric: "450+ Solid Shelter Blocks Handed Over",
     iconName: "Home",
     image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200"
   },
   {
-    id: "community-dev",
-    category: "COMMUNITY DEVELOPMENT",
-    title: "Sovereign Green Power Grids",
-    description: "Delivering community solar grids and drilling hybrid solarboreholes for clean drinking water to jumpstart localized agricultural cooperatives.",
-    impactMetric: "32 Off-grid Communities Powered",
-    iconName: "Lightbulb",
-    image: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?q=80&w=1200"
+    id: "teen-club",
+    category: "COMMUNITY & TEENS",
+    title: "Teen club",
+    description: "Constructive spaces nurturing young teens through positive life skills, leadership coaching, dynamic arts, creative expression, and high-quality educational mentorship.",
+    impactMetric: "3,200+ Active Teen Members",
+    iconName: "Users",
+    image: "https://images.unsplash.com/photo-1509099836639-18ba1795216d?q=80&w=1200"
   },
   {
-    id: "health-wellbeing",
-    category: "HEALTH & WELLBEING",
-    title: "Mobile Clinics & Clean Living Hubs",
-    description: "Bridging the accessibility gap with fully equipped mobile clinic networks and wellness centers specializing in preventive medicine and maternal hygiene instruction.",
-    impactMetric: "48,000+ Health Interventions",
-    iconName: "HeartPulse",
+    id: "sponsorship",
+    category: "INDIVIDUAL SPONSORSHIP",
+    title: "Sponsorship",
+    description: "Direct sponsorship pathways connecting local children, orphans, and vulnerable scholars directly to sponsors to guarantee school tuition, medical support, clothing, and books.",
+    impactMetric: "1,500+ Vulnerable Children Sponsored",
+    iconName: "Heart",
+    image: "https://images.unsplash.com/photo-1588072432836-e10032774350?q=80&w=1200"
+  },
+  {
+    id: "relief",
+    category: "EMERGENCY RELIEF",
+    title: "Emergency relief",
+    description: "Rapid disaster response teams delivering vital supplies, medical aid kits, clean water filters, and instant hygiene resources to emergency and drought-affected zones.",
+    impactMetric: "60,000+ Direct Care Interventions",
+    iconName: "AlertCircle",
     image: "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?q=80&w=1200"
+  },
+  {
+    id: "aged-care",
+    category: "SENIOR WELFARE",
+    title: "Care for the aged",
+    description: "Dedicated outreach supplying nutritional food packages, preventative health assessments, homecare logistics, and community assistance for lonely senior citizens.",
+    impactMetric: "2,800+ Senior Citizens Supported",
+    iconName: "HeartHandshake",
+    image: "https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?q=80&w=2000"
   }
 ];
 

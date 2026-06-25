@@ -9,6 +9,7 @@ import { MegaMenu } from "./components/MegaMenu";
 import { Footer } from "./components/Footer";
 import { AmbassadorLogin } from "./components/AmbassadorLogin";
 import { AmbassadorDashboard } from "./components/AmbassadorDashboard";
+import { AdminPortal } from "./components/AdminPortal";
 
 // Import new modular independent page components
 import { HomePage } from "./pages/HomePage";
@@ -61,9 +62,28 @@ export default function App() {
 
   const lowercaseRoute = route.toLowerCase();
   const isDashboardView = lowercaseRoute.includes("growth-ambassadors");
-  const hideHeaderFooter = isDashboardView && isAuthenticated;
+  const isAdminView = lowercaseRoute.includes("admin");
+  const isAdminAuthenticated = !!localStorage.getItem("advaltad_admin_session_email");
+  const hideHeaderFooter = (isDashboardView && isAuthenticated) || (isAdminView && isAdminAuthenticated);
 
   const renderContent = () => {
+    if (isAdminView) {
+      return (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key="admin-flow-view"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.2 }}
+            className="w-full h-full"
+          >
+            <AdminPortal onLogout={handleLogout} />
+          </motion.div>
+        </AnimatePresence>
+      );
+    }
+
     if (isDashboardView) {
       return (
         <AnimatePresence mode="wait">

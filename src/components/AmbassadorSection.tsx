@@ -1,24 +1,68 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
+import { db } from "../lib/supabase";
 
 export const AmbassadorSection: React.FC = () => {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
-  const [field, setField] = useState("Youth Technology Labs");
+  const [field, setField] = useState("Enriching African youths initiative");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [isRegistered, setIsRegistered] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !city) return;
+    if (!name || !city || !email || !phone || !password) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
+    setErrorMessage("");
+    try {
+      // Check if email already registered
+      const existing = await db.findAmbassadorByEmail(email);
+      if (existing) {
+        setErrorMessage("An ambassador with this email address is already registered.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Create new ambassador in Supabase/local DB
+      const newlyCreated = await db.createAmbassador({
+        name,
+        city,
+        field,
+        email,
+        phone,
+        password
+      });
+
+      // Log registration activity
+      await db.logActivity({
+        ambassador_id: newlyCreated.id,
+        ambassador_name: newlyCreated.name,
+        type: "registration",
+        desc: `Submitted registration for professional portfolio in ${newlyCreated.city} (${newlyCreated.field})`
+      });
+
+      // Save user session email in localStorage to auto-login
+      localStorage.setItem("advaltad_session_email", email);
+
+      setTimeout(() => {
+        setIsSubmitting(false);
+        setIsRegistered(true);
+        // Automatically redirect to the Growth Ambassador Dashboard
+        window.location.hash = "#/growth-ambassadors";
+      }, 1500);
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Registration failed. Please check your network or try again.");
       setIsSubmitting(false);
-      setIsRegistered(true);
-    }, 1200);
+    }
   };
+
 
   const BENEFITS = [
     {
@@ -98,7 +142,13 @@ export const AmbassadorSection: React.FC = () => {
                     <p className="text-xs text-slate-400 mt-1">Create your digital badge to access ambassador portals.</p>
                   </div>
 
-                  <form onSubmit={handleSubmit} className="space-y-5 pt-6 font-sans">
+                  <form onSubmit={handleSubmit} className="space-y-4 pt-6 font-sans">
+                    {errorMessage && (
+                      <div className="p-3 bg-red-50 border border-red-100 text-xs text-red-800 rounded-xl flex items-start gap-2 text-left">
+                        <Icon name="AlertCircle" size={14} className="mt-0.5 flex-shrink-0" />
+                        <span>{errorMessage}</span>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Professional Name</label>
                       <input
@@ -107,7 +157,7 @@ export const AmbassadorSection: React.FC = () => {
                         placeholder="e.g. Ramon Bisola"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                       />
                     </div>
 
@@ -120,7 +170,7 @@ export const AmbassadorSection: React.FC = () => {
                           placeholder="e.g. Lagos, Nigeria"
                           value={city}
                           onChange={(e) => setCity(e.target.value)}
-                          className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                         />
                       </div>
 
@@ -129,22 +179,64 @@ export const AmbassadorSection: React.FC = () => {
                         <select
                           value={field}
                           onChange={(e) => setField(e.target.value)}
-                          className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
                         >
-                          <option>Youth Technology Labs</option>
-                          <option>Scholastic Scholarships</option>
-                          <option>Eco-sustainable housing</option>
-                          <option>Mobile health clinics</option>
+                          <option>Enriching African youths initiative</option>
+                          <option>Schools (Stem and Robotic education)</option>
+                          <option>Green/Agriculture</option>
+                          <option>Humanitarian housing scheme</option>
+                          <option>Teen club</option>
+                          <option>Sponsorship</option>
+                          <option>Emergency relief</option>
+                          <option>Care for the aged</option>
                         </select>
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Email</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="e.g. ramon@example.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Phone Number</label>
+                        <input
+                          type="tel"
+                          required
+                          placeholder="e.g. +234 801 234 5678"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Create Password</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                      />
+                    </div>
+
                     <button
                       type="submit"
-                      disabled={isSubmitting || !name || !city}
-                      className="w-full py-4 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-xs font-display font-black tracking-widest text-white shadow-lg shadow-brand-primary/10 transition-colors uppercase cursor-pointer flex items-center justify-center gap-2"
+                      disabled={isSubmitting || !name || !city || !email || !phone || !password}
+                      className="w-full py-4 mt-2 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-xs font-display font-black tracking-widest text-white shadow-lg shadow-brand-primary/10 transition-colors uppercase cursor-pointer flex items-center justify-center gap-2"
                     >
-                      {isSubmitting ? "Generating Credentials..." : "Generate Fellowship Credentials"}
+                      {isSubmitting ? "Becoming an Ambassador..." : "Become an Ambassador."}
                     </button>
                   </form>
                 </motion.div>

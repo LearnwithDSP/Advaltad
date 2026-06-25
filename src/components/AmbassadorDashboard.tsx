@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
+import { db, DbAmbassador } from "../lib/supabase";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -89,14 +90,97 @@ const hubFlowData = [
 ];
 
 export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<"overview" | "certificate" | "p2p" | "payments" | "projects">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "certificate" | "p2p" | "payments" | "projects" | "profile">("overview");
   
+  // Ambassador Database Profile state
+  const [profile, setProfile] = useState<DbAmbassador | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [allPendingAmbassadors, setAllPendingAmbassadors] = useState<DbAmbassador[]>([]);
+  const [isSimulatingApproval, setIsSimulatingApproval] = useState(false);
+
+  // Form states for profile edit
+  const [editName, setEditName] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editField, setEditField] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+
   // Ambassador Personal State
   const [ambassadorName, setAmbassadorName] = useState("Ramon Bisola");
   const [ambassadorRegion, setAmbassadorRegion] = useState("Lagos, Nigeria");
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
   const [avuBalance, setAvuBalance] = useState(1250);
+
+  const fetchAmbassadorData = async () => {
+    const sessionEmail = localStorage.getItem("advaltad_session_email") || "ramon@example.com";
+    setIsLoadingProfile(true);
+    try {
+      let user = await db.findAmbassadorByEmail(sessionEmail);
+      if (!user) {
+        // Create auto-fallback if none exists yet (e.g. initial demo setup)
+        user = await db.createAmbassador({
+          name: "Ramon Bisola",
+          city: "Lagos, Nigeria",
+          field: "Enriching African youths initiative",
+          email: sessionEmail,
+          phone: "+234 801 234 5678",
+          password: "password123"
+        });
+        // Auto approve Ramon's default login
+        if (sessionEmail === "ramon@example.com") {
+          await db.updateStatus(user.id, "approved");
+          user.status = "approved";
+        }
+      }
+      setProfile(user);
+      setAmbassadorName(user.name);
+      setAmbassadorRegion(user.city);
+      setAmbassadorField(user.field);
+      setAvuBalance(user.avu_balance);
+
+      setEditName(user.name);
+      setEditCity(user.city);
+      setEditField(user.field);
+      setEditPhone(user.phone || "");
+      setEditPassword(user.password || "");
+
+      // Format clean date based on registration or default
+      if (user.created_at) {
+        const d = new Date(user.created_at);
+        const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+        setCommissionDate(d.toLocaleDateString('en-US', options));
+      }
+
+      // Also grab other pending accounts to show in simulator
+      const all = await db.getAmbassadors();
+      setAllPendingAmbassadors(all.filter(a => a.status === "pending"));
+    } catch (e) {
+      console.error("Error loading ambassador data", e);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAmbassadorData();
+  }, []);
+
+  const handleSimulateApproval = async (idToApprove: string) => {
+    setIsSimulatingApproval(true);
+    try {
+      await db.updateStatus(idToApprove, "approved");
+      // Re-fetch database record to update states smoothly
+      await fetchAmbassadorData();
+    } catch (err) {
+      console.error("Error simulating approval", err);
+    } finally {
+      setIsSimulatingApproval(false);
+    }
+  };
+
   
   // Certificate Interactive Form State
   const [certFormOpen, setCertFormOpen] = useState(false);
@@ -199,13 +283,36 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [itemExchangeSuccess, setItemExchangeSuccess] = useState(false);
 
   // Simulate updating the Certificate fields
-  const handleCertSubmit = (e: React.FormEvent) => {
+  const handleCertSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAmbassadorName(tempName);
     setAmbassadorRegion(tempRegion);
     setAmbassadorField(tempField);
     setCommissionDate(tempDate);
     setCertFormOpen(false);
+
+    // Keep database in sync if logged in
+    if (profile?.id) {
+      try {
+        await db.updateProfile(profile.id, {
+          name: tempName,
+          city: tempRegion,
+          field: tempField
+        });
+        await db.logActivity({
+          ambassador_id: profile.id,
+          ambassador_name: tempName,
+          type: "profile_update",
+          desc: `Updated fellowship certificate credentials: name to "${tempName}", division to "${tempField}"`
+        });
+        // Update edit states too
+        setEditName(tempName);
+        setEditCity(tempRegion);
+        setEditField(tempField);
+      } catch (err) {
+        console.error("Failed to sync certificate update with profile database:", err);
+      }
+    }
 
     // Add a positive system notification
     const newNotif: NotificationItem = {
@@ -219,12 +326,83 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setNotifications([newNotif, ...notifications]);
   };
 
-  const handleP2PTransfer = (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.id) return;
+    setIsUpdatingProfile(true);
+    setUpdateSuccess(false);
+    try {
+      const updates = {
+        name: editName,
+        city: editCity,
+        field: editField,
+        phone: editPhone,
+        password: editPassword
+      };
+      await db.updateProfile(profile.id, updates);
+      await db.logActivity({
+        ambassador_id: profile.id,
+        ambassador_name: editName,
+        type: "profile_update",
+        desc: `Updated public registry profile: city to "${editCity}", phone contact, and focus division to "${editField}"`
+      });
+      
+      // Update local states
+      setAmbassadorName(editName);
+      setAmbassadorRegion(editCity);
+      setAmbassadorField(editField);
+      
+      // Also update certificate temp states so they stay matched
+      setTempName(editName);
+      setTempRegion(editCity);
+      setTempField(editField);
+
+      // Reload database profile record
+      await fetchAmbassadorData();
+      
+      setUpdateSuccess(true);
+      
+      // Add system notification
+      const newNotif: NotificationItem = {
+        id: "n-profile-" + Date.now(),
+        title: "Profile details updated",
+        desc: `Your professional profile and base city were updated successfully.`,
+        time: "Just now",
+        unread: true,
+        type: "general"
+      };
+      setNotifications(prev => [newNotif, ...prev]);
+
+      setTimeout(() => setUpdateSuccess(false), 4000);
+    } catch (err) {
+      console.error("Error updating profile details", err);
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleP2PTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseInt(transferAmount);
     if (!transferTargetId || isNaN(amt) || amt <= 0 || amt > avuBalance) return;
 
     setAvuBalance(prev => prev - amt);
+    
+    if (profile?.id) {
+      try {
+        await db.updateAvuBalance(profile.id, avuBalance - amt);
+        await db.logActivity({
+          ambassador_id: profile.id,
+          ambassador_name: ambassadorName,
+          type: "avu_transfer",
+          desc: `Initiated peer ledger transfer of ${amt} AVU to Trustee [${transferTargetId}] for: "${transferReason || "Peer technical support"}"`,
+          amount: `${amt} AVU`
+        });
+      } catch (err) {
+        console.error("Failed to update ledger on P2P", err);
+      }
+    }
+    
     setTransferSuccess(true);
     
     const newNotif: NotificationItem = {
@@ -245,14 +423,28 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }, 4000);
   };
 
-  const handleDirectDonationGateway = (e: React.FormEvent) => {
+  const handleDirectDonationGateway = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(termAmount);
     if (!termDonorName || !termDonorEmail || isNaN(amt) || amt <= 0) return;
 
     setTermStatus("submitting");
-    setTimeout(() => {
+    setTimeout(async () => {
       setTermStatus("completed");
+      
+      if (profile?.id) {
+        try {
+          await db.logActivity({
+            ambassador_id: profile.id,
+            ambassador_name: ambassadorName,
+            type: "donation_logged",
+            desc: `Logged physical check/cash donation of $${amt} USD from ${termDonorName} (${termDonorEmail}) into regional pipeline tracker.`,
+            amount: `$${amt} USD`
+          });
+        } catch (err) {
+          console.error("Failed to log activity", err);
+        }
+      }
       
       const newNotif: NotificationItem = {
         id: "n-term-" + Date.now(),
@@ -294,9 +486,15 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight text-gray-900">{ambassadorName}</h2>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase tracking-wider">
-                  Fellow ambassador
-                </span>
+                {profile?.status === "pending" ? (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                    Awaiting Approval
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase tracking-wider">
+                    Fellow ambassador
+                  </span>
+                )}
               </div>
               <p className="text-xs text-gray-500 font-sans mt-0.5">
                 {ambassadorRegion} • Lead Scholar in <span className="font-semibold text-emerald-700">{ambassadorField}</span>
@@ -406,7 +604,135 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
-        <div className="grid lg:grid-cols-12 gap-8 items-start">
+        {isLoadingProfile ? (
+          <div className="bg-white rounded-3xl p-20 border border-slate-100 flex flex-col items-center justify-center space-y-4 shadow-sm text-center">
+            <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-mono text-slate-500 uppercase tracking-widest">Securing Ledger Link...</p>
+          </div>
+        ) : profile?.status === "pending" ? (
+          <div className="max-w-4xl mx-auto space-y-8">
+            <div className="bg-white rounded-3xl border border-amber-100 shadow-xl overflow-hidden p-8 sm:p-10 space-y-8 relative">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-slate-100">
+                <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <Icon name="ShieldAlert" size={32} className="animate-pulse" />
+                </div>
+                <div className="text-center sm:text-left space-y-1">
+                  <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-100 text-amber-800 text-[10px] font-extrabold uppercase tracking-widest">
+                    Awaiting Verification
+                  </span>
+                  <h3 className="text-2xl font-display font-black text-[#1E293B] tracking-tight pt-1">
+                    Administrative Authorization Pending
+                  </h3>
+                  <p className="text-xs text-slate-500 font-sans">
+                    Registry credentials synchronized. Awaiting Chief Administrator signature.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-6 text-xs font-sans">
+                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100/50 space-y-3 text-left">
+                  <h4 className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Your Registered Profile</h4>
+                  <div className="space-y-2 pt-1">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 block">FULL NAME</span>
+                      <span className="text-sm font-semibold text-slate-800">{profile.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 block">BASE REGION</span>
+                      <span className="text-sm font-semibold text-slate-800">{profile.city}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 block">FOCUS DIVISION</span>
+                      <span className="text-sm font-semibold text-slate-800">{profile.field}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 block">EMAIL ADDRESS</span>
+                      <span className="text-sm font-semibold text-slate-800">{profile.email}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-emerald-50/40 border border-emerald-100/50 flex flex-col justify-between text-left">
+                  <div className="space-y-2">
+                    <h4 className="font-bold text-emerald-800 uppercase tracking-wider text-[10px]">Registry Commitment</h4>
+                    <p className="text-slate-600 leading-relaxed text-xs">
+                      Every authorized Advaltad Ambassador is designated as a digital sovereign trustee. Your credentials are stored securely on the ledger and await supervisor certification to prevent invalid field project deployments.
+                    </p>
+                  </div>
+                  <div className="pt-4 text-[10px] text-emerald-600 font-mono">
+                    SECURE_ID: {profile.id} • PENDING_SYNC
+                  </div>
+                </div>
+              </div>
+
+              {/* Admin simulator panel inside the card! */}
+              <div className="p-6 rounded-2xl bg-[#F7F8FA] border border-slate-200 space-y-4 text-left">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest font-mono">
+                    INTERACTIVE ADMIN SIMULATOR PANEL
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                    This interactive simulator is built for demonstration purposes. In production, an administrator receives a secure email to approve new candidates via their Supabase console. Click below to simulate an immediate admin approval for this account.
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button
+                      onClick={() => handleSimulateApproval(profile.id)}
+                      disabled={isSimulatingApproval}
+                      className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white font-bold text-xs tracking-wider uppercase flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-emerald-600/10"
+                    >
+                      {isSimulatingApproval ? (
+                        <>
+                          <div className="w-4 h-4 rounded-full border border-white border-t-transparent animate-spin" />
+                          Approving candidate...
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="CheckCircle" size={14} />
+                          Approve Account Now
+                        </>
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={onLogout}
+                      className="px-5 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs cursor-pointer text-center"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+
+                {allPendingAmbassadors.length > 1 && (
+                  <div className="pt-4 border-t border-slate-200 mt-4 space-y-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Other Registered Pending Accounts</p>
+                    <div className="max-h-24 overflow-y-auto space-y-1.5 divide-y divide-slate-100">
+                      {allPendingAmbassadors.map(amb => (
+                        amb.id !== profile.id && (
+                          <div key={amb.id} className="flex items-center justify-between text-xs pt-1.5">
+                            <span className="font-semibold text-slate-700">{amb.name} ({amb.city})</span>
+                            <button
+                              onClick={() => handleSimulateApproval(amb.id)}
+                              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer"
+                            >
+                              Approve
+                            </button>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid lg:grid-cols-12 gap-8 items-start">
           
           {/* Navigation vertical toolbar tabs */}
           <div className="lg:col-span-3 space-y-2">
@@ -473,6 +799,19 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             >
               <Icon name="Home" size={16} />
               <span>My Local Projects</span>
+            </button>
+
+            <button
+              id="tab-profile"
+              onClick={() => setActiveTab("profile")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm text-left transition-all cursor-pointer ${
+                activeTab === "profile"
+                  ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/10"
+                  : "bg-white hover:bg-gray-100/50 text-gray-700 border border-gray-100"
+              }`}
+            >
+              <Icon name="UserCheck" size={16} />
+              <span>Update Profile & City</span>
             </button>
 
             {/* Quick stats panel left card */}
@@ -1297,10 +1636,191 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               )}
 
+              {/* TAB 6: PROFILE DETAILS & CITY UPDATER */}
+              {activeTab === "profile" && (
+                <motion.div
+                  key="v-profile"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="space-y-8"
+                >
+                  <div className="pb-4 border-b border-gray-200">
+                    <h3 className="text-xl font-bold text-gray-900">Update Profile & Base City</h3>
+                    <p className="text-xs text-gray-500 font-sans">Modify your public professional registry credentials, focus area, and secure ledger account security.</p>
+                  </div>
+
+                  {updateSuccess && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-emerald-800 text-xs font-medium"
+                    >
+                      <Icon name="CheckCircle2" className="text-emerald-600 flex-shrink-0" size={18} />
+                      <div>
+                        <p className="font-bold">Registry synchronized successfully!</p>
+                        <p className="text-emerald-700/80">Your details have been securely written to the sovereign ambassador registry.</p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div className="grid md:grid-cols-12 gap-8 items-start">
+                    {/* Left Form Panel */}
+                    <div className="bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-sm md:col-span-8">
+                      <form onSubmit={handleUpdateProfile} className="space-y-6">
+                        
+                        <div className="grid sm:grid-cols-2 gap-6">
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                              <Icon name="UserCheck" size={12} className="text-slate-400" />
+                              Professional Name
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              placeholder="e.g. Ramon Bisola"
+                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                              <Icon name="MapPin" size={12} className="text-slate-400" />
+                              Base City & Country
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              value={editCity}
+                              onChange={(e) => setEditCity(e.target.value)}
+                              placeholder="e.g. Lagos, Nigeria"
+                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid sm:grid-cols-2 gap-6">
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                              <Icon name="Compass" size={12} className="text-slate-400" />
+                              Focus Division / Field focus
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              value={editField}
+                              onChange={(e) => setEditField(e.target.value)}
+                              placeholder="e.g. Youth Technology Labs"
+                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1.5 italic">This represents your field activity scope.</p>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                              <Icon name="Phone" size={12} className="text-slate-400" />
+                              Telephone Contact
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              value={editPhone}
+                              onChange={(e) => setEditPhone(e.target.value)}
+                              placeholder="e.g. +234 801 234 5678"
+                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-6">
+                          <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                            <Icon name="Lock" size={14} className="text-slate-500" />
+                            Account Security
+                          </h4>
+                          
+                          <div className="max-w-md">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                              Ambassador Password
+                            </label>
+                            <input
+                              required
+                              type="password"
+                              value={editPassword}
+                              onChange={(e) => setEditPassword(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 pt-4">
+                          <button
+                            type="submit"
+                            disabled={isUpdatingProfile}
+                            className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-2 cursor-pointer"
+                          >
+                            {isUpdatingProfile ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Synchronizing Ledger...
+                              </>
+                            ) : (
+                              <>
+                                <Icon name="Check" size={14} />
+                                Save Profile Settings
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                      </form>
+                    </div>
+
+                    {/* Right Interactive Sidebar Context Info */}
+                    <div className="md:col-span-4 space-y-6 text-left">
+                      <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center">
+                          <Icon name="Shield" size={18} />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-800">Sovereign Profile Registry</h4>
+                          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                            Your updated details will immediately propagate to your printed Fellowship Certificate, P2P Ledger, and regional donation campaigns.
+                          </p>
+                        </div>
+                        <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1">
+                          <p>SECURE_ID: {profile?.id}</p>
+                          <p>LEDGER_SYNC: ACTIVE</p>
+                        </div>
+                      </div>
+
+                      <div className="p-6 rounded-3xl border border-gray-150/70 space-y-3.5">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider">
+                          Live Fellowship Preview
+                        </span>
+                        
+                        <div className="space-y-1.5 pt-1">
+                          <h5 className="text-sm font-black text-slate-800 tracking-tight">{editName || "Ramon Bisola"}</h5>
+                          <p className="text-xs text-slate-500">{editCity || "Lagos, Nigeria"}</p>
+                          <p className="text-[11px] font-medium text-emerald-700 bg-emerald-50/50 border border-emerald-100/50 rounded-lg p-2 mt-1">
+                            {editField || "Youth Technology Labs"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </motion.div>
+              )}
+
             </AnimatePresence>
           </div>
 
         </div>
+        )}
       </div>
 
       {/* Pop up overlay credential updater form */}

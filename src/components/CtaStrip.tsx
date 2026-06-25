@@ -14,23 +14,23 @@ const FEATURED_PROGRAMS: FeaturedProgram[] = [
   {
     id: "tech-hubs",
     image: "https://images.unsplash.com/photo-1531482615713-2afd69097998?q=80&w=1200",
-    title: "Youth Tech-Hubs & Accelerator",
-    desc: "Establishing advanced digital learning labs to teach programming, software design, and modern entrepreneurship.",
+    title: "Enriching African youths initiative",
+    desc: "Equipping the next generation of African leaders with practical vocational training, high-demand software modules, and creative business mentoring.",
     impact: "12,500+ Graduates Certified"
   },
   {
     id: "scholarships",
-    image: "https://images.unsplash.com/photo-1588072432836-e10032774350?q=80&w=1200",
-    title: "NextGen Education Support",
-    desc: "Distributing modernized curriculum bundles and fully funding secondary academic scholarships for disadvantaged youth.",
-    impact: "85 Public Schools Supported"
+    image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200",
+    title: "Schools (Stem and Robotic education)",
+    desc: "Integrating world-class robotics, artificial intelligence labs, and advanced STEM curricula into public and regional schools.",
+    impact: "85 Schools Standardized"
   },
   {
     id: "shelter",
-    image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200",
-    title: "Eco-Adobe Sustainable Shelter",
-    desc: "Constructing safe, low-impact compressed-earth housing units for rural and climate-displaced households.",
-    impact: "450 Families Re-homed"
+    image: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?q=80&w=1200",
+    title: "Green/Agriculture",
+    desc: "Empowering rural agrarian cooperatives with climate-smart seeds, hybrid solar-powered irrigation wells, and modern agritech utilities.",
+    impact: "42 Active Agritech Hubs"
   }
 ];
 

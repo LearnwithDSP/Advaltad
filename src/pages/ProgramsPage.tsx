@@ -12,14 +12,20 @@ export const ProgramsPage: React.FC = () => {
       const hash = window.location.hash;
       if (hash.includes("category=youth") || hash.includes("/youth")) {
         setSelectedCategory("youth-empowerment");
-      } else if (hash.includes("category=education") || hash.includes("/education")) {
-        setSelectedCategory("education");
-      } else if (hash.includes("category=health") || hash.includes("/health")) {
-        setSelectedCategory("health-wellbeing");
+      } else if (hash.includes("category=schools") || hash.includes("/schools")) {
+        setSelectedCategory("schools-stem");
+      } else if (hash.includes("category=green-agri") || hash.includes("/green-agri")) {
+        setSelectedCategory("green-agri");
       } else if (hash.includes("category=housing") || hash.includes("/housing")) {
-        setSelectedCategory("humanitarian-housing");
-      } else if (hash.includes("category=community") || hash.includes("/community")) {
-        setSelectedCategory("community-dev");
+        setSelectedCategory("housing");
+      } else if (hash.includes("category=teen-club") || hash.includes("/teen-club")) {
+        setSelectedCategory("teen-club");
+      } else if (hash.includes("category=sponsorship") || hash.includes("/sponsorship")) {
+        setSelectedCategory("sponsorship");
+      } else if (hash.includes("category=relief") || hash.includes("/relief")) {
+        setSelectedCategory("relief");
+      } else if (hash.includes("category=aged-care") || hash.includes("/aged-care")) {
+        setSelectedCategory("aged-care");
       } else {
         setSelectedCategory("all");
       }
@@ -36,11 +42,14 @@ export const ProgramsPage: React.FC = () => {
 
   const TABS = [
     { id: "all", label: "All Areas" },
-    { id: "youth-empowerment", label: "Youth Tech" },
-    { id: "education", label: "Education" },
-    { id: "health-wellbeing", label: "Healthcare" },
-    { id: "humanitarian-housing", label: "Eco Housing" },
-    { id: "community-dev", label: "Community Grids" }
+    { id: "youth-empowerment", label: "Youth Initiative" },
+    { id: "schools-stem", label: "Schools (STEM)" },
+    { id: "green-agri", label: "Green / Agri" },
+    { id: "housing", label: "Housing Scheme" },
+    { id: "teen-club", label: "Teen Club" },
+    { id: "sponsorship", label: "Sponsorship" },
+    { id: "relief", label: "Emergency Relief" },
+    { id: "aged-care", label: "Care for the Aged" }
   ];
 
   return (
@@ -72,7 +81,7 @@ export const ProgramsPage: React.FC = () => {
                 key={tab.id}
                 onClick={() => {
                   setSelectedCategory(tab.id);
-                  const hashSuffix = tab.id === "all" ? "" : `?category=${tab.id.replace("-dev", "").replace("-empowerment", "")}`;
+                  const hashSuffix = tab.id === "all" ? "" : `?category=${tab.id.replace("schools-stem", "schools").replace("youth-empowerment", "youth")}`;
                   window.location.hash = `#/programs${hashSuffix}`;
                 }}
                 className={`px-4 py-2 rounded-xl text-xs font-display font-bold uppercase tracking-wider transition-all cursor-pointer ${
@@ -98,8 +107,12 @@ export const ProgramsPage: React.FC = () => {
                 const getIcon = (cat: string) => {
                   if (cat.includes("YOUTH")) return "Cpu";
                   if (cat.includes("EDUCATION")) return "GraduationCap";
+                  if (cat.includes("AGRICULTURE")) return "Globe";
                   if (cat.includes("HOUSING")) return "Home";
-                  if (cat.includes("COMMUNITY")) return "Lightbulb";
+                  if (cat.includes("TEENS")) return "Users";
+                  if (cat.includes("SPONSORSHIP")) return "Heart";
+                  if (cat.includes("EMERGENCY")) return "AlertCircle";
+                  if (cat.includes("SENIOR")) return "HeartHandshake";
                   return "HeartPulse";
                 };
 
