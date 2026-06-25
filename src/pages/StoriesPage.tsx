@@ -1,12 +1,42 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { IMPACT_STORIES } from "../data";
 import { Icon } from "../components/Icon";
+import { db, DbBlog } from "../lib/supabase";
 
 export const StoriesPage: React.FC = () => {
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
+  const [customBlogs, setCustomBlogs] = useState<DbBlog[]>([]);
 
-  const activeStory = IMPACT_STORIES.find(s => s.id === selectedStoryId);
+  useEffect(() => {
+    db.getBlogs().then((blogsList) => {
+      setCustomBlogs(blogsList);
+    }).catch(err => {
+      console.error("Failed to load custom stories:", err);
+    });
+  }, []);
+
+  const combinedStories = [
+    ...IMPACT_STORIES.map(s => ({
+      ...s,
+      isCustom: false,
+      fullStoryText: s.fullStory
+    })),
+    ...customBlogs.map(b => ({
+      id: b.id,
+      title: b.title,
+      image: b.image || "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200",
+      tag: b.tag || "GENERAL UPDATE",
+      location: "Active Program Region",
+      date: new Date(b.created_at).toLocaleDateString(),
+      excerpt: b.excerpt,
+      author: b.author,
+      fullStoryText: b.content,
+      isCustom: true
+    }))
+  ];
+
+  const activeStory = combinedStories.find(s => s.id === selectedStoryId);
 
   return (
     <div className="pt-20 bg-white min-h-screen text-left">
@@ -37,7 +67,7 @@ export const StoriesPage: React.FC = () => {
         <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
           
           <div className="grid md:grid-cols-2 gap-12 items-stretch">
-            {IMPACT_STORIES.map((story, idx) => (
+            {combinedStories.map((story, idx) => (
               <motion.div
                 key={story.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -168,7 +198,7 @@ export const StoriesPage: React.FC = () => {
 
                   {/* Full body prose rendering */}
                   <p className="text-slate-600 font-sans text-sm sm:text-base leading-relaxed whitespace-pre-line">
-                    {activeStory.fullStory}
+                    {activeStory.fullStoryText}
                   </p>
                 </div>
               </div>

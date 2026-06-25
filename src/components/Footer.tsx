@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
+import { db } from "../lib/supabase";
 import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 
 interface FooterProps {
@@ -12,6 +13,37 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
   const [email, setEmail] = useState("");
   const [subscribed, setSubscribed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [ambassadorName, setAmbassadorName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const emailVal = localStorage.getItem("advaltad_session_email");
+      setSessionEmail(emailVal);
+      if (emailVal) {
+        try {
+          const profile = await db.findAmbassadorByEmail(emailVal);
+          if (profile) {
+            setAmbassadorName(profile.name);
+          }
+        } catch (err) {
+          console.error("Failed to fetch logged in ambassador profile in footer", err);
+        }
+      } else {
+        setAmbassadorName(null);
+      }
+    };
+
+    checkSession();
+
+    window.addEventListener("hashchange", checkSession);
+    window.addEventListener("storage", checkSession);
+    return () => {
+      window.removeEventListener("hashchange", checkSession);
+      window.removeEventListener("storage", checkSession);
+    };
+  }, []);
 
   const handleSubscribe = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,12 +82,30 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                 Donate Now
               </button>
               
-              <button
-                onClick={onAmbassadorClick}
-                className="w-full sm:w-auto px-8 py-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-brand-charcoal font-display font-black text-xs tracking-widest uppercase transition-all duration-200 cursor-pointer"
-              >
-                Partner With Us
-              </button>
+              {sessionEmail ? (
+                <button
+                  onClick={() => {
+                    window.location.hash = "#/ambassador/dashboard";
+                  }}
+                  className="w-full sm:w-auto pl-5 pr-8 py-4 rounded-xl border border-emerald-500 bg-white hover:bg-emerald-50/50 text-emerald-800 font-display font-black text-xs tracking-widest uppercase transition-all duration-200 cursor-pointer flex items-center justify-center gap-3.5 shadow-sm"
+                >
+                  <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[10px] shadow-sm border border-emerald-500/30 overflow-hidden">
+                    {ambassadorName ? (
+                      ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                    ) : (
+                      <Icon name="User" size={11} className="text-white" />
+                    )}
+                  </div>
+                  <span>Welcome back, {ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={onAmbassadorClick}
+                  className="w-full sm:w-auto px-8 py-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-brand-charcoal font-display font-black text-xs tracking-widest uppercase transition-all duration-200 cursor-pointer"
+                >
+                  Partner With Us
+                </button>
+              )}
             </div>
           </div>
         </div>

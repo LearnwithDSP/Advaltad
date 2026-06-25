@@ -29,6 +29,27 @@ export interface DbAdmin {
   name: string;
   email: string;
   password?: string;
+  user_id?: string;
+  role?: string;
+  created_at: string;
+}
+
+export interface DbBlog {
+  id: string;
+  title: string;
+  excerpt?: string;
+  content: string;
+  author: string;
+  tag?: string;
+  image?: string;
+  created_at: string;
+}
+
+export interface DbAmbassadorWallet {
+  id: string;
+  ambassador_id: string;
+  email: string;
+  balance: number;
   created_at: string;
 }
 
@@ -45,6 +66,68 @@ export interface DbActivity {
 const LOCAL_STORAGE_KEY = "advaltad_ambassadors_db";
 const ADMIN_LOCAL_STORAGE_KEY = "advaltad_admins_db";
 const ACTIVITIES_LOCAL_STORAGE_KEY = "advaltad_activities_db";
+const BLOGS_LOCAL_STORAGE_KEY = "advaltad_blogs_db";
+const WALLETS_LOCAL_STORAGE_KEY = "advaltad_wallets_db";
+
+function getLocalBlogsDb(): DbBlog[] {
+  const data = localStorage.getItem(BLOGS_LOCAL_STORAGE_KEY);
+  if (data) return JSON.parse(data);
+  const initialSeed: DbBlog[] = [
+    {
+      id: "story-1",
+      tag: "EDUCATION & TECH EXCELLENCE",
+      title: "From Code-Block to Career: Chidi’s Path to Global Innovation",
+      excerpt: "Growing up in Enugu, Chidi had no access to a computer. At 19, he discovered the Advaltad TechHub Accelerator, changing his trajectory forever.",
+      content: "Chidi grew up in a vibrant but under-resourced suburb of Enugu, Nigeria, where electricity was scarce and personal computers were a luxury reserved for the few. At 19, after completing secondary school with excellent marks but zero options for self-advancement, he is the perfect target for Advaltad's Tech-Hub Initiative. Here, Chidi was fully sponsored through a rigorous 9-month immersive program in Full-Stack Software Engineering. Empowered with modern hardware and direct tutelage from global industry volunteers, Chidi didn't just learn node and react — he designed ‘FarmSettle’, a localized marketplace app that has since helped standard agricultural cooperatives in his community trade. Today, he works as a remote developer for an international green tech organization, directly funding his younger siblings' secondary education.",
+      author: "Advaltad Media Core",
+      image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200",
+      created_at: "2026-04-14T12:00:00Z"
+    },
+    {
+      id: "story-2",
+      tag: "SUSTAINABLE COMMUNITY SHELTER",
+      title: "Constructing Safety and Stability for Mama Fatima's Family",
+      excerpt: "Displaced by flash floods, Fatima and her four kids survived in temporary high-tension tarpaulins until Advaltad's Humanitarian Housing team stepped in.",
+      content: "Our Eco-Adobe Sustainable Shelter project is rooted in the belief that secure housing is a basic human right. Mama Fatima was one of hundreds of climate-displaced citizens living in extreme conditions near standard waterways in coastal regions. In under 18 days, utilizing our innovative compressed earth block system which boasts a zero-carbon production rate, our volunteers constructed a neat 3-room housing unit complete with localized solar lanterns and micro-flush toilet mechanisms. This stable foundation allows Fatima to re-establish her tailoring workspace from home, bringing safety, power, and long-term self-reliance to an entire household.",
+      author: "Grace Adebayo",
+      image: "https://images.unsplash.com/photo-1590001155093-a3c66ab0c3ff?q=80&w=1200",
+      created_at: "2026-03-22T12:00:00Z"
+    }
+  ];
+  localStorage.setItem(BLOGS_LOCAL_STORAGE_KEY, JSON.stringify(initialSeed));
+  return initialSeed;
+}
+
+function saveLocalBlogsDb(blogs: DbBlog[]) {
+  localStorage.setItem(BLOGS_LOCAL_STORAGE_KEY, JSON.stringify(blogs));
+}
+
+function getLocalWalletsDb(): DbAmbassadorWallet[] {
+  const data = localStorage.getItem(WALLETS_LOCAL_STORAGE_KEY);
+  if (data) return JSON.parse(data);
+  const initialSeed: DbAmbassadorWallet[] = [
+    {
+      id: "wall-1",
+      ambassador_id: "demo-ramon",
+      email: "ramon@example.com",
+      balance: 1250,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: "wall-2",
+      ambassador_id: "demo-grace",
+      email: "grace@example.com",
+      balance: 900,
+      created_at: new Date().toISOString()
+    }
+  ];
+  localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(initialSeed));
+  return initialSeed;
+}
+
+function saveLocalWalletsDb(wallets: DbAmbassadorWallet[]) {
+  localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(wallets));
+}
 
 function getLocalAdminsDb(): DbAdmin[] {
   const data = localStorage.getItem(ADMIN_LOCAL_STORAGE_KEY);
@@ -342,7 +425,16 @@ export const db = {
         .select("*")
         .order("created_at", { ascending: false });
       
-      if (!error && data) return data as DbAdmin[];
+      if (!error && data) {
+        return data.map((d: any) => ({
+          id: d.id,
+          name: d.full_name || d.name || "",
+          email: d.email,
+          user_id: d.user_id,
+          role: d.role,
+          created_at: d.created_at
+        }));
+      }
     }
     return getLocalAdminsDb();
   },
@@ -355,13 +447,22 @@ export const db = {
         .eq("email", email)
         .maybeSingle();
       
-      if (!error && data) return data as DbAdmin;
+      if (!error && data) {
+        return {
+          id: data.id,
+          name: data.full_name || data.name || "",
+          email: data.email,
+          user_id: data.user_id,
+          role: data.role,
+          created_at: data.created_at
+        };
+      }
     }
     const localDb = getLocalAdminsDb();
     return localDb.find(a => a.email.toLowerCase() === email.toLowerCase()) || null;
   },
 
-  async createAdmin(newAdmin: Omit<DbAdmin, "id" | "created_at">): Promise<DbAdmin> {
+  async createAdmin(newAdmin: Omit<DbAdmin, "id" | "created_at"> & { user_id?: string, role?: string }): Promise<DbAdmin> {
     const fresh: DbAdmin = {
       id: "ADM-" + Math.floor(Math.random() * 89999 + 10000),
       ...newAdmin,
@@ -372,14 +473,27 @@ export const db = {
       const { data, error } = await supabase
         .from("admins")
         .insert([{
-          name: fresh.name,
-          email: fresh.email,
-          password: fresh.password
+          user_id: newAdmin.user_id,
+          full_name: newAdmin.name,
+          email: newAdmin.email,
+          role: newAdmin.role || "admin"
         }])
         .select()
         .single();
       
-      if (!error && data) return data as DbAdmin;
+      if (!error && data) {
+        return {
+          id: data.id,
+          name: data.full_name,
+          email: data.email,
+          user_id: data.user_id,
+          role: data.role,
+          created_at: data.created_at
+        };
+      }
+      if (error) {
+        console.error("Supabase insert admin failed:", error);
+      }
     }
 
     const localDb = getLocalAdminsDb();
@@ -421,5 +535,126 @@ export const db = {
     localDb.push(fresh);
     saveLocalActivitiesDb(localDb);
     return fresh;
+  },
+
+  async getBlogs(): Promise<DbBlog[]> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from("blogs")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && data) return data as DbBlog[];
+      console.error("Supabase fetch blogs failed:", error);
+    }
+    return getLocalBlogsDb();
+  },
+
+  async createBlog(blog: Omit<DbBlog, "id" | "created_at">): Promise<DbBlog> {
+    const fresh: DbBlog = {
+      id: "blog-" + Math.floor(Math.random() * 89999 + 10000),
+      ...blog,
+      created_at: new Date().toISOString()
+    };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from("blogs")
+        .insert([blog])
+        .select()
+        .single();
+      if (!error && data) return data as DbBlog;
+      console.error("Supabase create blog failed:", error);
+    }
+    const localDb = getLocalBlogsDb();
+    localDb.unshift(fresh);
+    saveLocalBlogsDb(localDb);
+    return fresh;
+  },
+
+  async updateBlog(id: string, updates: Partial<Omit<DbBlog, "id" | "created_at">>): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase
+        .from("blogs")
+        .update(updates)
+        .eq("id", id);
+      if (!error) return true;
+      console.error("Supabase update blog failed:", error);
+    }
+    const localDb = getLocalBlogsDb();
+    const index = localDb.findIndex(b => b.id === id);
+    if (index !== -1) {
+      localDb[index] = { ...localDb[index], ...updates };
+      saveLocalBlogsDb(localDb);
+      return true;
+    }
+    return false;
+  },
+
+  async deleteBlog(id: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase
+        .from("blogs")
+        .delete()
+        .eq("id", id);
+      if (!error) return true;
+      console.error("Supabase delete blog failed:", error);
+    }
+    const localDb = getLocalBlogsDb();
+    const filtered = localDb.filter(b => b.id !== id);
+    if (filtered.length !== localDb.length) {
+      saveLocalBlogsDb(filtered);
+      return true;
+    }
+    return false;
+  },
+
+  async getWallets(): Promise<DbAmbassadorWallet[]> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from("ambassador_wallets")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && data) return data as DbAmbassadorWallet[];
+      console.error("Supabase fetch wallets failed:", error);
+    }
+    return getLocalWalletsDb();
+  },
+
+  async createWallet(wallet: Omit<DbAmbassadorWallet, "id" | "created_at">): Promise<DbAmbassadorWallet> {
+    const fresh: DbAmbassadorWallet = {
+      id: "wall-" + Math.floor(Math.random() * 89999 + 10000),
+      ...wallet,
+      created_at: new Date().toISOString()
+    };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from("ambassador_wallets")
+        .insert([wallet])
+        .select()
+        .single();
+      if (!error && data) return data as DbAmbassadorWallet;
+    }
+    const localDb = getLocalWalletsDb();
+    localDb.unshift(fresh);
+    saveLocalWalletsDb(localDb);
+    return fresh;
+  },
+
+  async updateWalletBalance(ambassadorId: string, balance: number): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase
+        .from("ambassador_wallets")
+        .update({ balance })
+        .eq("ambassador_id", ambassadorId);
+      if (!error) return true;
+      console.error("Supabase update wallet balance failed:", error);
+    }
+    const localDb = getLocalWalletsDb();
+    const index = localDb.findIndex(w => w.ambassador_id === ambassadorId);
+    if (index !== -1) {
+      localDb[index].balance = balance;
+      saveLocalWalletsDb(localDb);
+      return true;
+    }
+    return false;
   }
 };

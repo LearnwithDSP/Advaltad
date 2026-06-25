@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { NAVIGATION_DATA } from "../data";
 import { Icon } from "./Icon";
+import { db } from "../lib/supabase";
 import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 
 interface MegaMenuProps {
@@ -15,6 +16,37 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileExpandedSection, setMobileExpandedSection] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [ambassadorName, setAmbassadorName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const email = localStorage.getItem("advaltad_session_email");
+      setSessionEmail(email);
+      if (email) {
+        try {
+          const profile = await db.findAmbassadorByEmail(email);
+          if (profile) {
+            setAmbassadorName(profile.name);
+          }
+        } catch (err) {
+          console.error("Failed to fetch logged in ambassador profile", err);
+        }
+      } else {
+        setAmbassadorName(null);
+      }
+    };
+
+    checkSession();
+
+    window.addEventListener("hashchange", checkSession);
+    window.addEventListener("storage", checkSession);
+    return () => {
+      window.removeEventListener("hashchange", checkSession);
+      window.removeEventListener("storage", checkSession);
+    };
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -162,31 +194,60 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                                 {col.title}
                               </h4>
                               <div className="space-y-1">
-                                {col.items.map((item, iIdx) => (
-                                  <a
-                                    key={iIdx}
-                                    href={item.href}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      handleNavClick(item.href);
-                                    }}
-                                    className="flex items-start gap-3.5 p-3 rounded-2xl hover:bg-brand-secondary/20 group transition-all duration-200"
-                                  >
-                                    <div className="mt-0.5 p-2 rounded-xl bg-slate-50 text-slate-400 group-hover:bg-brand-primary group-hover:text-white transition-all duration-200">
-                                      <Icon name={item.iconName || "Sparkles"} size={14} />
-                                    </div>
-                                    <div className="flex-1">
-                                      <p className="text-xs font-display font-bold text-brand-charcoal group-hover:text-brand-primary transition-colors">
-                                        {item.label}
-                                      </p>
-                                      {item.description && (
-                                        <p className="text-[11px] text-slate-500 font-normal line-clamp-1 group-hover:text-slate-600 transition-colors">
-                                          {item.description}
+                                {col.items.map((item, iIdx) => {
+                                  const isAmbassadorLink = item.href === "#ambassador" && item.label === "Become Ambassador";
+                                  const displayLabel = isAmbassadorLink && sessionEmail 
+                                    ? `Welcome Back, ${ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}`
+                                    : item.label;
+                                  const displayDesc = isAmbassadorLink && sessionEmail
+                                    ? "Access your Growth Ambassador dashboard."
+                                    : item.description;
+                                  const displayHref = isAmbassadorLink && sessionEmail
+                                    ? "#/ambassador/dashboard"
+                                    : item.href;
+
+                                  return (
+                                    <a
+                                      key={iIdx}
+                                      href={displayHref}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        if (isAmbassadorLink && sessionEmail) {
+                                          setActiveDropdown(null);
+                                          setMobileMenuOpen(false);
+                                          window.location.hash = "#/ambassador/dashboard";
+                                        } else {
+                                          handleNavClick(item.href);
+                                        }
+                                      }}
+                                      className="flex items-start gap-3.5 p-3 rounded-2xl hover:bg-brand-secondary/20 group transition-all duration-200"
+                                    >
+                                      <div className="mt-0.5 p-2 rounded-xl bg-slate-50 text-slate-400 group-hover:bg-brand-primary group-hover:text-white transition-all duration-200 flex items-center justify-center">
+                                        {isAmbassadorLink && sessionEmail ? (
+                                          <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[9px] overflow-hidden -m-1">
+                                            {ambassadorName ? (
+                                              ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                                            ) : (
+                                              <Icon name="User" size={10} className="text-white" />
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <Icon name={item.iconName || "Sparkles"} size={14} />
+                                        )}
+                                      </div>
+                                      <div className="flex-1">
+                                        <p className="text-xs font-display font-bold text-brand-charcoal group-hover:text-brand-primary transition-colors">
+                                          {displayLabel}
                                         </p>
-                                      )}
-                                    </div>
-                                  </a>
-                                ))}
+                                        {displayDesc && (
+                                          <p className="text-[11px] text-slate-500 font-normal line-clamp-1 group-hover:text-slate-600 transition-colors">
+                                            {displayDesc}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </a>
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}
@@ -219,13 +280,37 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
 
           {/* Action CTAs Desktop */}
           <div className="hidden lg:flex items-center gap-2.5 xl:gap-4">
-            <button
-              id="cta-become-ambassador"
-              onClick={onAmbassadorClick}
-              className="px-4.5 py-3 rounded-xl border border-brand-primary text-brand-primary hover:bg-brand-primary hover:text-white font-display font-bold text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer whitespace-nowrap"
-            >
-              Become Ambassador
-            </button>
+            {sessionEmail ? (
+              <button
+                id="cta-become-ambassador"
+                onClick={() => {
+                  window.location.hash = "#/ambassador/dashboard";
+                }}
+                className="pl-3 pr-4.5 py-2.5 rounded-xl border border-emerald-600 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-800 font-display font-bold text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-2.5 shadow-sm"
+              >
+                <div className="w-6.5 h-6.5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[10px] shadow-sm border border-emerald-500/30 overflow-hidden">
+                  {ambassadorName ? (
+                    ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                  ) : (
+                    <Icon name="User" size={12} className="text-white" />
+                  )}
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[8px] font-sans font-black tracking-wider leading-none text-emerald-600/75 uppercase">AMBASSADOR</span>
+                  <span className="text-[10.5px] font-black leading-tight text-emerald-950 mt-0.5">
+                    {ambassadorName ? `Welcome back, ${ambassadorName.split(" ")[0]}` : "Welcome back"}
+                  </span>
+                </div>
+              </button>
+            ) : (
+              <button
+                id="cta-become-ambassador"
+                onClick={onAmbassadorClick}
+                className="px-4.5 py-3 rounded-xl border border-brand-primary text-brand-primary hover:bg-brand-primary hover:text-white font-display font-bold text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer whitespace-nowrap"
+              >
+                Become Ambassador
+              </button>
+            )}
             <button
               id="cta-header-donate"
               onClick={onDonateClick}
@@ -329,24 +414,49 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                                     <div className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest pl-2 pt-1">
                                       {col.title}
                                     </div>
-                                    {col.items.map((item, iIdx) => (
-                                      <a
-                                        key={iIdx}
-                                        href={item.href}
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          handleNavClick(item.href);
-                                        }}
-                                        className="flex items-center gap-3.5 p-2 rounded-xl hover:bg-slate-50 text-slate-600 hover:text-brand-primary transition-all min-h-[44px]"
-                                      >
-                                        <div className="p-1.5 rounded bg-slate-100 text-slate-500">
-                                          <Icon name={item.iconName || "Sparkles"} size={12} />
-                                        </div>
-                                        <div className="flex-1">
-                                          <p className="text-xs font-semibold">{item.label}</p>
-                                        </div>
-                                      </a>
-                                    ))}
+                                    {col.items.map((item, iIdx) => {
+                                      const isAmbassadorLink = item.href === "#ambassador" && item.label === "Become Ambassador";
+                                      const displayLabel = isAmbassadorLink && sessionEmail 
+                                        ? `Welcome Back, ${ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}`
+                                        : item.label;
+                                      const displayHref = isAmbassadorLink && sessionEmail
+                                        ? "#/ambassador/dashboard"
+                                        : item.href;
+
+                                      return (
+                                        <a
+                                          key={iIdx}
+                                          href={displayHref}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            setMobileMenuOpen(false);
+                                            if (isAmbassadorLink && sessionEmail) {
+                                              window.location.hash = "#/ambassador/dashboard";
+                                            } else {
+                                              handleNavClick(item.href);
+                                            }
+                                          }}
+                                          className="flex items-center gap-3.5 p-2 rounded-xl hover:bg-slate-50 text-slate-600 hover:text-brand-primary transition-all min-h-[44px]"
+                                        >
+                                          <div className="p-1.5 rounded bg-slate-100 text-slate-500 flex items-center justify-center">
+                                            {isAmbassadorLink && sessionEmail ? (
+                                              <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[9px] overflow-hidden">
+                                                {ambassadorName ? (
+                                                  ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                                                ) : (
+                                                  <Icon name="User" size={8} className="text-white" />
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <Icon name={item.iconName || "Sparkles"} size={12} />
+                                            )}
+                                          </div>
+                                          <div className="flex-1">
+                                            <p className="text-xs font-semibold">{displayLabel}</p>
+                                          </div>
+                                        </a>
+                                      );
+                                    })}
                                   </div>
                                 ))}
                               </motion.div>
@@ -384,16 +494,36 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                 >
                   Donate Now
                 </button>
-                <button
-                  id="mobile-cta-ambassador"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onAmbassadorClick();
-                  }}
-                  className="w-full py-3 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-display font-bold text-center hover:bg-slate-50 cursor-pointer text-xs uppercase tracking-wider"
-                >
-                  Become a Partner
-                </button>
+                {sessionEmail ? (
+                  <button
+                    id="mobile-cta-ambassador"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      window.location.hash = "#/ambassador/dashboard";
+                    }}
+                    className="w-full py-3 px-4 rounded-xl border border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-display font-bold text-center cursor-pointer text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-sm"
+                  >
+                    <div className="w-5.5 h-5.5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[9px] shadow-sm border border-emerald-500/30 overflow-hidden">
+                      {ambassadorName ? (
+                        ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                      ) : (
+                        <Icon name="User" size={10} className="text-white" />
+                      )}
+                    </div>
+                    <span>Welcome back, {ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}</span>
+                  </button>
+                ) : (
+                  <button
+                    id="mobile-cta-ambassador"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onAmbassadorClick();
+                    }}
+                    className="w-full py-3 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-display font-bold text-center hover:bg-slate-50 cursor-pointer text-xs uppercase tracking-wider"
+                  >
+                    Become a Partner
+                  </button>
+                )}
               </div>
 
             </motion.div>

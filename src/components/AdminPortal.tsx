@@ -22,9 +22,11 @@ import {
   Sparkles,
   MapPin,
   Phone,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  Edit
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, supabase, isSupabaseConfigured } from "../lib/supabase";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -49,13 +51,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   // Dashboard states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets">("overview");
 
   // Database records
   const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>([]);
   const [activities, setActivities] = useState<DbActivity[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending">("all");
+
+  // Blog states
+  const [blogs, setBlogs] = useState<DbBlog[]>([]);
+  const [blogTitle, setBlogTitle] = useState("");
+  const [blogTag, setBlogTag] = useState("");
+  const [blogExcerpt, setBlogExcerpt] = useState("");
+  const [blogContent, setBlogContent] = useState("");
+  const [blogImage, setBlogImage] = useState("");
+  const [editingBlog, setEditingBlog] = useState<DbBlog | null>(null);
+  const [isBlogFormOpen, setIsBlogFormOpen] = useState(false);
+
+  // Wallet states
+  const [wallets, setWallets] = useState<DbAmbassadorWallet[]>([]);
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [selectedWalletAmbassador, setSelectedWalletAmbassador] = useState<DbAmbassador | null>(null);
+  const [walletFundAmount, setWalletFundAmount] = useState("");
+  const [isFundingWallet, setIsFundingWallet] = useState(false);
 
   // Detail view/modal states
   const [selectedAmbassador, setSelectedAmbassador] = useState<DbAmbassador | null>(null);
@@ -81,12 +100,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     loadDbData();
   }, []);
 
+  const loadBlogs = async () => {
+    try {
+      const allBlogs = await db.getBlogs();
+      setBlogs(allBlogs);
+    } catch (err) {
+      console.error("Failed to load blogs:", err);
+    }
+  };
+
+  const loadWallets = async () => {
+    try {
+      const allWallets = await db.getWallets();
+      setWallets(allWallets);
+    } catch (err) {
+      console.error("Failed to load wallets:", err);
+    }
+  };
+
   const loadDbData = async () => {
     try {
       const allAmbassadors = await db.getAmbassadors();
       const allActivities = await db.getActivities();
       setAmbassadors(allAmbassadors);
       setActivities(allActivities);
+      await loadBlogs();
+      await loadWallets();
     } catch (err) {
       console.error("Failed to load DB details inside admin portal:", err);
     }
@@ -111,13 +150,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         return;
       }
 
+      let userId = "";
+      if (isSupabaseConfigured && supabase) {
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: signupEmail,
+          password: signupPassword,
+          options: {
+            data: {
+              full_name: signupName,
+              role: "admin"
+            }
+          }
+        });
+
+        if (signUpError) {
+          setAuthError(signUpError.message);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (signUpData.user) {
+          userId = signUpData.user.id;
+        }
+      }
+
       const admin = await db.createAdmin({
         name: signupName,
         email: signupEmail,
-        password: signupPassword
+        password: signupPassword,
+        user_id: userId || undefined,
+        role: "admin"
       });
 
-      setAuthSuccess("Sovereign Admin account created successfully! Please sign in.");
+      setAuthSuccess("Admin account created successfully! Please sign in.");
       // Auto-populate login and toggle view
       setLoginEmail(signupEmail);
       setIsSubmitting(false);
@@ -129,8 +194,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         setSignupEmail("");
         setSignupPassword("");
       }, 2000);
-    } catch (err) {
-      setAuthError("Failed to register admin account.");
+    } catch (err: any) {
+      setAuthError(err.message || "Failed to register admin account.");
       setIsSubmitting(false);
     }
   };
@@ -146,31 +211,65 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setIsSubmitting(true);
 
     try {
-      const admin = await db.findAdminByEmail(loginEmail);
-      if (!admin || admin.password !== loginPassword) {
-        setAuthError("Invalid administrator credentials.");
-        setIsSubmitting(false);
-        return;
+      let loggedInEmail = loginEmail;
+      let adminRecord: DbAdmin | null = null;
+
+      if (isSupabaseConfigured && supabase) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword
+        });
+
+        if (signInError) {
+          setAuthError(signInError.message);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (signInData.user) {
+          adminRecord = await db.findAdminByEmail(loginEmail);
+          if (!adminRecord) {
+            setAuthError("Your account is not registered as an administrator in the database registry.");
+            setIsSubmitting(false);
+            await supabase.auth.signOut();
+            return;
+          }
+          loggedInEmail = adminRecord.email;
+        }
+      } else {
+        const admin = await db.findAdminByEmail(loginEmail);
+        if (!admin || admin.password !== loginPassword) {
+          setAuthError("Invalid administrator credentials.");
+          setIsSubmitting(false);
+          return;
+        }
+        adminRecord = admin;
       }
 
-      // Successful login
-      localStorage.setItem("advaltad_admin_session_email", admin.email);
-      setCurrentAdmin(admin);
-      setIsAuthenticated(true);
-      setView("dashboard");
-      setIsSubmitting(false);
-      loadDbData();
-    } catch (err) {
-      setAuthError("An unexpected error occurred during admin authentication.");
+      if (adminRecord) {
+        localStorage.setItem("advaltad_admin_session_email", loggedInEmail);
+        setCurrentAdmin(adminRecord);
+        setIsAuthenticated(true);
+        setView("dashboard");
+        window.location.hash = "#/admin/dashboard";
+        setIsSubmitting(false);
+        loadDbData();
+      }
+    } catch (err: any) {
+      setAuthError(err.message || "An unexpected error occurred during admin authentication.");
       setIsSubmitting(false);
     }
   };
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = async () => {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut();
+    }
     localStorage.removeItem("advaltad_admin_session_email");
     setCurrentAdmin(null);
     setIsAuthenticated(false);
     setView("login");
+    window.location.hash = "#/admin";
   };
 
   // Status Action Handlers
@@ -242,6 +341,119 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     }
   };
 
+  // Blog Management Handlers
+  const handleBlogSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!blogTitle || !blogContent) return;
+
+    try {
+      const blogData = {
+        title: blogTitle,
+        tag: blogTag || "GENERAL UPDATE",
+        excerpt: blogExcerpt || blogContent.substring(0, 120) + "...",
+        content: blogContent,
+        image: blogImage || "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200",
+        author: currentAdmin?.name || "Super Admin"
+      };
+
+      if (editingBlog) {
+        await db.updateBlog(editingBlog.id, blogData);
+        await db.logActivity({
+          type: "status_change",
+          desc: `Super Admin "${currentAdmin?.name}" updated blog entry: "${blogTitle}"`
+        });
+      } else {
+        await db.createBlog(blogData);
+        await db.logActivity({
+          type: "status_change",
+          desc: `Super Admin "${currentAdmin?.name}" published a new blog story: "${blogTitle}"`
+        });
+      }
+
+      setBlogTitle("");
+      setBlogTag("");
+      setBlogExcerpt("");
+      setBlogContent("");
+      setBlogImage("");
+      setEditingBlog(null);
+      setIsBlogFormOpen(false);
+      loadBlogs();
+    } catch (err) {
+      console.error("Failed to submit blog:", err);
+    }
+  };
+
+  const handleEditBlogClick = (blog: DbBlog) => {
+    setEditingBlog(blog);
+    setBlogTitle(blog.title);
+    setBlogTag(blog.tag || "");
+    setBlogExcerpt(blog.excerpt || "");
+    setBlogContent(blog.content);
+    setBlogImage(blog.image || "");
+    setIsBlogFormOpen(true);
+  };
+
+  const handleDeleteBlog = async (id: string, title: string) => {
+    if (!window.confirm(`Are you sure you want to delete blog "${title}"?`)) return;
+    try {
+      await db.deleteBlog(id);
+      await db.logActivity({
+        type: "status_change",
+        desc: `Super Admin "${currentAdmin?.name}" deleted blog: "${title}"`
+      });
+      loadBlogs();
+    } catch (err) {
+      console.error("Failed to delete blog:", err);
+    }
+  };
+
+  // Ambassador Financial Wallet Handlers
+  const handleFundWallet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedWalletAmbassador || !walletFundAmount) return;
+    const amount = parseInt(walletFundAmount);
+    if (isNaN(amount) || amount <= 0) return;
+
+    setIsFundingWallet(true);
+    try {
+      // Find current wallet balance
+      const currentWallet = wallets.find(w => w.ambassador_id === selectedWalletAmbassador.id);
+      const currentBal = currentWallet ? currentWallet.balance : selectedWalletAmbassador.avu_balance;
+      const newBal = currentBal + amount;
+
+      if (currentWallet) {
+        await db.updateWalletBalance(selectedWalletAmbassador.id, newBal);
+      } else {
+        await db.createWallet({
+          ambassador_id: selectedWalletAmbassador.id,
+          email: selectedWalletAmbassador.email,
+          balance: newBal
+        });
+      }
+
+      // Also update ambassador balance for parity
+      await db.updateAvuBalance(selectedWalletAmbassador.id, newBal);
+
+      await db.logActivity({
+        ambassador_id: selectedWalletAmbassador.id,
+        ambassador_name: selectedWalletAmbassador.name,
+        type: "avu_transfer",
+        desc: `Super Admin "${currentAdmin?.name}" allocated ${amount} AVU to Ambassador wallet.`,
+        amount: `${amount} AVU`
+      });
+
+      setWalletFundAmount("");
+      setSelectedWalletAmbassador(null);
+      setIsWalletModalOpen(false);
+      loadWallets();
+      loadDbData();
+    } catch (err) {
+      console.error("Failed to fund wallet:", err);
+    } finally {
+      setIsFundingWallet(false);
+    }
+  };
+
   // Filter calculations
   const filteredAmbassadors = ambassadors.filter((amb) => {
     const matchesSearch = 
@@ -310,7 +522,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   className="space-y-5"
                 >
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Administrator Email</label>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Admin Email Address</label>
                     <div className="relative">
                       <Mail size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
@@ -325,7 +537,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Access Password</label>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Strong Admin Password</label>
                     <div className="relative">
                       <Lock size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
@@ -346,7 +558,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   >
                     {isSubmitting ? (
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : "Verify Credentials"}
+                    ) : "Login Admin Account"}
                   </button>
 
                   <div className="pt-4 text-center border-t border-slate-100">
@@ -355,7 +567,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       onClick={() => setView("signup")}
                       className="text-xs text-emerald-600 hover:text-emerald-700 font-bold tracking-tight cursor-pointer"
                     >
-                      Need a sovereign supervisor account? Register here
+                      Need an admin account? Register here
                     </button>
                   </div>
                 </motion.form>
@@ -369,7 +581,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   className="space-y-5"
                 >
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Sovereign Full Name</label>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Admin Full Name</label>
                     <div className="relative">
                       <User size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
@@ -384,7 +596,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Supervisor Email Address</label>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Admin Email Address</label>
                     <div className="relative">
                       <Mail size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
@@ -399,7 +611,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Strong Master Password</label>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Strong Admin Password</label>
                     <div className="relative">
                       <Lock size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
@@ -514,6 +726,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     )}
                   </span>
                 )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab("blogs")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "blogs"
+                    ? "bg-emerald-600 text-white"
+                    : "hover:bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Compass size={16} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span>Blog Management</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab("wallets")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "wallets"
+                    ? "bg-emerald-600 text-white"
+                    : "hover:bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Coins size={16} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span>Financial Overview</span>}
               </button>
             </nav>
 
@@ -823,6 +1059,277 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </motion.div>
                 )}
 
+                {/* TAB 4: BLOG / IMPACT STORY MANAGEMENT */}
+                {activeTab === "blogs" && (
+                  <motion.div
+                    key="tab-v-blogs"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-6 text-left"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Blog & Impact Stories</h3>
+                        <p className="text-xs text-slate-500">Create, edit, and publish dynamic updates and grassroots impact stories to the system.</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingBlog(null);
+                          setBlogTitle("");
+                          setBlogTag("");
+                          setBlogExcerpt("");
+                          setBlogContent("");
+                          setBlogImage("");
+                          setIsBlogFormOpen(!isBlogFormOpen);
+                        }}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                      >
+                        <Plus size={14} />
+                        {isBlogFormOpen ? "Close Editor" : "Create Story"}
+                      </button>
+                    </div>
+
+                    {/* Blog Create / Edit Form */}
+                    {isBlogFormOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        className="bg-white border border-slate-150 rounded-2xl p-6 shadow-sm space-y-4"
+                      >
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b border-slate-50 pb-2">
+                          {editingBlog ? "Edit Impact Story" : "Compose New Impact Story"}
+                        </h4>
+
+                        <form onSubmit={handleBlogSubmit} className="space-y-4 text-xs">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="font-bold text-slate-500">Story Title *</label>
+                              <input
+                                type="text"
+                                required
+                                value={blogTitle}
+                                onChange={(e) => setBlogTitle(e.target.value)}
+                                placeholder="e.g. From Code-Block to Career: Chidi's Path"
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="font-bold text-slate-500">Category Tag (e.g. EDUCATION, HOUSING)</label>
+                              <input
+                                type="text"
+                                value={blogTag}
+                                onChange={(e) => setBlogTag(e.target.value)}
+                                placeholder="e.g. EDUCATION & TECH EXCELLENCE"
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="font-bold text-slate-500">Unsplash or Custom Image URL</label>
+                              <input
+                                type="text"
+                                value={blogImage}
+                                onChange={(e) => setBlogImage(e.target.value)}
+                                placeholder="https://images.unsplash.com/..."
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="font-bold text-slate-500">Brief Excerpt / Summary Statement</label>
+                              <input
+                                type="text"
+                                value={blogExcerpt}
+                                onChange={(e) => setBlogExcerpt(e.target.value)}
+                                placeholder="A brief one-sentence hook of the story..."
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-500">Full Content Text *</label>
+                            <textarea
+                              rows={6}
+                              required
+                              value={blogContent}
+                              onChange={(e) => setBlogContent(e.target.value)}
+                              placeholder="Write the full narrative or update details here..."
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 leading-relaxed"
+                            />
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsBlogFormOpen(false);
+                                setEditingBlog(null);
+                              }}
+                              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-5 py-2 bg-slate-900 hover:bg-slate-850 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                            >
+                              {editingBlog ? "Save Changes" : "Publish Story"}
+                            </button>
+                          </div>
+                        </form>
+                      </motion.div>
+                    )}
+
+                    {/* Blogs List */}
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                      <div className="divide-y divide-slate-100">
+                        {blogs.length === 0 ? (
+                          <div className="p-12 text-center text-slate-400 text-xs">
+                            <Compass size={32} className="mx-auto mb-3 text-slate-300" />
+                            No blogs or impact stories currently published.
+                          </div>
+                        ) : (
+                          blogs.map((blog) => (
+                            <div key={blog.id} className="p-6 flex flex-col md:flex-row gap-5 items-start md:items-center justify-between">
+                              <div className="flex gap-4 items-start flex-1 min-w-0">
+                                {blog.image ? (
+                                  <img
+                                    src={blog.image}
+                                    alt={blog.title}
+                                    referrerPolicy="no-referrer"
+                                    className="w-16 h-16 rounded-xl object-cover border border-slate-100 flex-shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 flex-shrink-0">
+                                    <Compass size={24} />
+                                  </div>
+                                )}
+                                <div className="space-y-1 text-left min-w-0">
+                                  <span className="text-[9px] font-black tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md uppercase">
+                                    {blog.tag || "GENERAL UPDATE"}
+                                  </span>
+                                  <h4 className="text-xs font-black text-slate-900 truncate tracking-tight">{blog.title}</h4>
+                                  <p className="text-[11px] text-slate-500 line-clamp-1">{blog.excerpt}</p>
+                                  <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                                    <span>By {blog.author}</span>
+                                    <span>•</span>
+                                    <span>{new Date(blog.created_at).toLocaleDateString()}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 self-end md:self-auto flex-shrink-0">
+                                <button
+                                  onClick={() => handleEditBlogClick(blog)}
+                                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Edit size={12} className="text-slate-400" />
+                                  Edit Story
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBlog(blog.id, blog.title)}
+                                  className="p-1.5 border border-rose-100 bg-rose-50 hover:bg-rose-100/50 text-rose-700 rounded-xl transition-all cursor-pointer"
+                                  title="Delete Blog"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB 5: AMBASSADOR FINANCIAL OVERVIEW */}
+                {activeTab === "wallets" && (
+                  <motion.div
+                    key="tab-v-wallets"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-6 text-left"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Ambassador Financial Overview</h3>
+                        <p className="text-xs text-slate-500">Track and allocate funding directly to certified Ambassador accounts via the ambassador_wallets table.</p>
+                      </div>
+                      <div className="bg-slate-900 text-emerald-400 font-mono text-xs px-4 py-2.5 rounded-xl border border-slate-800 flex items-center gap-2">
+                        <Coins size={14} />
+                        <span className="font-bold tracking-tight">Total Authorized Reserves: {totalAVU} AVU</span>
+                      </div>
+                    </div>
+
+                    {/* Wallets Grid / Table List */}
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                      <div className="divide-y divide-slate-100">
+                        {ambassadors.length === 0 ? (
+                          <div className="p-12 text-center text-slate-400 text-xs">
+                            <Coins size={32} className="mx-auto mb-3 text-slate-300" />
+                            No registered ambassadors to overview.
+                          </div>
+                        ) : (
+                          ambassadors.map((amb) => {
+                            const wallet = wallets.find(w => w.ambassador_id === amb.id || w.email.toLowerCase() === amb.email.toLowerCase());
+                            const balance = wallet ? wallet.balance : amb.avu_balance;
+                            const walletId = wallet ? wallet.id : "No Active Wallet Instance";
+
+                            return (
+                              <div key={amb.id} className="p-6 flex flex-col md:flex-row gap-5 items-start md:items-center justify-between">
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-xs font-black text-slate-900 truncate tracking-tight">{amb.name}</h4>
+                                    {amb.status === "approved" ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[8px] font-black uppercase tracking-wider border border-emerald-100">
+                                        CERTIFIED
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[8px] font-black uppercase tracking-wider border border-amber-100 animate-pulse">
+                                        PENDING AUDIT
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">{amb.email}</p>
+                                  <div className="flex items-center gap-2 text-[9px] text-slate-400 font-mono">
+                                    <span className="text-slate-500 font-bold">Wallet ID:</span>
+                                    <span className="truncate max-w-[150px]">{walletId}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-4 self-end md:self-auto flex-shrink-0">
+                                  <div className="text-right">
+                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-0.5">Wallet Balance</span>
+                                    <span className="font-mono font-black text-sm text-slate-900 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-xl border border-emerald-100 block">
+                                      {balance} AVU
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    onClick={() => {
+                                      setSelectedWalletAmbassador(amb);
+                                      setWalletFundAmount("");
+                                      setIsWalletModalOpen(true);
+                                    }}
+                                    className="px-4 py-2.5 bg-slate-900 hover:bg-slate-850 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer self-center"
+                                  >
+                                    <Coins size={12} />
+                                    Allocate Funds
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
               </AnimatePresence>
 
             </div>
@@ -987,6 +1494,80 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </div>
                 </div>
 
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 4. ALLOCATE WALLET FUNDS DIALOG MODAL */}
+      <AnimatePresence>
+        {isWalletModalOpen && selectedWalletAmbassador && (
+          <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl relative border border-slate-100 text-left"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <div className="flex items-center gap-2 text-slate-950">
+                  <Coins size={18} className="text-emerald-600" />
+                  <h4 className="text-xs font-black uppercase tracking-wider">Allocate Wallet Funding</h4>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedWalletAmbassador(null);
+                    setIsWalletModalOpen(false);
+                  }}
+                  className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Recipient Ambassador</span>
+                  <p className="font-bold text-slate-850 text-sm mt-0.5">{selectedWalletAmbassador.name}</p>
+                  <p className="font-mono text-[10px] text-slate-400">{selectedWalletAmbassador.email}</p>
+                </div>
+
+                <form onSubmit={handleFundWallet} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-500">Allocation Amount (AVU) *</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={walletFundAmount}
+                      onChange={(e) => setWalletFundAmount(e.target.value)}
+                      placeholder="e.g. 500"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-slate-800"
+                    />
+                    <p className="text-[10px] text-slate-400">Specify the amount of Advaltad Valor Units to transfer to this ambassador's secure wallet.</p>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedWalletAmbassador(null);
+                        setIsWalletModalOpen(false);
+                      }}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isFundingWallet}
+                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-850 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      {isFundingWallet ? "Authorizing..." : "Authorize Allocation"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </motion.div>
           </div>

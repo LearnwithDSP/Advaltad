@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador } from "../lib/supabase";
+import { AmbassadorProfile } from "./AmbassadorProfile";
 import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 import {
   ResponsiveContainer,
@@ -1651,174 +1652,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   exit={{ opacity: 0, y: 10 }}
                   className="space-y-8"
                 >
-                  <div className="pb-4 border-b border-gray-200">
-                    <h3 className="text-xl font-bold text-gray-900">Update Profile & Base City</h3>
-                    <p className="text-xs text-gray-500 font-sans">Modify your public professional registry credentials, focus area, and secure ledger account security.</p>
-                  </div>
-
-                  {updateSuccess && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-emerald-800 text-xs font-medium"
-                    >
-                      <Icon name="CheckCircle2" className="text-emerald-600 flex-shrink-0" size={18} />
-                      <div>
-                        <p className="font-bold">Registry synchronized successfully!</p>
-                        <p className="text-emerald-700/80">Your details have been securely written to the sovereign ambassador registry.</p>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <div className="grid md:grid-cols-12 gap-8 items-start">
-                    {/* Left Form Panel */}
-                    <div className="bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-sm md:col-span-8">
-                      <form onSubmit={handleUpdateProfile} className="space-y-6">
-                        
-                        <div className="grid sm:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                              <Icon name="UserCheck" size={12} className="text-slate-400" />
-                              Professional Name
-                            </label>
-                            <input
-                              required
-                              type="text"
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              placeholder="e.g. Ramon Bisola"
-                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                              <Icon name="MapPin" size={12} className="text-slate-400" />
-                              Base City & Country
-                            </label>
-                            <input
-                              required
-                              type="text"
-                              value={editCity}
-                              onChange={(e) => setEditCity(e.target.value)}
-                              placeholder="e.g. Lagos, Nigeria"
-                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid sm:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                              <Icon name="Compass" size={12} className="text-slate-400" />
-                              Focus Division / Field focus
-                            </label>
-                            <input
-                              required
-                              type="text"
-                              value={editField}
-                              onChange={(e) => setEditField(e.target.value)}
-                              placeholder="e.g. Youth Technology Labs"
-                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
-                            />
-                            <p className="text-[10px] text-slate-400 mt-1.5 italic">This represents your field activity scope.</p>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                              <Icon name="Phone" size={12} className="text-slate-400" />
-                              Telephone Contact
-                            </label>
-                            <input
-                              required
-                              type="text"
-                              value={editPhone}
-                              onChange={(e) => setEditPhone(e.target.value)}
-                              placeholder="e.g. +234 801 234 5678"
-                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="border-t border-slate-100 pt-6">
-                          <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                            <Icon name="Lock" size={14} className="text-slate-500" />
-                            Account Security
-                          </h4>
-                          
-                          <div className="max-w-md">
-                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
-                              Ambassador Password
-                            </label>
-                            <input
-                              required
-                              type="password"
-                              value={editPassword}
-                              onChange={(e) => setEditPassword(e.target.value)}
-                              placeholder="••••••••"
-                              className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 pt-4">
-                          <button
-                            type="submit"
-                            disabled={isUpdatingProfile}
-                            className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-2 cursor-pointer"
-                          >
-                            {isUpdatingProfile ? (
-                              <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Synchronizing Ledger...
-                              </>
-                            ) : (
-                              <>
-                                <Icon name="Check" size={14} />
-                                Save Profile Settings
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                      </form>
-                    </div>
-
-                    {/* Right Interactive Sidebar Context Info */}
-                    <div className="md:col-span-4 space-y-6 text-left">
-                      <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
-                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center">
-                          <Icon name="Shield" size={18} />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-800">Sovereign Profile Registry</h4>
-                          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                            Your updated details will immediately propagate to your printed Fellowship Certificate, P2P Ledger, and regional donation campaigns.
-                          </p>
-                        </div>
-                        <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1">
-                          <p>SECURE_ID: {profile?.id}</p>
-                          <p>LEDGER_SYNC: ACTIVE</p>
-                        </div>
-                      </div>
-
-                      <div className="p-6 rounded-3xl border border-gray-150/70 space-y-3.5">
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider">
-                          Live Fellowship Preview
-                        </span>
-                        
-                        <div className="space-y-1.5 pt-1">
-                          <h5 className="text-sm font-black text-slate-800 tracking-tight">{editName || "Ramon Bisola"}</h5>
-                          <p className="text-xs text-slate-500">{editCity || "Lagos, Nigeria"}</p>
-                          <p className="text-[11px] font-medium text-emerald-700 bg-emerald-50/50 border border-emerald-100/50 rounded-lg p-2 mt-1">
-                            {editField || "Youth Technology Labs"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
+                  <AmbassadorProfile
+                    profile={profile!}
+                    onProfileUpdated={fetchAmbassadorData}
+                  />
                 </motion.div>
               )}
 
