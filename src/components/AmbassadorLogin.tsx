@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Icon } from "./Icon";
-import { db } from "../lib/supabase";
+import { db, isSupabaseConfigured, supabase } from "../lib/supabase";
 
 interface AmbassadorLoginProps {
   onLoginSuccess: (email: string) => void;
@@ -34,11 +34,24 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         return;
       }
 
+      // If Supabase is configured, sign in via Supabase Auth as well
+      if (isSupabaseConfigured && supabase) {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+        if (authError) {
+          setErrorMsg("Authentication failed: " + authError.message);
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
       // Store active session email in localStorage
       localStorage.setItem("advaltad_session_email", email);
       onLoginSuccess(email);
-    } catch (err) {
-      setErrorMsg("An error occurred during authentication. Please try again.");
+    } catch (err: any) {
+      setErrorMsg(err?.message || "An error occurred during authentication. Please try again.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -47,18 +60,29 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
   const loadApprovedDemo = async () => {
     // Make sure Ramon is in DB, then log him in
     try {
-      const existing = await db.findAmbassadorByEmail("ramon@example.com");
+      const email = "ramon@example.com";
+      const password = "password123";
+
+      if (isSupabaseConfigured && supabase) {
+        // Try signing up if they don't exist in Auth yet, then sign in
+        try {
+          await supabase.auth.signUp({ email, password });
+        } catch (_) {}
+        await supabase.auth.signInWithPassword({ email, password });
+      }
+
+      const existing = await db.findAmbassadorByEmail(email);
       if (!existing) {
         await db.createAmbassador({
           name: "Ramon Bisola",
           city: "Lagos, Nigeria",
           field: "Enriching African youths initiative",
-          email: "ramon@example.com",
+          email: email,
           phone: "+234 801 234 5678",
-          password: "password123"
+          password: password
         });
         // Auto approve Ramon
-        const ramon = await db.findAmbassadorByEmail("ramon@example.com");
+        const ramon = await db.findAmbassadorByEmail(email);
         if (ramon) {
           await db.updateStatus(ramon.id, "approved");
         }
@@ -66,8 +90,8 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         // Ensure Ramon is approved for approved demo
         await db.updateStatus(existing.id, "approved");
       }
-      localStorage.setItem("advaltad_session_email", "ramon@example.com");
-      onLoginSuccess("ramon@example.com");
+      localStorage.setItem("advaltad_session_email", email);
+      onLoginSuccess(email);
     } catch (e) {
       localStorage.setItem("advaltad_session_email", "ramon@example.com");
       onLoginSuccess("ramon@example.com");
@@ -77,7 +101,16 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
   const loadPendingDemo = async () => {
     // Create or locate a pending demo user
     const pendingEmail = "pending_demo@advaltad.org";
+    const password = "password123";
     try {
+      if (isSupabaseConfigured && supabase) {
+        // Try signing up if they don't exist in Auth yet, then sign in
+        try {
+          await supabase.auth.signUp({ email: pendingEmail, password });
+        } catch (_) {}
+        await supabase.auth.signInWithPassword({ email: pendingEmail, password });
+      }
+
       const existing = await db.findAmbassadorByEmail(pendingEmail);
       if (!existing) {
         await db.createAmbassador({
@@ -86,7 +119,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
           field: "Schools (Stem and Robotic education)",
           email: pendingEmail,
           phone: "+234 902 345 6789",
-          password: "password123"
+          password: password
         });
       } else {
         // Ensure status is pending for pending demo

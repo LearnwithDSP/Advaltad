@@ -10,6 +10,7 @@ import { Footer } from "./components/Footer";
 import { AmbassadorLogin } from "./components/AmbassadorLogin";
 import { AmbassadorDashboard } from "./components/AmbassadorDashboard";
 import { AdminPortal } from "./components/AdminPortal";
+import { isSupabaseConfigured, supabase } from "./lib/supabase";
 
 // Import new modular independent page components
 import { HomePage } from "./pages/HomePage";
@@ -32,7 +33,17 @@ export default function App() {
       setRoute(hash);
 
       // Dynamically sync auth state from localStorage on route transitions
-      setIsAuthenticated(!!localStorage.getItem("advaltad_session_email"));
+      const hasSession = !!localStorage.getItem("advaltad_session_email");
+      setIsAuthenticated(hasSession);
+
+      const lowercaseRoute = hash.toLowerCase();
+      const isDashboard = lowercaseRoute.includes("growth-ambassadors") || lowercaseRoute.includes("ambassador/dashboard");
+
+      if (isDashboard && !hasSession) {
+        // Automatically redirect a logged-out user to the homepage
+        window.location.href = "/";
+        return;
+      }
 
       // Auto-jump view scroll to page absolute top on transitions
       window.scrollTo({ top: 0, behavior: "instant" as any });
@@ -60,9 +71,26 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.error("Supabase Auth signOut failed:", error);
+          throw error;
+        }
+      }
+    } catch (err: any) {
+      console.error("Error during Supabase sign out:", err);
+    }
+
+    // Clear any local user state & session state
+    localStorage.removeItem("advaltad_session_email");
+    localStorage.removeItem("advaltad_admin_session_email");
     setIsAuthenticated(false);
-    window.location.hash = "#home";
+    
+    // Redirect the user to the homepage: /
+    window.location.href = "/";
   };
 
   const lowercaseRoute = route.toLowerCase();

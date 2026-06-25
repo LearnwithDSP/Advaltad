@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador } from "../lib/supabase";
+import { db, DbAmbassador, isSupabaseConfigured, supabase } from "../lib/supabase";
 import { AmbassadorProfile } from "./AmbassadorProfile";
 import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 import {
@@ -167,7 +167,30 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   };
 
   useEffect(() => {
-    fetchAmbassadorData();
+    const verifyAndFetch = async () => {
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: { user }, error } = await supabase.auth.getUser();
+          if (error || !user) {
+            console.error("No authenticated user exists in Supabase Auth:", error);
+            // Clear local states
+            localStorage.removeItem("advaltad_session_email");
+            onLogout();
+            window.location.href = "/";
+            return;
+          }
+        } catch (err) {
+          console.error("Error verifying authenticated user via Supabase:", err);
+          localStorage.removeItem("advaltad_session_email");
+          onLogout();
+          window.location.href = "/";
+          return;
+        }
+      }
+      fetchAmbassadorData();
+    };
+
+    verifyAndFetch();
   }, []);
 
   const handleSimulateApproval = async (idToApprove: string) => {
