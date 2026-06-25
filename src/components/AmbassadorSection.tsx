@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db } from "../lib/supabase";
+import { db, supabase, isSupabaseConfigured } from "../lib/supabase";
 import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 
 export const AmbassadorSection: React.FC = () => {
@@ -17,48 +17,113 @@ export const AmbassadorSection: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !city || !email || !phone || !password) return;
+    
+    // STEP 1: Validate all required fields
+    if (!name || !city || !field || !email || !phone || !password) {
+      setErrorMessage("Please fill out all required fields.");
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMessage("");
+
     try {
-      // Check if email already registered
-      const existing = await db.findAmbassadorByEmail(email);
-      if (existing) {
-        setErrorMessage("An ambassador with this email address is already registered.");
-        setIsSubmitting(false);
-        return;
+      let newlyCreatedId = "";
+      let newlyCreatedName = name;
+
+      if (isSupabaseConfigured && supabase) {
+        // STEP 2: Create the user account using Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+
+        if (authError) {
+          console.error("Supabase Auth signUp failed:", authError);
+          if (authError.message.includes("already registered") || authError.status === 422) {
+            setErrorMessage("An ambassador with this email address is already registered.");
+          } else if (authError.message.toLowerCase().includes("password")) {
+            setErrorMessage("Password is too weak. Please choose a stronger password (at least 6 characters).");
+          } else {
+            setErrorMessage("Authentication failed: " + authError.message);
+          }
+          setIsSubmitting(false);
+          return;
+        }
+
+        const userId = authData.user?.id;
+        if (!userId) {
+          setErrorMessage("Failed to retrieve authentication reference. Please try again.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        newlyCreatedId = userId;
+
+        // STEP 3: Insert the ambassador profile into the Supabase table
+        try {
+          const newlyCreated = await db.createAmbassador({
+            name,
+            city,
+            field,
+            email,
+            phone,
+            password,
+            user_id: userId
+          });
+          newlyCreatedId = newlyCreated.id;
+          newlyCreatedName = newlyCreated.name;
+        } catch (dbError: any) {
+          console.error("Supabase Database insertion failed:", dbError);
+          setErrorMessage("Failed to save your ambassador profile in the database. Please try again.");
+          setIsSubmitting(false);
+          return;
+        }
+      } else {
+        // Fallback local DB mode
+        const existing = await db.findAmbassadorByEmail(email);
+        if (existing) {
+          setErrorMessage("An ambassador with this email address is already registered.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        const newlyCreated = await db.createAmbassador({
+          name,
+          city,
+          field,
+          email,
+          phone,
+          password
+        });
+        newlyCreatedId = newlyCreated.id;
+        newlyCreatedName = newlyCreated.name;
       }
 
-      // Create new ambassador in Supabase/local DB
-      const newlyCreated = await db.createAmbassador({
-        name,
-        city,
-        field,
-        email,
-        phone,
-        password
-      });
-
       // Log registration activity
-      await db.logActivity({
-        ambassador_id: newlyCreated.id,
-        ambassador_name: newlyCreated.name,
-        type: "registration",
-        desc: `Submitted registration for professional portfolio in ${newlyCreated.city} (${newlyCreated.field})`
-      });
+      try {
+        await db.logActivity({
+          ambassador_id: newlyCreatedId,
+          ambassador_name: newlyCreatedName,
+          type: "registration",
+          desc: `Submitted registration for professional portfolio in ${city} (${field})`
+        });
+      } catch (logErr) {
+        console.warn("Could not log registration activity:", logErr);
+      }
 
       // Save user session email in localStorage to auto-login
       localStorage.setItem("advaltad_session_email", email);
 
+      setIsSubmitting(false);
+      setIsRegistered(true);
+
+      // Automatically redirect to the Growth Ambassador Dashboard after 2.5s
       setTimeout(() => {
-        setIsSubmitting(false);
-        setIsRegistered(true);
-        // Automatically redirect to the Growth Ambassador Dashboard
-        window.location.hash = "#/growth-ambassadors";
-      }, 1500);
-    } catch (error) {
-      console.error(error);
+        window.location.hash = "#/ambassador/dashboard";
+      }, 2500);
+    } catch (error: any) {
+      console.error("Signup flow error:", error);
       setErrorMessage("Registration failed. Please check your network or try again.");
       setIsSubmitting(false);
     }
@@ -251,6 +316,16 @@ export const AmbassadorSection: React.FC = () => {
                   {/* Subtle vector grid */}
                   <div className="absolute inset-0 z-0 opacity-10 pointer-events-none bg-[linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_4px]" />
 
+                  {/* Success Announcement Callout */}
+                  <div className="relative z-10 w-full p-4 bg-emerald-950/50 border border-emerald-500/30 text-emerald-300 rounded-2xl text-xs flex items-start gap-2.5 text-left shadow-inner animate-fade-in">
+                    <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Icon name="CheckCircle" size={13} className="text-emerald-400" />
+                    </div>
+                    <span className="leading-relaxed font-sans font-medium text-emerald-200">
+                      Congratulations! Your Ambassador profile has been created. Your badge is pending approval.
+                    </span>
+                  </div>
+
                   <div className="relative z-10 w-full">
                     {/* Header bar of credential */}
                     <div className="flex justify-between items-center w-full border-b border-white/10 pb-4">
@@ -303,7 +378,7 @@ export const AmbassadorSection: React.FC = () => {
                   <div className="w-full relative z-10 space-y-3.5">
                     <button
                       onClick={() => {
-                        window.location.hash = "#/growth-ambassadors";
+                        window.location.hash = "#/ambassador/dashboard";
                       }}
                       className="w-full py-4.5 rounded-xl bg-brand-primary hover:bg-[#0A4233] text-white font-display font-bold text-xs tracking-widest uppercase transition-colors cursor-pointer flex items-center justify-center gap-2"
                     >

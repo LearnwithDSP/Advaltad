@@ -22,12 +22,17 @@ import { AmbassadorPage } from "./pages/AmbassadorPage";
 
 export default function App() {
   const [route, setRoute] = useState<string>("#home");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem("advaltad_session_email");
+  });
 
   useEffect(() => {
     const checkRoute = () => {
       const hash = window.location.hash || "#home";
       setRoute(hash);
+
+      // Dynamically sync auth state from localStorage on route transitions
+      setIsAuthenticated(!!localStorage.getItem("advaltad_session_email"));
 
       // Auto-jump view scroll to page absolute top on transitions
       window.scrollTo({ top: 0, behavior: "instant" as any });
@@ -61,7 +66,7 @@ export default function App() {
   };
 
   const lowercaseRoute = route.toLowerCase();
-  const isDashboardView = lowercaseRoute.includes("growth-ambassadors");
+  const isDashboardView = lowercaseRoute.includes("growth-ambassadors") || lowercaseRoute.includes("ambassador/dashboard");
   const isAdminView = lowercaseRoute.includes("admin");
   const isAdminAuthenticated = !!localStorage.getItem("advaltad_admin_session_email");
   const hideHeaderFooter = (isDashboardView && isAuthenticated) || (isAdminView && isAdminAuthenticated);

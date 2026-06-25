@@ -147,6 +147,35 @@ function saveLocalDb(db: DbAmbassador[]) {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(db));
 }
 
+// Helper to map DB row to DbAmbassador
+function mapRowToAmbassador(row: any): DbAmbassador {
+  return {
+    id: row.user_id || row.id || "",
+    name: row.professional_name || row.name || "",
+    city: row.base_city || row.city || "",
+    field: row.focus_interest || row.field || "",
+    email: row.email || "",
+    phone: row.phone_number || row.phone || "",
+    status: row.badge_status === "approved" || row.status === "approved" ? "approved" : "pending",
+    avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 1250,
+    created_at: row.created_at || new Date().toISOString()
+  };
+}
+
+// Helper to map DbAmbassador properties to DB keys
+function mapAmbassadorToRow(ambassador: Partial<DbAmbassador & { user_id?: string }>) {
+  const row: any = {};
+  if (ambassador.user_id !== undefined) row.user_id = ambassador.user_id;
+  if (ambassador.name !== undefined) row.professional_name = ambassador.name;
+  if (ambassador.city !== undefined) row.base_city = ambassador.city;
+  if (ambassador.field !== undefined) row.focus_interest = ambassador.field;
+  if (ambassador.email !== undefined) row.email = ambassador.email;
+  if (ambassador.phone !== undefined) row.phone_number = ambassador.phone;
+  if (ambassador.status !== undefined) row.badge_status = ambassador.status;
+  if (ambassador.avu_balance !== undefined) row.avu_balance = ambassador.avu_balance;
+  return row;
+}
+
 // Global Database API (Unified interface for both Supabase and LocalStorage fallback)
 export const db = {
   async getAmbassadors(): Promise<DbAmbassador[]> {
@@ -157,7 +186,7 @@ export const db = {
         .order("created_at", { ascending: false });
       
       if (!error && data) {
-        return data as DbAmbassador[];
+        return data.map(mapRowToAmbassador);
       }
       console.warn("Supabase fetch failed, falling back to local DB:", error);
     }
@@ -174,7 +203,7 @@ export const db = {
         .maybeSingle();
       
       if (!error && data) {
-        return data as DbAmbassador;
+        return mapRowToAmbassador(data);
       }
       if (error) {
         console.warn("Supabase query failed, falling back to local DB:", error);
@@ -185,9 +214,9 @@ export const db = {
     return localDb.find(a => a.email.toLowerCase() === email.toLowerCase()) || null;
   },
 
-  async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status">): Promise<DbAmbassador> {
+  async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string }): Promise<DbAmbassador> {
     const fresh: DbAmbassador = {
-      id: "AV-" + Math.floor(Math.random() * 89999 + 10000),
+      id: newAmbassador.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000),
       ...newAmbassador,
       avu_balance: 1250,
       status: "pending",
@@ -195,23 +224,24 @@ export const db = {
     };
 
     if (isSupabaseConfigured && supabase) {
+      const rowData = {
+        user_id: newAmbassador.user_id,
+        professional_name: fresh.name,
+        base_city: fresh.city,
+        focus_interest: fresh.field,
+        email: fresh.email,
+        phone_number: fresh.phone,
+        badge_status: fresh.status,
+        avu_balance: fresh.avu_balance
+      };
       const { data, error } = await supabase
         .from("ambassadors")
-        .insert([{
-          name: fresh.name,
-          city: fresh.city,
-          field: fresh.field,
-          email: fresh.email,
-          phone: fresh.phone,
-          password: fresh.password,
-          status: fresh.status,
-          avu_balance: fresh.avu_balance
-        }])
+        .insert([rowData])
         .select()
         .single();
       
       if (!error && data) {
-        return data as DbAmbassador;
+        return mapRowToAmbassador(data);
       }
       console.error("Supabase insert failed, using local DB fallback:", error);
     }
@@ -226,8 +256,8 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase
         .from("ambassadors")
-        .update({ status })
-        .eq("id", id);
+        .update({ badge_status: status })
+        .or(`id.eq.${id},user_id.eq.${id}`);
       
       if (!error) return true;
       console.error("Supabase update status failed:", error);
@@ -248,7 +278,7 @@ export const db = {
       const { error } = await supabase
         .from("ambassadors")
         .update({ avu_balance: amount })
-        .eq("id", id);
+        .or(`id.eq.${id},user_id.eq.${id}`);
       
       if (!error) return true;
       console.error("Supabase update balance failed:", error);
@@ -268,8 +298,8 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase
         .from("ambassadors")
-        .update(updates)
-        .eq("id", id);
+        .update(mapAmbassadorToRow(updates))
+        .or(`id.eq.${id},user_id.eq.${id}`);
       
       if (!error) return true;
       console.error("Supabase update profile failed:", error);
@@ -290,7 +320,7 @@ export const db = {
       const { error } = await supabase
         .from("ambassadors")
         .delete()
-        .eq("id", id);
+        .or(`id.eq.${id},user_id.eq.${id}`);
       
       if (!error) return true;
       console.error("Supabase delete failed:", error);
