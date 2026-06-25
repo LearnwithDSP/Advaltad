@@ -203,9 +203,23 @@ export const AmbassadorSection: React.FC = () => {
                   exit={{ opacity: 0, scale: 0.98 }}
                   className="bg-[#F7F8FA] rounded-[32px] p-8 sm:p-10 border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)]"
                 >
-                  <div className="pb-6 border-b border-slate-200">
-                    <h3 className="text-lg font-display font-black text-brand-charcoal">Enrollment Registry</h3>
-                    <p className="text-xs text-slate-400 mt-1">Create your digital badge to access ambassador portals.</p>
+                  <div className="pb-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <h3 className="text-lg font-display font-black text-brand-charcoal">Enrollment Registry</h3>
+                      <p className="text-xs text-slate-400 mt-1">Create your digital badge to access ambassador portals.</p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.hash = "#/ambassador/dashboard";
+                        }}
+                        className="text-xs font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none flex items-center gap-1"
+                      >
+                        <Icon name="Lock" size={12} />
+                        Ambassador Login
+                      </button>
+                    </div>
                   </div>
 
                   <form onSubmit={handleSubmit} className="space-y-4 pt-6 font-sans">
@@ -304,6 +318,21 @@ export const AmbassadorSection: React.FC = () => {
                     >
                       {isSubmitting ? "Becoming an Ambassador..." : "Become an Ambassador."}
                     </button>
+
+                    <div className="pt-4 text-center border-t border-slate-200 mt-4">
+                      <p className="text-xs text-slate-500">
+                        Already registered?{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.location.hash = "#/ambassador/dashboard";
+                          }}
+                          className="font-bold text-brand-primary hover:underline cursor-pointer focus:outline-none"
+                        >
+                          Login to Dashboard
+                        </button>
+                      </p>
+                    </div>
                   </form>
                 </motion.div>
               ) : (

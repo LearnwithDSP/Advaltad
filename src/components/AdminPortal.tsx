@@ -27,6 +27,7 @@ import {
   Edit
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, supabase, isSupabaseConfigured } from "../lib/supabase";
+import { FinancialOverviewChart } from "./FinancialOverviewChart";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -1264,6 +1265,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                         <span className="font-bold tracking-tight">Total Authorized Reserves: {totalAVU} AVU</span>
                       </div>
                     </div>
+
+                    {/* D3 Visualizations */}
+                    <FinancialOverviewChart ambassadors={ambassadors} wallets={wallets} />
 
                     {/* Wallets Grid / Table List */}
                     <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
