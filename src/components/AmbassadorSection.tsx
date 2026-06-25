@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db } from "../lib/supabase";
+import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 
 export const AmbassadorSection: React.FC = () => {
   const [name, setName] = useState("");
@@ -254,8 +255,13 @@ export const AmbassadorSection: React.FC = () => {
                     {/* Header bar of credential */}
                     <div className="flex justify-between items-center w-full border-b border-white/10 pb-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-brand-primary text-white font-display font-black flex items-center justify-center text-xs">
-                          A
+                        <div className="w-7 h-7 rounded-full overflow-hidden bg-white border border-slate-700/30 flex items-center justify-center shadow-sm">
+                          <img
+                            src={logoUrl}
+                            alt="Advaltad Foundation Logo"
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
                         </div>
                         <span className="text-[10px] font-extrabold tracking-wider text-slate-300 uppercase">Advaltad Fellowship</span>
                       </div>

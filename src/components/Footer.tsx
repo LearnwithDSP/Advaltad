@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
+import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 
 interface FooterProps {
   onDonateClick: () => void;
@@ -68,9 +69,14 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
             
             {/* Column 1: Brand & Social */}
             <div className="lg:col-span-4 space-y-6">
-              <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleQuickLinkClick("#/home")}>
-                <div className="w-8 h-8 rounded-lg bg-brand-primary text-white font-display font-black flex items-center justify-center text-sm">
-                  A
+              <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => handleQuickLinkClick("#/home")}>
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-white border border-slate-100 flex items-center justify-center shadow-md">
+                  <img
+                    src={logoUrl}
+                    alt="Advaltad Foundation Logo"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
                 <div>
                   <span className="text-sm font-display font-black tracking-tight text-brand-charcoal">Advaltad</span>

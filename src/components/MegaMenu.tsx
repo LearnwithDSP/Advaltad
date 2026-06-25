@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { NAVIGATION_DATA } from "../data";
 import { Icon } from "./Icon";
+import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 
 interface MegaMenuProps {
   onDonateClick: () => void;
@@ -86,8 +87,13 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
             }}
             className="flex items-center gap-3 group focus:outline-none"
           >
-            <div className="w-9 h-9 rounded-xl bg-brand-primary flex items-center justify-center text-white font-display font-black shadow-md shadow-brand-primary/10 group-hover:scale-105 transition-transform duration-300">
-              <span className="text-white block leading-none">A</span>
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-white border border-slate-100 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform duration-300">
+              <img
+                src={logoUrl}
+                alt="Advaltad Foundation Logo"
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div className="flex flex-col">
               <span className="text-brand-charcoal font-display font-black leading-tight tracking-tight text-base group-hover:text-brand-primary transition-colors duration-300">
@@ -267,11 +273,16 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
               className="fixed top-0 right-0 h-full w-full max-w-sm bg-white shadow-2xl z-[100] flex flex-col overflow-hidden lg:hidden"
             >
               <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center text-white font-display font-black">
-                    A
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-slate-100 flex items-center justify-center shadow-sm">
+                    <img
+                      src={logoUrl}
+                      alt="Advaltad Foundation Logo"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
-                  <span className="font-display font-black text-brand-charcoal">Advaltad</span>
+                  <span className="font-display font-black text-brand-charcoal text-sm">Advaltad</span>
                 </div>
                 <button
                   id="mobile-drawer-close-btn"

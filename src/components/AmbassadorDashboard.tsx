@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador } from "../lib/supabase";
+import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -1033,8 +1034,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       
                       {/* Top credentials header logo */}
                       <div className="flex flex-col items-center space-y-2">
-                        <div className="w-12 h-12 rounded-full bg-emerald-950 font-sans text-white font-extrabold flex items-center justify-center text-xl">
-                          A
+                        <div className="w-12 h-12 rounded-full overflow-hidden bg-white border border-emerald-950/20 flex items-center justify-center shadow-md">
+                          <img
+                            src={logoUrl}
+                            alt="Advaltad Foundation Logo"
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
                         </div>
                         <span className="text-xs font-sans uppercase font-black tracking-widest text-emerald-800">
                           Advaltad Growth & Support Foundation
