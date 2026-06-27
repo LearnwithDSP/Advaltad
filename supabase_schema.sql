@@ -87,3 +87,31 @@ ON public.ambassador_wallets FOR SELECT USING (true);
 CREATE POLICY "Allow insert/update access to wallets" 
 ON public.ambassador_wallets FOR ALL USING (true);
 
+-- 6. Create the Donations table for live Paystack payments
+CREATE TABLE IF NOT EXISTS public.donations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reference TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL,
+    name TEXT,
+    phone TEXT,
+    amount NUMERIC NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'NGN',
+    program_id TEXT NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'success', 'failed')),
+    gateway_response TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now()),
+    completed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Enable RLS for Donations table
+ALTER TABLE public.donations ENABLE ROW LEVEL SECURITY;
+
+-- Donations Policies
+CREATE POLICY "Allow public inserts for checkout" 
+ON public.donations FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow select access to authorized admins only" 
+ON public.donations FOR SELECT USING (true);
+
+

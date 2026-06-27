@@ -289,34 +289,49 @@ function mapAmbassadorToRow(ambassador: Partial<DbAmbassador & { user_id?: strin
 // Global Database API (Unified interface for both Supabase and LocalStorage fallback)
 export const db = {
   async getAmbassadors(): Promise<DbAmbassador[]> {
+    const local = getLocalDb();
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("ambassadors")
-        .select("*")
-        .order("created_at", { ascending: false });
-      
-      if (!error && data) {
-        return data.map(mapRowToAmbassador);
+      try {
+        const { data, error } = await supabase
+          .from("ambassadors")
+          .select("*")
+          .order("created_at", { ascending: false });
+        
+        if (!error && data) {
+          const remote = data.map(mapRowToAmbassador);
+          const merged = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.email.toLowerCase() === loc.email.toLowerCase() || rem.id === loc.id)) {
+              merged.push(loc);
+            }
+          }
+          return merged;
+        }
+        console.warn("Supabase fetch failed, falling back to local DB:", error);
+      } catch (err) {
+        console.warn("Supabase fetch failed with exception:", err);
       }
-      console.warn("Supabase fetch failed, falling back to local DB:", error);
     }
-    
-    return getLocalDb();
+    return local;
   },
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("ambassadors")
-        .select("*")
-        .eq("email", email)
-        .maybeSingle();
-      
-      if (!error && data) {
-        return mapRowToAmbassador(data);
-      }
-      if (error) {
-        console.warn("Supabase query failed, falling back to local DB:", error);
+      try {
+        const { data, error } = await supabase
+          .from("ambassadors")
+          .select("*")
+          .eq("email", email)
+          .maybeSingle();
+        
+        if (!error && data) {
+          return mapRowToAmbassador(data);
+        }
+        if (error) {
+          console.warn("Supabase query failed, falling back to local DB:", error);
+        }
+      } catch (err) {
+        console.warn("Supabase query failed with exception:", err);
       }
     }
     
@@ -334,26 +349,30 @@ export const db = {
     };
 
     if (isSupabaseConfigured && supabase) {
-      const rowData = {
-        user_id: newAmbassador.user_id,
-        professional_name: fresh.name,
-        base_city: fresh.city,
-        focus_interest: fresh.field,
-        email: fresh.email,
-        phone_number: fresh.phone,
-        badge_status: fresh.status,
-        avu_balance: fresh.avu_balance
-      };
-      const { data, error } = await supabase
-        .from("ambassadors")
-        .insert([rowData])
-        .select()
-        .single();
-      
-      if (!error && data) {
-        return mapRowToAmbassador(data);
+      try {
+        const rowData = {
+          user_id: newAmbassador.user_id,
+          professional_name: fresh.name,
+          base_city: fresh.city,
+          focus_interest: fresh.field,
+          email: fresh.email,
+          phone_number: fresh.phone,
+          badge_status: fresh.status,
+          avu_balance: fresh.avu_balance
+        };
+        const { data, error } = await supabase
+          .from("ambassadors")
+          .insert([rowData])
+          .select()
+          .single();
+        
+        if (!error && data) {
+          return mapRowToAmbassador(data);
+        }
+        console.warn("Supabase insert failed, using local DB fallback:", error);
+      } catch (err) {
+        console.warn("Supabase insert exception, using local DB fallback:", err);
       }
-      console.error("Supabase insert failed, using local DB fallback:", error);
     }
 
     const localDb = getLocalDb();
@@ -364,13 +383,17 @@ export const db = {
 
   async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("ambassadors")
-        .update({ badge_status: status })
-        .or(`id.eq.${id},user_id.eq.${id}`);
-      
-      if (!error) return true;
-      console.error("Supabase update status failed:", error);
+      try {
+        const { error } = await supabase
+          .from("ambassadors")
+          .update({ badge_status: status })
+          .or(`id.eq.${id},user_id.eq.${id}`);
+        
+        if (!error) return true;
+        console.warn("Supabase update status failed:", error);
+      } catch (err) {
+        console.warn("Supabase update status exception:", err);
+      }
     }
 
     const localDb = getLocalDb();
@@ -385,13 +408,17 @@ export const db = {
 
   async updateAvuBalance(id: string, amount: number): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("ambassadors")
-        .update({ avu_balance: amount })
-        .or(`id.eq.${id},user_id.eq.${id}`);
-      
-      if (!error) return true;
-      console.error("Supabase update balance failed:", error);
+      try {
+        const { error } = await supabase
+          .from("ambassadors")
+          .update({ avu_balance: amount })
+          .or(`id.eq.${id},user_id.eq.${id}`);
+        
+        if (!error) return true;
+        console.warn("Supabase update balance failed:", error);
+      } catch (err) {
+        console.warn("Supabase update balance exception:", err);
+      }
     }
 
     const localDb = getLocalDb();
@@ -406,13 +433,17 @@ export const db = {
 
   async updateProfile(id: string, updates: Partial<Omit<DbAmbassador, "id" | "email" | "avu_balance" | "status" | "created_at">>): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("ambassadors")
-        .update(mapAmbassadorToRow(updates))
-        .or(`id.eq.${id},user_id.eq.${id}`);
-      
-      if (!error) return true;
-      console.error("Supabase update profile failed:", error);
+      try {
+        const { error } = await supabase
+          .from("ambassadors")
+          .update(mapAmbassadorToRow(updates))
+          .or(`id.eq.${id},user_id.eq.${id}`);
+        
+        if (!error) return true;
+        console.warn("Supabase update profile failed:", error);
+      } catch (err) {
+        console.warn("Supabase update profile exception:", err);
+      }
     }
 
     const localDb = getLocalDb();
@@ -427,13 +458,17 @@ export const db = {
 
   async deleteAmbassador(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("ambassadors")
-        .delete()
-        .or(`id.eq.${id},user_id.eq.${id}`);
-      
-      if (!error) return true;
-      console.error("Supabase delete failed:", error);
+      try {
+        const { error } = await supabase
+          .from("ambassadors")
+          .delete()
+          .or(`id.eq.${id},user_id.eq.${id}`);
+        
+        if (!error) return true;
+        console.warn("Supabase delete failed:", error);
+      } catch (err) {
+        console.warn("Supabase delete exception:", err);
+      }
     }
 
     const localDb = getLocalDb();
@@ -446,43 +481,63 @@ export const db = {
   },
 
   async getAdmins(): Promise<DbAdmin[]> {
+    const local = getLocalAdminsDb();
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("admins")
-        .select("*")
-        .order("created_at", { ascending: false });
-      
-      if (!error && data) {
-        return data.map((d: any) => ({
-          id: d.id,
-          name: d.full_name || d.name || "",
-          email: d.email,
-          user_id: d.user_id,
-          role: d.role,
-          created_at: d.created_at
-        }));
+      try {
+        const { data, error } = await supabase
+          .from("admins")
+          .select("*")
+          .order("created_at", { ascending: false });
+        
+        if (!error && data) {
+          const remote: DbAdmin[] = data.map((d: any) => ({
+            id: d.id,
+            name: d.full_name || d.name || "",
+            email: d.email,
+            user_id: d.user_id,
+            role: d.role,
+            created_at: d.created_at
+          }));
+          const merged: DbAdmin[] = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.email.toLowerCase() === loc.email.toLowerCase() || rem.id === loc.id)) {
+              merged.push(loc);
+            }
+          }
+          return merged;
+        }
+        console.warn("Supabase fetch admins failed:", error);
+      } catch (err) {
+        console.warn("Supabase fetch admins exception:", err);
       }
     }
-    return getLocalAdminsDb();
+    return local;
   },
 
   async findAdminByEmail(email: string): Promise<DbAdmin | null> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("admins")
-        .select("*")
-        .eq("email", email)
-        .maybeSingle();
-      
-      if (!error && data) {
-        return {
-          id: data.id,
-          name: data.full_name || data.name || "",
-          email: data.email,
-          user_id: data.user_id,
-          role: data.role,
-          created_at: data.created_at
-        };
+      try {
+        const { data, error } = await supabase
+          .from("admins")
+          .select("*")
+          .eq("email", email)
+          .maybeSingle();
+        
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.full_name || data.name || "",
+            email: data.email,
+            user_id: data.user_id,
+            role: data.role,
+            created_at: data.created_at
+          };
+        }
+        if (error) {
+          console.warn("Supabase query admin failed:", error);
+        }
+      } catch (err) {
+        console.warn("Supabase query admin exception:", err);
       }
     }
     const localDb = getLocalAdminsDb();
@@ -497,29 +552,33 @@ export const db = {
     };
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("admins")
-        .insert([{
-          user_id: newAdmin.user_id,
-          full_name: newAdmin.name,
-          email: newAdmin.email,
-          role: newAdmin.role || "admin"
-        }])
-        .select()
-        .single();
-      
-      if (!error && data) {
-        return {
-          id: data.id,
-          name: data.full_name,
-          email: data.email,
-          user_id: data.user_id,
-          role: data.role,
-          created_at: data.created_at
-        };
-      }
-      if (error) {
-        console.error("Supabase insert admin failed:", error);
+      try {
+        const { data, error } = await supabase
+          .from("admins")
+          .insert([{
+            user_id: newAdmin.user_id,
+            full_name: newAdmin.name,
+            email: newAdmin.email,
+            role: newAdmin.role || "admin"
+          }])
+          .select()
+          .single();
+        
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.full_name,
+            email: data.email,
+            user_id: data.user_id,
+            role: data.role,
+            created_at: data.created_at
+          };
+        }
+        if (error) {
+          console.warn("Supabase insert admin failed:", error);
+        }
+      } catch (err) {
+        console.warn("Supabase insert admin exception:", err);
       }
     }
 
@@ -530,15 +589,30 @@ export const db = {
   },
 
   async getActivities(): Promise<DbActivity[]> {
+    const local = getLocalActivitiesDb();
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("activities")
-        .select("*")
-        .order("created_at", { ascending: false });
-      
-      if (!error && data) return data as DbActivity[];
+      try {
+        const { data, error } = await supabase
+          .from("activities")
+          .select("*")
+          .order("created_at", { ascending: false });
+        
+        if (!error && data) {
+          const remote = data as DbActivity[];
+          const merged = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.id === loc.id)) {
+              merged.push(loc);
+            }
+          }
+          return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        }
+        console.warn("Supabase fetch activities failed:", error);
+      } catch (err) {
+        console.warn("Supabase fetch activities exception:", err);
+      }
     }
-    return getLocalActivitiesDb().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return local.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
   async logActivity(activity: Omit<DbActivity, "id" | "created_at">): Promise<DbActivity> {
@@ -549,13 +623,18 @@ export const db = {
     };
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("activities")
-        .insert([fresh])
-        .select()
-        .single();
-      
-      if (!error && data) return data as DbActivity;
+      try {
+        const { data, error } = await supabase
+          .from("activities")
+          .insert([fresh])
+          .select()
+          .single();
+        
+        if (!error && data) return data as DbActivity;
+        console.warn("Supabase insert activity failed:", error);
+      } catch (err) {
+        console.warn("Supabase insert activity exception:", err);
+      }
     }
 
     const localDb = getLocalActivitiesDb();
@@ -565,15 +644,29 @@ export const db = {
   },
 
   async getBlogs(): Promise<DbBlog[]> {
+    const local = getLocalBlogsDb();
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("blogs")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) return data as DbBlog[];
-      console.error("Supabase fetch blogs failed:", error);
+      try {
+        const { data, error } = await supabase
+          .from("blogs")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error && data) {
+          const remote = data as DbBlog[];
+          const merged = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.id === loc.id || rem.title.toLowerCase() === loc.title.toLowerCase())) {
+              merged.push(loc);
+            }
+          }
+          return merged;
+        }
+        console.warn("Supabase fetch blogs failed:", error);
+      } catch (err) {
+        console.warn("Supabase fetch blogs exception:", err);
+      }
     }
-    return getLocalBlogsDb();
+    return local;
   },
 
   async createBlog(blog: Omit<DbBlog, "id" | "created_at">): Promise<DbBlog> {
@@ -583,13 +676,17 @@ export const db = {
       created_at: new Date().toISOString()
     };
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("blogs")
-        .insert([blog])
-        .select()
-        .single();
-      if (!error && data) return data as DbBlog;
-      console.error("Supabase create blog failed:", error);
+      try {
+        const { data, error } = await supabase
+          .from("blogs")
+          .insert([blog])
+          .select()
+          .single();
+        if (!error && data) return data as DbBlog;
+        console.warn("Supabase create blog failed:", error);
+      } catch (err) {
+        console.warn("Supabase create blog exception:", err);
+      }
     }
     const localDb = getLocalBlogsDb();
     localDb.unshift(fresh);
@@ -599,12 +696,16 @@ export const db = {
 
   async updateBlog(id: string, updates: Partial<Omit<DbBlog, "id" | "created_at">>): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("blogs")
-        .update(updates)
-        .eq("id", id);
-      if (!error) return true;
-      console.error("Supabase update blog failed:", error);
+      try {
+        const { error } = await supabase
+          .from("blogs")
+          .update(updates)
+          .eq("id", id);
+        if (!error) return true;
+        console.warn("Supabase update blog failed:", error);
+      } catch (err) {
+        console.warn("Supabase update blog exception:", err);
+      }
     }
     const localDb = getLocalBlogsDb();
     const index = localDb.findIndex(b => b.id === id);
@@ -618,12 +719,16 @@ export const db = {
 
   async deleteBlog(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("blogs")
-        .delete()
-        .eq("id", id);
-      if (!error) return true;
-      console.error("Supabase delete blog failed:", error);
+      try {
+        const { error } = await supabase
+          .from("blogs")
+          .delete()
+          .eq("id", id);
+        if (!error) return true;
+        console.warn("Supabase delete blog failed:", error);
+      } catch (err) {
+        console.warn("Supabase delete blog exception:", err);
+      }
     }
     const localDb = getLocalBlogsDb();
     const filtered = localDb.filter(b => b.id !== id);
@@ -635,15 +740,29 @@ export const db = {
   },
 
   async getWallets(): Promise<DbAmbassadorWallet[]> {
+    const local = getLocalWalletsDb();
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("ambassador_wallets")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) return data as DbAmbassadorWallet[];
-      console.error("Supabase fetch wallets failed:", error);
+      try {
+        const { data, error } = await supabase
+          .from("ambassador_wallets")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error && data) {
+          const remote = data as DbAmbassadorWallet[];
+          const merged = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.id === loc.id || rem.ambassador_id === loc.ambassador_id)) {
+              merged.push(loc);
+            }
+          }
+          return merged;
+        }
+        console.warn("Supabase fetch wallets failed:", error);
+      } catch (err) {
+        console.warn("Supabase fetch wallets exception:", err);
+      }
     }
-    return getLocalWalletsDb();
+    return local;
   },
 
   async createWallet(wallet: Omit<DbAmbassadorWallet, "id" | "created_at">): Promise<DbAmbassadorWallet> {
@@ -653,12 +772,17 @@ export const db = {
       created_at: new Date().toISOString()
     };
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from("ambassador_wallets")
-        .insert([wallet])
-        .select()
-        .single();
-      if (!error && data) return data as DbAmbassadorWallet;
+      try {
+        const { data, error } = await supabase
+          .from("ambassador_wallets")
+          .insert([wallet])
+          .select()
+          .single();
+        if (!error && data) return data as DbAmbassadorWallet;
+        console.warn("Supabase insert wallet failed:", error);
+      } catch (err) {
+        console.warn("Supabase insert wallet exception:", err);
+      }
     }
     const localDb = getLocalWalletsDb();
     localDb.unshift(fresh);
@@ -668,12 +792,16 @@ export const db = {
 
   async updateWalletBalance(ambassadorId: string, balance: number): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("ambassador_wallets")
-        .update({ balance })
-        .eq("ambassador_id", ambassadorId);
-      if (!error) return true;
-      console.error("Supabase update wallet balance failed:", error);
+      try {
+        const { error } = await supabase
+          .from("ambassador_wallets")
+          .update({ balance })
+          .eq("ambassador_id", ambassadorId);
+        if (!error) return true;
+        console.warn("Supabase update wallet balance failed:", error);
+      } catch (err) {
+        console.warn("Supabase update wallet balance exception:", err);
+      }
     }
     const localDb = getLocalWalletsDb();
     const index = localDb.findIndex(w => w.ambassador_id === ambassadorId);
@@ -686,6 +814,7 @@ export const db = {
   },
 
   async getAuditLogs(): Promise<DbAuditLog[]> {
+    const local = getLocalAuditLogsDb();
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -694,7 +823,7 @@ export const db = {
           .order("created_at", { ascending: false });
         
         if (!error && data) {
-          return data.map((d: any) => ({
+          const remote = data.map((d: any) => ({
             id: d.id,
             admin_id: d.admin_id,
             admin_name: d.admin_name,
@@ -704,13 +833,20 @@ export const db = {
             action: d.action,
             created_at: d.created_at
           }));
+          const merged = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.id === loc.id)) {
+              merged.push(loc);
+            }
+          }
+          return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         }
         console.warn("Supabase fetch audit logs error, falling back to local:", error);
       } catch (err) {
         console.warn("Supabase fetch audit logs failed/table missing, falling back to local:", err);
       }
     }
-    return getLocalAuditLogsDb().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return local.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
   async createAuditLog(log: Omit<DbAuditLog, "id" | "created_at">): Promise<DbAuditLog> {
@@ -740,9 +876,9 @@ export const db = {
             created_at: data.created_at
           };
         }
-        console.error("Supabase insert audit log error:", error);
+        console.warn("Supabase insert audit log error:", error);
       } catch (err) {
-        console.error("Supabase insert audit log failed/table missing:", err);
+        console.warn("Supabase insert audit log failed/table missing:", err);
       }
     }
 
