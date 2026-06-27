@@ -58,7 +58,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>([]);
   const [activities, setActivities] = useState<DbActivity[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending" | "disapproved">("all");
 
   // Blog states
   const [blogs, setBlogs] = useState<DbBlog[]>([]);
@@ -287,6 +287,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       loadDbData();
       if (selectedAmbassador?.id === id) {
         setSelectedAmbassador(prev => prev ? { ...prev, status: "approved" } : null);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDisapproveAmbassador = async (id: string, name: string) => {
+    try {
+      await db.updateStatus(id, "disapproved");
+      // Log event
+      await db.logActivity({
+        ambassador_id: id,
+        ambassador_name: name,
+        type: "status_change",
+        desc: `Super Admin "${currentAdmin?.name}" disapproved Ambassador Fellowship credentials.`
+      });
+      loadDbData();
+      if (selectedAmbassador?.id === id) {
+        setSelectedAmbassador(prev => prev ? { ...prev, status: "disapproved" } : null);
       }
     } catch (err) {
       console.error(err);
@@ -973,6 +992,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           >
                             Pending
                           </button>
+                          <button
+                            onClick={() => setStatusFilter("disapproved")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                              statusFilter === "disapproved" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-700"
+                            }`}
+                          >
+                            Disapproved
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -997,6 +1024,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                   {amb.status === "approved" ? (
                                     <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Approved
+                                    </span>
+                                  ) : amb.status === "disapproved" ? (
+                                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Disapproved
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
@@ -1024,12 +1055,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                               {/* Action tools */}
                               <div className="flex items-center gap-2.5 flex-shrink-0">
                                 {amb.status === "pending" && (
+                                  <>
+                                    <button
+                                      onClick={() => handleApproveAmbassador(amb.id, amb.name)}
+                                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <CheckCircle size={12} />
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleDisapproveAmbassador(amb.id, amb.name)}
+                                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <XCircle size={12} />
+                                      Disapprove
+                                    </button>
+                                  </>
+                                )}
+                                {amb.status === "disapproved" && (
                                   <button
                                     onClick={() => handleApproveAmbassador(amb.id, amb.name)}
                                     className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-1 cursor-pointer"
                                   >
                                     <CheckCircle size={12} />
-                                    Approve
+                                    Re-Approve
+                                  </button>
+                                )}
+                                {amb.status === "approved" && (
+                                  <button
+                                    onClick={() => handleDisapproveAmbassador(amb.id, amb.name)}
+                                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <XCircle size={12} />
+                                    Disapprove
                                   </button>
                                 )}
 
@@ -1479,21 +1537,45 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     Auditor Oversight Actions
                   </h4>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    {selectedAmbassador.status === "pending" && (
-                      <button
-                        onClick={() => handleApproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
-                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <CheckCircle size={14} /> Approve Fellow
-                      </button>
-                    )}
-
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedAmbassador.status === "pending" ? (
+                        <>
+                          <button
+                            onClick={() => handleApproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
+                            className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <CheckCircle size={14} /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleDisapproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
+                            className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <XCircle size={14} /> Disapprove
+                          </button>
+                        </>
+                      ) : selectedAmbassador.status === "disapproved" ? (
+                        <button
+                          onClick={() => handleApproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
+                          className="col-span-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle size={14} /> Approve Fellow
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleDisapproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
+                          className="col-span-2 py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <XCircle size={14} /> Disapprove Fellow
+                        </button>
+                      )}
+                    </div>
+                    
                     <button
                       onClick={() => handleSuspendAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
                       className="w-full py-3 bg-rose-50 hover:bg-rose-100/50 text-rose-700 border border-rose-100 font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
                     >
-                      <Trash2 size={14} /> Suspend/Delete
+                      <Trash2 size={14} /> Suspend/Delete Portfolio
                     </button>
                   </div>
                 </div>

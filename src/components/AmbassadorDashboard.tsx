@@ -199,7 +199,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const intervalId = setInterval(async () => {
       try {
         const user = await db.findAmbassadorByEmail(profile.email);
-        if (user && user.status === "approved") {
+        if (user && user.status !== "pending") {
           setProfile(user);
           setAmbassadorName(user.name);
           setAmbassadorRegion(user.city);
@@ -212,6 +212,31 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }, 2000);
 
     return () => clearInterval(intervalId);
+  }, [profile]);
+
+  useEffect(() => {
+    if (!profile || !isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel(`public:ambassadors:email=${profile.email}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "ambassadors",
+          filter: `email=eq.${profile.email}`
+        },
+        () => {
+          console.log("Realtime status change detected! Reloading profile...");
+          fetchAmbassadorData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [profile]);
 
   const handleSimulateApproval = async (idToApprove: string) => {
@@ -654,6 +679,45 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           <div className="bg-white rounded-3xl p-20 border border-slate-100 flex flex-col items-center justify-center space-y-4 shadow-sm text-center">
             <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
             <p className="text-xs font-mono text-slate-500 uppercase tracking-widest">Securing Ledger Link...</p>
+          </div>
+        ) : profile?.status === "disapproved" ? (
+          <div className="max-w-4xl mx-auto space-y-8">
+            <div className="bg-white rounded-3xl border border-rose-100 shadow-xl overflow-hidden p-8 sm:p-10 space-y-8 relative">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-slate-100">
+                <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <Icon name="XCircle" size={32} className="text-rose-500 animate-bounce" />
+                </div>
+                <div className="text-center sm:text-left space-y-1">
+                  <span className="px-2.5 py-1 rounded-full bg-rose-50 border border-rose-100 text-rose-800 text-[10px] font-extrabold uppercase tracking-widest">
+                    Verification Declined
+                  </span>
+                  <h3 className="text-2xl font-display font-black text-[#1E293B] tracking-tight pt-1">
+                    Administrative Authorization Declined
+                  </h3>
+                  <p className="text-xs text-slate-500 font-sans">
+                    Unfortunately, your registered fellowship credentials were not authorized by the chief administrator.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100/50 space-y-3 text-left">
+                <h4 className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">What happens next?</h4>
+                <p className="text-slate-600 leading-relaxed text-xs">
+                  Your registration status was updated to disapproved. This could be due to missing details, invalid contact info, or incorrect project alignment. Please contact your coordinator or the Advaltad Fellowship team for guidance.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={onLogout}
+                  className="px-5 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs cursor-pointer text-center"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
           </div>
         ) : profile?.status === "pending" ? (
           <div className="max-w-4xl mx-auto space-y-8">

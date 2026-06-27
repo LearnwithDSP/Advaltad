@@ -19,7 +19,7 @@ export interface DbAmbassador {
   email: string;
   phone: string;
   password?: string;
-  status: "pending" | "approved";
+  status: "pending" | "approved" | "disapproved";
   avu_balance: number;
   created_at: string;
 }
@@ -232,6 +232,11 @@ function saveLocalDb(db: DbAmbassador[]) {
 
 // Helper to map DB row to DbAmbassador
 function mapRowToAmbassador(row: any): DbAmbassador {
+  const badgeStatus = row.badge_status || row.status || "pending";
+  const mappedStatus: "pending" | "approved" | "disapproved" = 
+    badgeStatus === "approved" ? "approved" : 
+    badgeStatus === "disapproved" ? "disapproved" : "pending";
+
   return {
     id: row.user_id || row.id || "",
     name: row.professional_name || row.name || "",
@@ -239,7 +244,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     field: row.focus_interest || row.field || "",
     email: row.email || "",
     phone: row.phone_number || row.phone || "",
-    status: row.badge_status === "approved" || row.status === "approved" ? "approved" : "pending",
+    status: mappedStatus,
     avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 1250,
     created_at: row.created_at || new Date().toISOString()
   };
@@ -335,7 +340,7 @@ export const db = {
     return fresh;
   },
 
-  async updateStatus(id: string, status: "pending" | "approved"): Promise<boolean> {
+  async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase
         .from("ambassadors")
