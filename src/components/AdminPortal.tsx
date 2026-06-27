@@ -87,6 +87,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [isGranting, setIsGranting] = useState(false);
   const [grantSuccess, setGrantSuccess] = useState(false);
 
+  // Manage Portfolio editing form states
+  const [editName, setEditName] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editField, setEditField] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [isSavingDetails, setIsSavingDetails] = useState(false);
+  const [editSuccess, setEditSuccess] = useState(false);
+
+  useEffect(() => {
+    if (selectedAmbassador) {
+      setEditName(selectedAmbassador.name);
+      setEditCity(selectedAmbassador.city);
+      setEditField(selectedAmbassador.field);
+      setEditPhone(selectedAmbassador.phone || "");
+      setEditSuccess(false);
+    }
+  }, [selectedAmbassador]);
+
   // Check existing session on mount
   useEffect(() => {
     const savedEmail = localStorage.getItem("advaltad_admin_session_email");
@@ -360,6 +378,54 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       loadDbData();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSavePortfolioDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAmbassador || !editName || !editCity) return;
+    setIsSavingDetails(true);
+    setEditSuccess(false);
+
+    try {
+      const updates = {
+        name: editName,
+        city: editCity,
+        field: editField,
+        phone: editPhone
+      };
+      await db.updateProfile(selectedAmbassador.id, updates);
+      
+      // Log event
+      await db.logActivity({
+        ambassador_id: selectedAmbassador.id,
+        ambassador_name: editName,
+        type: "profile_update",
+        desc: `Super Admin "${currentAdmin?.name}" updated public registry portfolio for ${editName} (City: "${editCity}", Field: "${editField}")`
+      });
+
+      // Create Audit Log
+      await db.createAuditLog({
+        admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
+        admin_name: currentAdmin?.name || "Super Admin",
+        admin_email: currentAdmin?.email || "admin@advaltad.org",
+        ambassador_id: selectedAmbassador.id,
+        ambassador_name: editName,
+        action: "updated_portfolio"
+      });
+
+      // Update local state in the selected ambassador
+      setSelectedAmbassador(prev => prev ? { ...prev, ...updates } : null);
+      
+      // Reload the list of ambassadors to reflect the change
+      loadDbData();
+      
+      setEditSuccess(true);
+      setTimeout(() => setEditSuccess(false), 3000);
+    } catch (err) {
+      console.error("Error saving portfolio details", err);
+    } finally {
+      setIsSavingDetails(false);
     }
   };
 
@@ -1648,6 +1714,96 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   <p className="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl p-4 shadow-xs leading-relaxed">
                     {selectedAmbassador.field}
                   </p>
+                </div>
+
+                {/* Live Modify Portfolio Form */}
+                <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4">
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <Edit size={16} className="text-emerald-600" />
+                    <h4 className="text-xs font-black uppercase tracking-wider">Modify Portfolio Details</h4>
+                  </div>
+                  <p className="text-xs text-slate-500 font-sans">
+                    Update this partner's profile credentials on the core database.
+                  </p>
+
+                  {editSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 text-[11px] font-semibold flex items-center gap-1.5 animate-bounce">
+                      <CheckCircle size={14} className="text-emerald-600" />
+                      Portfolio updated and synced with database!
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSavePortfolioDetails} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Professional Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                        placeholder="Full Name"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                          Base City & Country
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editCity}
+                          onChange={(e) => setEditCity(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                          placeholder="e.g. Lagos, Nigeria"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                          Telephone Contact
+                        </label>
+                        <input
+                          type="text"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                          placeholder="Phone Number"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Focus Interest / Division
+                      </label>
+                      <select
+                        value={editField}
+                        onChange={(e) => setEditField(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                      >
+                        <option value="Enriching African youths initiative">Enriching African youths initiative</option>
+                        <option value="Schools (Stem and Robotic education)">Schools (Stem and Robotic education)</option>
+                        <option value="Green/Agriculture">Green/Agriculture</option>
+                        <option value="Humanitarian housing scheme">Humanitarian housing scheme</option>
+                        <option value="Teen club">Teen club</option>
+                        <option value="Sponsorship">Sponsorship</option>
+                        <option value="Emergency relief">Emergency relief</option>
+                        <option value="Care for the aged">Care for the aged</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingDetails || !editName || !editCity}
+                      className="w-full py-3 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      {isSavingDetails ? "Saving portfolio..." : "Save Portfolio Updates"}
+                    </button>
+                  </form>
                 </div>
 
                 {/* Direct Token Grant System */}

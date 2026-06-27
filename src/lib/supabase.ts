@@ -70,7 +70,7 @@ export interface DbAuditLog {
   admin_email: string;
   ambassador_id: string;
   ambassador_name: string;
-  action: "approved" | "disapproved";
+  action: "approved" | "disapproved" | "updated_portfolio" | "suspended";
   created_at: string;
 }
 
@@ -279,6 +279,11 @@ function saveLocalDb(db: DbAmbassador[]) {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(db));
 }
 
+// Helper to validate if a string is a valid UUID to prevent Postgres type errors
+function isUuid(val: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 // Helper to map DB row to DbAmbassador
 function mapRowToAmbassador(row: any): DbAmbassador {
   const badgeStatus = row.badge_status || row.status || "pending";
@@ -326,13 +331,7 @@ export const db = {
         
         if (!error && data) {
           const remote = data.map(mapRowToAmbassador);
-          const merged = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.email.toLowerCase() === loc.email.toLowerCase() || rem.id === loc.id)) {
-              merged.push(loc);
-            }
-          }
-          return merged;
+          return remote; // ONLY return Supabase data when connected, no local/demo merge!
         }
         console.warn("Supabase fetch failed, falling back to local DB:", error);
       } catch (err) {
@@ -411,11 +410,13 @@ export const db = {
   async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase
-          .from("ambassadors")
-          .update({ badge_status: status })
-          .or(`id.eq.${id},user_id.eq.${id}`);
-        
+        let query = supabase.from("ambassadors").update({ badge_status: status });
+        if (isUuid(id)) {
+          query = query.or(`id.eq.${id},user_id.eq.${id}`);
+        } else {
+          query = query.eq("email", id);
+        }
+        const { error } = await query;
         if (!error) return true;
         console.warn("Supabase update status failed:", error);
       } catch (err) {
@@ -424,7 +425,7 @@ export const db = {
     }
 
     const localDb = getLocalDb();
-    const index = localDb.findIndex(a => a.id === id);
+    const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
     if (index !== -1) {
       localDb[index].status = status;
       saveLocalDb(localDb);
@@ -436,11 +437,13 @@ export const db = {
   async updateAvuBalance(id: string, amount: number): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase
-          .from("ambassadors")
-          .update({ avu_balance: amount })
-          .or(`id.eq.${id},user_id.eq.${id}`);
-        
+        let query = supabase.from("ambassadors").update({ avu_balance: amount });
+        if (isUuid(id)) {
+          query = query.or(`id.eq.${id},user_id.eq.${id}`);
+        } else {
+          query = query.eq("email", id);
+        }
+        const { error } = await query;
         if (!error) return true;
         console.warn("Supabase update balance failed:", error);
       } catch (err) {
@@ -449,7 +452,7 @@ export const db = {
     }
 
     const localDb = getLocalDb();
-    const index = localDb.findIndex(a => a.id === id);
+    const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
     if (index !== -1) {
       localDb[index].avu_balance = amount;
       saveLocalDb(localDb);
@@ -461,11 +464,13 @@ export const db = {
   async updateProfile(id: string, updates: Partial<Omit<DbAmbassador, "id" | "email" | "avu_balance" | "status" | "created_at">>): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase
-          .from("ambassadors")
-          .update(mapAmbassadorToRow(updates))
-          .or(`id.eq.${id},user_id.eq.${id}`);
-        
+        let query = supabase.from("ambassadors").update(mapAmbassadorToRow(updates));
+        if (isUuid(id)) {
+          query = query.or(`id.eq.${id},user_id.eq.${id}`);
+        } else {
+          query = query.eq("email", id);
+        }
+        const { error } = await query;
         if (!error) return true;
         console.warn("Supabase update profile failed:", error);
       } catch (err) {
@@ -474,7 +479,7 @@ export const db = {
     }
 
     const localDb = getLocalDb();
-    const index = localDb.findIndex(a => a.id === id);
+    const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
     if (index !== -1) {
       localDb[index] = { ...localDb[index], ...updates };
       saveLocalDb(localDb);
@@ -486,11 +491,13 @@ export const db = {
   async deleteAmbassador(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase
-          .from("ambassadors")
-          .delete()
-          .or(`id.eq.${id},user_id.eq.${id}`);
-        
+        let query = supabase.from("ambassadors").delete();
+        if (isUuid(id)) {
+          query = query.or(`id.eq.${id},user_id.eq.${id}`);
+        } else {
+          query = query.eq("email", id);
+        }
+        const { error } = await query;
         if (!error) return true;
         console.warn("Supabase delete failed:", error);
       } catch (err) {
@@ -499,7 +506,7 @@ export const db = {
     }
 
     const localDb = getLocalDb();
-    const filtered = localDb.filter(a => a.id !== id);
+    const filtered = localDb.filter(a => a.id !== id && a.email.toLowerCase() !== id.toLowerCase());
     if (filtered.length !== localDb.length) {
       saveLocalDb(filtered);
       return true;
@@ -525,13 +532,7 @@ export const db = {
             role: d.role,
             created_at: d.created_at
           }));
-          const merged: DbAdmin[] = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.email.toLowerCase() === loc.email.toLowerCase() || rem.id === loc.id)) {
-              merged.push(loc);
-            }
-          }
-          return merged;
+          return remote; // ONLY return Supabase data when connected, no local/demo merge!
         }
         console.warn("Supabase fetch admins failed:", error);
       } catch (err) {
@@ -626,13 +627,7 @@ export const db = {
         
         if (!error && data) {
           const remote = data as DbActivity[];
-          const merged = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.id === loc.id)) {
-              merged.push(loc);
-            }
-          }
-          return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          return remote.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         }
         console.warn("Supabase fetch activities failed:", error);
       } catch (err) {
@@ -680,13 +675,7 @@ export const db = {
           .order("created_at", { ascending: false });
         if (!error && data) {
           const remote = data as DbBlog[];
-          const merged = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.id === loc.id || rem.title.toLowerCase() === loc.title.toLowerCase())) {
-              merged.push(loc);
-            }
-          }
-          return merged;
+          return remote;
         }
         console.warn("Supabase fetch blogs failed:", error);
       } catch (err) {
@@ -776,13 +765,7 @@ export const db = {
           .order("created_at", { ascending: false });
         if (!error && data) {
           const remote = data as DbAmbassadorWallet[];
-          const merged = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.id === loc.id || rem.ambassador_id === loc.ambassador_id)) {
-              merged.push(loc);
-            }
-          }
-          return merged;
+          return remote;
         }
         console.warn("Supabase fetch wallets failed:", error);
       } catch (err) {
@@ -860,13 +843,7 @@ export const db = {
             action: d.action,
             created_at: d.created_at
           }));
-          const merged = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.id === loc.id)) {
-              merged.push(loc);
-            }
-          }
-          return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          return remote.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         }
         console.warn("Supabase fetch audit logs error, falling back to local:", error);
       } catch (err) {
@@ -926,13 +903,7 @@ export const db = {
         
         if (!error && data) {
           const remote = data as DbDonation[];
-          const merged = [...remote];
-          for (const loc of local) {
-            if (!merged.some(rem => rem.reference === loc.reference || rem.id === loc.id)) {
-              merged.push(loc);
-            }
-          }
-          return merged;
+          return remote;
         }
         console.warn("Supabase fetch donations error, falling back to local:", error);
       } catch (err) {

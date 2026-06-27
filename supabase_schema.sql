@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.ambassadors (
     focus_interest TEXT,
     email TEXT NOT NULL UNIQUE,
     phone_number TEXT,
-    badge_status TEXT NOT NULL DEFAULT 'pending' CHECK (badge_status IN ('pending', 'approved')),
+    badge_status TEXT NOT NULL DEFAULT 'pending' CHECK (badge_status IN ('pending', 'approved', 'disapproved')),
     avu_balance INTEGER NOT NULL DEFAULT 1250,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -113,5 +113,45 @@ ON public.donations FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Allow select access to authorized admins only" 
 ON public.donations FOR SELECT USING (true);
+
+-- 7. Create Activities table for tracking profile/audit/system events
+CREATE TABLE IF NOT EXISTS public.activities (
+    id TEXT PRIMARY KEY,
+    ambassador_id TEXT,
+    ambassador_name TEXT,
+    type TEXT NOT NULL,
+    "desc" TEXT NOT NULL,
+    amount TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public select of activities" 
+ON public.activities FOR SELECT USING (true);
+
+CREATE POLICY "Allow authenticated insert of activities" 
+ON public.activities FOR INSERT WITH CHECK (true);
+
+
+-- 8. Create Audit Logs table for security oversight tracking
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id TEXT PRIMARY KEY,
+    admin_id TEXT NOT NULL,
+    admin_name TEXT NOT NULL,
+    admin_email TEXT NOT NULL,
+    ambassador_id TEXT NOT NULL,
+    ambassador_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow select access to audit_logs" 
+ON public.audit_logs FOR SELECT USING (true);
+
+CREATE POLICY "Allow insert access to audit_logs" 
+ON public.audit_logs FOR INSERT WITH CHECK (true);
 
 
