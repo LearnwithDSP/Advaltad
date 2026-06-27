@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   ResponsiveContainer, 
@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Icon } from "./Icon";
 import { db } from "../lib/supabase";
+import { useLiveImpactData } from "../hooks/useLiveImpactData";
 
 // NGO Programs consistent with DonationPanel
 const IMPACT_PROGRAMS = [
@@ -153,30 +154,10 @@ const IMPACT_PROGRAMS = [
 ];
 
 export const DonationImpact: React.FC = () => {
-  const [donations, setDonations] = useState<any[]>([]);
+  const { donations, aggregatedTotals, loading } = useLiveImpactData();
   const [selectedProgramId, setSelectedProgramId] = useState(IMPACT_PROGRAMS[0].id);
   const [activeTab, setActiveTab] = useState<"allocation" | "simulator">("allocation");
   const [simulatorAmount, setSimulatorAmount] = useState<number>(100); // Standard USD-equivalent simulator amount
-
-  useEffect(() => {
-    let active = true;
-    const fetchDonations = async () => {
-      try {
-        const list = await db.getDonations();
-        if (active) {
-          setDonations(list);
-        }
-      } catch (err) {
-        console.error("Error fetching donations in impact page:", err);
-      }
-    };
-    fetchDonations();
-    const interval = setInterval(fetchDonations, 5000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
 
   const CURRENCY_RATES: Record<string, number> = {
     NGN: 1500,
