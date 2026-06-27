@@ -28,9 +28,7 @@ import {
   History
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
-import { useAmbassadors } from "../hooks/useAmbassadors";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
-import { AdminStats } from "./AdminStats";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -58,7 +56,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "history">("overview");
 
   // Database records
-  const { ambassadors = [], loading: isAmbassadorsLoading, error: ambassadorsHookError, refetch: refetchAmbassadors } = useAmbassadors();
+  const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>([]);
   const [activities, setActivities] = useState<DbActivity[]>([]);
   const [auditLogs, setAuditLogs] = useState<DbAuditLog[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,13 +149,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   const loadDbData = async () => {
     try {
+      const allAmbassadors = await db.getAmbassadors();
       const allActivities = await db.getActivities();
+      setAmbassadors(allAmbassadors);
       setActivities(allActivities);
-      
-      await refetchAmbassadors(); 
       await loadBlogs();
       await loadWallets();
-      
       try {
         const logs = await db.getAuditLogs();
         setAuditLogs(logs);
@@ -212,7 +209,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         }
       }
 
-      await db.createAdmin({
+      const admin = await db.createAdmin({
         name: signupName,
         email: signupEmail,
         password: signupPassword,
@@ -221,11 +218,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       });
 
       setAuthSuccess("Admin account created successfully! Please sign in.");
+      // Auto-populate login and toggle view
       setLoginEmail(signupEmail);
       setIsSubmitting(false);
       setTimeout(() => {
         setView("login");
         setAuthSuccess("");
+        // Clear signup fields
         setSignupName("");
         setSignupEmail("");
         setSignupPassword("");
@@ -312,12 +311,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const handleApproveAmbassador = async (id: string, name: string) => {
     try {
       await db.updateStatus(id, "approved");
+      // Log event
       await db.logActivity({
         ambassador_id: id,
         ambassador_name: name,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" approved Ambassador Fellowship credentials.`
       });
+      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -338,12 +339,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const handleDisapproveAmbassador = async (id: string, name: string) => {
     try {
       await db.updateStatus(id, "disapproved");
+      // Log event
       await db.logActivity({
         ambassador_id: id,
         ambassador_name: name,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" disapproved Ambassador Fellowship credentials.`
       });
+      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -365,6 +368,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     if (!window.confirm(`Are you sure you want to delete/suspend Ambassador ${name}?`)) return;
     try {
       await db.deleteAmbassador(id);
+      // Log event
       await db.logActivity({
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" suspended/deleted Ambassador ${name} from registry.`
@@ -392,6 +396,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       };
       await db.updateProfile(selectedAmbassador.id, updates);
       
+      // Log event
       await db.logActivity({
         ambassador_id: selectedAmbassador.id,
         ambassador_name: editName,
@@ -399,6 +404,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         desc: `Super Admin "${currentAdmin?.name}" updated public registry portfolio for ${editName} (City: "${editCity}", Field: "${editField}")`
       });
 
+      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -408,8 +414,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         action: "updated_portfolio"
       });
 
+      // Update local state in the selected ambassador
       setSelectedAmbassador(prev => prev ? { ...prev, ...updates } : null);
+      
+      // Reload the list of ambassadors to reflect the change
       loadDbData();
+      
       setEditSuccess(true);
       setTimeout(() => setEditSuccess(false), 3000);
     } catch (err) {
@@ -526,6 +536,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
     setIsFundingWallet(true);
     try {
+      // Find current wallet balance
       const currentWallet = wallets.find(w => w.ambassador_id === selectedWalletAmbassador.id);
       const currentBal = currentWallet ? currentWallet.balance : selectedWalletAmbassador.avu_balance;
       const newBal = currentBal + amount;
@@ -540,6 +551,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         });
       }
 
+      // Also update ambassador balance for parity
       await db.updateAvuBalance(selectedWalletAmbassador.id, newBal);
 
       await db.logActivity({
@@ -927,9 +939,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             {/* Workspace Contents */}
             <div className="p-6 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
               
-              {/* Sovereign Real-time Admin statistics panel component */}
-              <AdminStats />
-              
               {/* Quick statistics panels cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-3">
@@ -1257,7 +1266,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
-                        className="bg-white border border-slate-155 rounded-2xl p-6 shadow-sm space-y-4"
+                        className="bg-white border border-slate-150 rounded-2xl p-6 shadow-sm space-y-4"
                       >
                         <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b border-slate-50 pb-2">
                           {editingBlog ? "Edit Impact Story" : "Compose New Impact Story"}
@@ -1556,6 +1565,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             .map((log) => (
                               <div key={log.id} className="p-6 hover:bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
                                 <div className="space-y-2 flex-1 min-w-0">
+                                  {/* Top line with action badge */}
                                   <div className="flex items-center gap-2.5 flex-wrap">
                                     <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
                                       Log ID: {log.id}
@@ -1571,6 +1581,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                     )}
                                   </div>
 
+                                  {/* Details layout */}
                                   <div className="grid md:grid-cols-2 gap-4 text-xs font-sans text-slate-600 pt-1">
                                     <div className="space-y-1">
                                       <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">ADMINISTRATIVE AUDITOR</span>
@@ -1585,6 +1596,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                   </div>
                                 </div>
 
+                                {/* Timestamp */}
                                 <div className="flex-shrink-0 text-left md:text-right">
                                   <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-1">AUDIT TIMESTAMP</span>
                                   <p className="text-xs font-mono text-slate-600 font-bold">
@@ -1615,6 +1627,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       <AnimatePresence>
         {isDetailOpen && selectedAmbassador && (
           <div className="fixed inset-0 bg-slate-900/50 z-50 flex justify-end">
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1623,6 +1636,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               className="absolute inset-0 bg-transparent"
             />
 
+            {/* Sliding Drawer Container */}
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -1630,6 +1644,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
               className="w-full max-w-lg bg-white h-full relative z-10 shadow-2xl flex flex-col text-left border-l border-slate-100"
             >
+              {/* Header */}
               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 block mb-1">
@@ -1645,7 +1660,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 </button>
               </div>
 
+              {/* Body details */}
               <div className="p-6 flex-1 overflow-y-auto space-y-8">
+                
+                {/* Meta details cards */}
                 <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-400 font-mono">ID: {selectedAmbassador.id}</span>
@@ -1688,6 +1706,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </div>
                 </div>
 
+                {/* Focus division banner */}
                 <div className="space-y-2">
                   <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
                     Sovereign Field Activity scope
@@ -1697,6 +1716,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </p>
                 </div>
 
+                {/* Live Modify Portfolio Form */}
                 <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4">
                   <div className="flex items-center gap-2 text-slate-900">
                     <Edit size={16} className="text-emerald-600" />
@@ -1786,6 +1806,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </form>
                 </div>
 
+                {/* Direct Token Grant System */}
                 <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4">
                   <div className="flex items-center gap-2 text-slate-900">
                     <Coins size={16} className="text-emerald-600" />
@@ -1822,6 +1843,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </form>
                 </div>
 
+                {/* Audit Actions */}
                 <div className="space-y-3 pt-4 border-t border-slate-100">
                   <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
                     Auditor Oversight Actions
