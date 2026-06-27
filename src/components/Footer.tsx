@@ -129,7 +129,7 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                   />
                 </div>
                 <div>
-                  <span className="text-sm font-display font-black tracking-tight text-brand-charcoal block leading-tight">Advaltad</span>
+                  <span className="text-sm font-display font-black tracking-tight text-brand-charcoal block leading-tight">Advaltad Foundation</span>
                   <span className="text-[10px] text-brand-primary block font-extrabold leading-none mt-0.5">Adding Value to Africa's Development</span>
                 </div>
               </div>
