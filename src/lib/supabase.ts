@@ -63,11 +63,33 @@ export interface DbActivity {
   created_at: string;
 }
 
+export interface DbAuditLog {
+  id: string;
+  admin_id: string;
+  admin_name: string;
+  admin_email: string;
+  ambassador_id: string;
+  ambassador_name: string;
+  action: "approved" | "disapproved";
+  created_at: string;
+}
+
 const LOCAL_STORAGE_KEY = "advaltad_ambassadors_db";
 const ADMIN_LOCAL_STORAGE_KEY = "advaltad_admins_db";
 const ACTIVITIES_LOCAL_STORAGE_KEY = "advaltad_activities_db";
 const BLOGS_LOCAL_STORAGE_KEY = "advaltad_blogs_db";
 const WALLETS_LOCAL_STORAGE_KEY = "advaltad_wallets_db";
+const AUDIT_LOGS_LOCAL_STORAGE_KEY = "advaltad_audit_logs_db";
+
+function getLocalAuditLogsDb(): DbAuditLog[] {
+  const data = localStorage.getItem(AUDIT_LOGS_LOCAL_STORAGE_KEY);
+  if (data) return JSON.parse(data);
+  return [];
+}
+
+function saveLocalAuditLogsDb(logs: DbAuditLog[]) {
+  localStorage.setItem(AUDIT_LOGS_LOCAL_STORAGE_KEY, JSON.stringify(logs));
+}
 
 function getLocalBlogsDb(): DbBlog[] {
   const data = localStorage.getItem(BLOGS_LOCAL_STORAGE_KEY);
@@ -661,5 +683,72 @@ export const db = {
       return true;
     }
     return false;
+  },
+
+  async getAuditLogs(): Promise<DbAuditLog[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("audit_logs")
+          .select("*")
+          .order("created_at", { ascending: false });
+        
+        if (!error && data) {
+          return data.map((d: any) => ({
+            id: d.id,
+            admin_id: d.admin_id,
+            admin_name: d.admin_name,
+            admin_email: d.admin_email,
+            ambassador_id: d.ambassador_id,
+            ambassador_name: d.ambassador_name,
+            action: d.action,
+            created_at: d.created_at
+          }));
+        }
+        console.warn("Supabase fetch audit logs error, falling back to local:", error);
+      } catch (err) {
+        console.warn("Supabase fetch audit logs failed/table missing, falling back to local:", err);
+      }
+    }
+    return getLocalAuditLogsDb().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
+
+  async createAuditLog(log: Omit<DbAuditLog, "id" | "created_at">): Promise<DbAuditLog> {
+    const fresh: DbAuditLog = {
+      id: "aud-" + Math.floor(Math.random() * 899999 + 100000),
+      ...log,
+      created_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("audit_logs")
+          .insert([fresh])
+          .select()
+          .single();
+        
+        if (!error && data) {
+          return {
+            id: data.id,
+            admin_id: data.admin_id,
+            admin_name: data.admin_name,
+            admin_email: data.admin_email,
+            ambassador_id: data.ambassador_id,
+            ambassador_name: data.ambassador_name,
+            action: data.action,
+            created_at: data.created_at
+          };
+        }
+        console.error("Supabase insert audit log error:", error);
+      } catch (err) {
+        console.error("Supabase insert audit log failed/table missing:", err);
+      }
+    }
+
+    const localDb = getLocalAuditLogsDb();
+    localDb.unshift(fresh);
+    saveLocalAuditLogsDb(localDb);
+    return fresh;
   }
 };

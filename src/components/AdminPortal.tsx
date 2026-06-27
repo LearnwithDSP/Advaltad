@@ -24,9 +24,10 @@ import {
   Phone,
   AlertCircle,
   Plus,
-  Edit
+  Edit,
+  History
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, supabase, isSupabaseConfigured } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 
 interface AdminPortalProps {
@@ -52,12 +53,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   // Dashboard states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "history">("overview");
 
   // Database records
   const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>([]);
   const [activities, setActivities] = useState<DbActivity[]>([]);
+  const [auditLogs, setAuditLogs] = useState<DbAuditLog[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending" | "disapproved">("all");
 
   // Blog states
@@ -101,6 +104,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     loadDbData();
   }, []);
 
+  // Reload data on tab change or authentication status change
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDbData();
+    }
+  }, [activeTab, isAuthenticated]);
+
   const loadBlogs = async () => {
     try {
       const allBlogs = await db.getBlogs();
@@ -127,6 +137,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       setActivities(allActivities);
       await loadBlogs();
       await loadWallets();
+      try {
+        const logs = await db.getAuditLogs();
+        setAuditLogs(logs);
+      } catch (logErr) {
+        console.error("Failed to load audit logs inside admin portal:", logErr);
+      }
     } catch (err) {
       console.error("Failed to load DB details inside admin portal:", err);
     }
@@ -284,6 +300,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" approved Ambassador Fellowship credentials.`
       });
+      // Create Audit Log
+      await db.createAuditLog({
+        admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
+        admin_name: currentAdmin?.name || "Super Admin",
+        admin_email: currentAdmin?.email || "admin@advaltad.org",
+        ambassador_id: id,
+        ambassador_name: name,
+        action: "approved"
+      });
       loadDbData();
       if (selectedAmbassador?.id === id) {
         setSelectedAmbassador(prev => prev ? { ...prev, status: "approved" } : null);
@@ -302,6 +327,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         ambassador_name: name,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" disapproved Ambassador Fellowship credentials.`
+      });
+      // Create Audit Log
+      await db.createAuditLog({
+        admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
+        admin_name: currentAdmin?.name || "Super Admin",
+        admin_email: currentAdmin?.email || "admin@advaltad.org",
+        ambassador_id: id,
+        ambassador_name: name,
+        action: "disapproved"
       });
       loadDbData();
       if (selectedAmbassador?.id === id) {
@@ -770,6 +804,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               >
                 <Coins size={16} className="flex-shrink-0" />
                 {!sidebarCollapsed && <span>Financial Overview</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab("history")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "history"
+                    ? "bg-emerald-600 text-white"
+                    : "hover:bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                <History size={16} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span>Oversight History</span>}
               </button>
             </nav>
 
@@ -1386,6 +1432,116 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                               </div>
                             );
                           })
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB 6: AUDIT OVERSIGHT HISTORY */}
+                {activeTab === "history" && (
+                  <motion.div
+                    key="tab-v-history"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-6 text-left"
+                  >
+                    <div className="border-b border-slate-100 pb-4">
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Administrative Oversight History</h3>
+                      <p className="text-xs text-slate-500">Track and audit which fellowship ambassadors were approved or disapproved, by which administrator, and at what timestamp.</p>
+                    </div>
+
+                    {/* Filter bar */}
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
+                      <div className="relative w-full md:max-w-md">
+                        <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
+                        <input
+                          type="text"
+                          value={historySearchQuery}
+                          onChange={(e) => setHistorySearchQuery(e.target.value)}
+                          placeholder="Search administrator name, admin email, or ambassador..."
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-150 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                        />
+                      </div>
+                      <div className="text-xs font-mono text-slate-400">
+                        Total Records: {auditLogs.length}
+                      </div>
+                    </div>
+
+                    {/* Audit logs listing */}
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                      <div className="divide-y divide-slate-100">
+                        {auditLogs.filter(log => {
+                          const query = historySearchQuery.toLowerCase();
+                          return (
+                            log.admin_name.toLowerCase().includes(query) ||
+                            log.admin_email.toLowerCase().includes(query) ||
+                            log.ambassador_name.toLowerCase().includes(query) ||
+                            log.ambassador_id.toLowerCase().includes(query)
+                          );
+                        }).length === 0 ? (
+                          <div className="p-16 text-center text-slate-400 text-xs">
+                            <History size={36} className="mx-auto mb-3 text-slate-300 animate-pulse" />
+                            No administrative oversight logs recorded or found.
+                          </div>
+                        ) : (
+                          auditLogs
+                            .filter(log => {
+                              const query = historySearchQuery.toLowerCase();
+                              return (
+                                log.admin_name.toLowerCase().includes(query) ||
+                                log.admin_email.toLowerCase().includes(query) ||
+                                log.ambassador_name.toLowerCase().includes(query) ||
+                                log.ambassador_id.toLowerCase().includes(query)
+                              );
+                            })
+                            .map((log) => (
+                              <div key={log.id} className="p-6 hover:bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
+                                <div className="space-y-2 flex-1 min-w-0">
+                                  {/* Top line with action badge */}
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
+                                      Log ID: {log.id}
+                                    </span>
+                                    {log.action === "approved" ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                        <CheckCircle size={10} className="text-emerald-500" /> Approved
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                        <XCircle size={10} className="text-rose-500" /> Disapproved
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Details layout */}
+                                  <div className="grid md:grid-cols-2 gap-4 text-xs font-sans text-slate-600 pt-1">
+                                    <div className="space-y-1">
+                                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">ADMINISTRATIVE AUDITOR</span>
+                                      <p className="font-bold text-slate-900">{log.admin_name}</p>
+                                      <p className="text-[10px] font-mono text-slate-500">{log.admin_email}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">FELLOWSHIP TARGET</span>
+                                      <p className="font-bold text-slate-900">{log.ambassador_name}</p>
+                                      <p className="text-[10px] font-mono text-slate-500">ID: {log.ambassador_id}</p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Timestamp */}
+                                <div className="flex-shrink-0 text-left md:text-right">
+                                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-1">AUDIT TIMESTAMP</span>
+                                  <p className="text-xs font-mono text-slate-600 font-bold">
+                                    {new Date(log.created_at).toLocaleDateString()}
+                                  </p>
+                                  <p className="text-[10px] font-mono text-slate-400">
+                                    {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
                         )}
                       </div>
                     </div>
