@@ -74,12 +74,39 @@ export interface DbAuditLog {
   created_at: string;
 }
 
+export interface DbDonation {
+  id: string;
+  reference: string;
+  email: string;
+  name: string;
+  phone: string;
+  amount: number;
+  currency: string;
+  program_id: string;
+  note: string;
+  status: "pending" | "success" | "failed";
+  created_at: string;
+}
+
 const LOCAL_STORAGE_KEY = "advaltad_ambassadors_db";
 const ADMIN_LOCAL_STORAGE_KEY = "advaltad_admins_db";
 const ACTIVITIES_LOCAL_STORAGE_KEY = "advaltad_activities_db";
 const BLOGS_LOCAL_STORAGE_KEY = "advaltad_blogs_db";
 const WALLETS_LOCAL_STORAGE_KEY = "advaltad_wallets_db";
 const AUDIT_LOGS_LOCAL_STORAGE_KEY = "advaltad_audit_logs_db";
+const DONATIONS_LOCAL_STORAGE_KEY = "advaltad_donations_db";
+
+function getLocalDonationsDb(): DbDonation[] {
+  if (typeof window === "undefined") return [];
+  const data = localStorage.getItem(DONATIONS_LOCAL_STORAGE_KEY);
+  if (data) return JSON.parse(data);
+  return [];
+}
+
+function saveLocalDonationsDb(donations: DbDonation[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(DONATIONS_LOCAL_STORAGE_KEY, JSON.stringify(donations));
+}
 
 function getLocalAuditLogsDb(): DbAuditLog[] {
   const data = localStorage.getItem(AUDIT_LOGS_LOCAL_STORAGE_KEY);
@@ -885,6 +912,63 @@ export const db = {
     const localDb = getLocalAuditLogsDb();
     localDb.unshift(fresh);
     saveLocalAuditLogsDb(localDb);
+    return fresh;
+  },
+
+  async getDonations(): Promise<DbDonation[]> {
+    const local = getLocalDonationsDb();
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("donations")
+          .select("*")
+          .order("created_at", { ascending: false });
+        
+        if (!error && data) {
+          const remote = data as DbDonation[];
+          const merged = [...remote];
+          for (const loc of local) {
+            if (!merged.some(rem => rem.reference === loc.reference || rem.id === loc.id)) {
+              merged.push(loc);
+            }
+          }
+          return merged;
+        }
+        console.warn("Supabase fetch donations error, falling back to local:", error);
+      } catch (err) {
+        console.warn("Supabase fetch donations failed, falling back to local:", err);
+      }
+    }
+    return local;
+  },
+
+  async createDonation(donation: Omit<DbDonation, "id" | "created_at">): Promise<DbDonation> {
+    const fresh: DbDonation = {
+      id: "don-" + Math.floor(Math.random() * 899999 + 100000),
+      ...donation,
+      created_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("donations")
+          .insert([fresh])
+          .select()
+          .single();
+        
+        if (!error && data) {
+          return data as DbDonation;
+        }
+        console.warn("Supabase insert donation error, saving to local only:", error);
+      } catch (err) {
+        console.warn("Supabase insert donation failed, saving to local only:", err);
+      }
+    }
+
+    const localDb = getLocalDonationsDb();
+    localDb.unshift(fresh);
+    saveLocalDonationsDb(localDb);
     return fresh;
   }
 };

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { Confetti } from "./Confetti";
 import { jsPDF } from "jspdf";
+import { db } from "../lib/supabase";
 
 interface CurrencyConfig {
   code: string;
@@ -87,6 +88,7 @@ export const DonationPanel: React.FC = () => {
   const [donorPhone, setDonorPhone] = useState("");
   const [targetProgramId, setTargetProgramId] = useState(NGO_PROGRAMS[0].id);
   const [donorNote, setDonorNote] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
 
   // Paystack modal states
   const [paystackMethod, setPaystackMethod] = useState<"card" | "mobile_money" | "bank_transfer">("card");
@@ -138,7 +140,7 @@ export const DonationPanel: React.FC = () => {
 
   const handleDownloadReceipt = () => {
     const doc = new jsPDF();
-    const ref = `pay_ref_${Math.floor(Math.random() * 899999 + 100000)}`;
+    const ref = paymentReference || `pay_ref_${Math.floor(Math.random() * 899999 + 100000)}`;
 
     // Set brand colors (Advaltad is Emerald/Green & Charcoal)
     // Emerald Primary: #10B981 (RGB: 16, 185, 129)
@@ -799,6 +801,22 @@ export const DonationPanel: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
+                        const ref = `pay_ref_${Math.floor(Math.random() * 899999 + 100000)}`;
+                        setPaymentReference(ref);
+                        
+                        // Fire-and-forget saving of donation to DB & localStorage
+                        db.createDonation({
+                          reference: ref,
+                          email: donorEmail || "anonymous@advaltad.org",
+                          name: donorName || "Anonymous Donor",
+                          phone: donorPhone || "",
+                          amount: activeAmount,
+                          currency: selectedCurrency.code,
+                          program_id: targetProgramId,
+                          note: donorNote || "",
+                          status: "success"
+                        }).catch(err => console.error("Error creating donation:", err));
+
                         setCheckoutStep("confirming");
                         setTimeout(() => {
                           setCheckoutStep("success");

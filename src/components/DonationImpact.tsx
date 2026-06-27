@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   ResponsiveContainer, 
@@ -13,6 +13,7 @@ import {
   CartesianGrid 
 } from "recharts";
 import { Icon } from "./Icon";
+import { db } from "../lib/supabase";
 
 // NGO Programs consistent with DonationPanel
 const IMPACT_PROGRAMS = [
@@ -152,12 +153,124 @@ const IMPACT_PROGRAMS = [
 ];
 
 export const DonationImpact: React.FC = () => {
+  const [donations, setDonations] = useState<any[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState(IMPACT_PROGRAMS[0].id);
   const [activeTab, setActiveTab] = useState<"allocation" | "simulator">("allocation");
-  const [selectedProgram, setSelectedProgram] = useState(IMPACT_PROGRAMS[0]);
   const [simulatorAmount, setSimulatorAmount] = useState<number>(100); // Standard USD-equivalent simulator amount
 
-  const handleProgramSelect = (prog: typeof IMPACT_PROGRAMS[0]) => {
-    setSelectedProgram(prog);
+  useEffect(() => {
+    let active = true;
+    const fetchDonations = async () => {
+      try {
+        const list = await db.getDonations();
+        if (active) {
+          setDonations(list);
+        }
+      } catch (err) {
+        console.error("Error fetching donations in impact page:", err);
+      }
+    };
+    fetchDonations();
+    const interval = setInterval(fetchDonations, 5000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const CURRENCY_RATES: Record<string, number> = {
+    NGN: 1500,
+    USD: 1,
+    GHS: 15,
+    KES: 130
+  };
+
+  const dynamicPrograms = IMPACT_PROGRAMS.map((prog) => {
+    // 1. Get direct successful donations for this program
+    const directDonations = donations.filter(
+      (d) => d.program_id === prog.id && d.status === "success"
+    );
+    
+    // 2. Get indirect successful donations (e.g. sponsorship, general, or empty program_id)
+    const validProgramIds = IMPACT_PROGRAMS.map((p) => p.id);
+    const indirectDonations = donations.filter(
+      (d) => !validProgramIds.includes(d.program_id) && d.status === "success"
+    );
+
+    // Calculate sum of direct NGN equivalents
+    const directNGN = directDonations.reduce((sum, d) => {
+      const rate = CURRENCY_RATES[d.currency] || 1;
+      return sum + (d.amount / rate) * 1500;
+    }, 0);
+
+    // Calculate sum of indirect NGN equivalents distributed by allocation percentage
+    const indirectNGN = indirectDonations.reduce((sum, d) => {
+      const rate = CURRENCY_RATES[d.currency] || 1;
+      const amountInNGN = (d.amount / rate) * 1500;
+      return sum + (amountInNGN * prog.allocation) / 100;
+    }, 0);
+
+    const totalNGN = directNGN + indirectNGN;
+    const totalUSD = totalNGN / 1500;
+
+    // Calculate dynamic metric strings based on totalUSD and totalNGN
+    let reached = "0 Reached";
+    let activeSites = "0 Active Sites";
+
+    if (prog.id === "youth-empowerment") {
+      const count = Math.floor(totalUSD / 15);
+      reached = `${count.toLocaleString()}+ Youth Trained`;
+      const sites = Math.floor(totalUSD / 150);
+      activeSites = `${sites.toLocaleString()} Tech Labs Active`;
+    } else if (prog.id === "schools-stem") {
+      const count = Math.floor(totalUSD / 10);
+      reached = `${count.toLocaleString()}+ Students Educated`;
+      const sites = Math.floor(totalUSD / 100);
+      activeSites = `${sites.toLocaleString()} Robotic Clubs Set up`;
+    } else if (prog.id === "green-agri") {
+      const count = Math.floor(totalUSD / 25);
+      reached = `${count.toLocaleString()}+ Smallholder Farmers Supported`;
+      const sites = Math.floor(totalUSD / 250);
+      activeSites = `${sites.toLocaleString()} Irrigation Projects`;
+    } else if (prog.id === "housing") {
+      const count = Math.floor(totalUSD / 150);
+      reached = `${count.toLocaleString()}+ Sustainable Shelters Built`;
+      const sites = Math.floor(totalUSD / 500);
+      activeSites = `${sites.toLocaleString()} Communities Rehomed`;
+    } else if (prog.id === "relief") {
+      const count = Math.floor(totalUSD / 2);
+      reached = `${count.toLocaleString()}+ Hot Meals Delivered`;
+      const sites = Math.floor(totalUSD / 200);
+      activeSites = `${sites.toLocaleString()} Refugee Camps Supplied`;
+    } else if (prog.id === "aged-care") {
+      const count = Math.floor(totalUSD / 20);
+      reached = `${count.toLocaleString()}+ Seniors Managed`;
+      const sites = Math.floor(totalUSD / 100);
+      activeSites = `${sites.toLocaleString()} Welfare Outposts`;
+    } else if (prog.id === "teen-club") {
+      const count = Math.floor(totalUSD / 8);
+      reached = `${count.toLocaleString()}+ Teens Mentored`;
+      const sites = Math.floor(totalUSD / 150);
+      activeSites = `${sites.toLocaleString()} Community Safe Spaces`;
+    }
+
+    const spent = `₦${Math.round(totalNGN).toLocaleString()}`;
+
+    return {
+      ...prog,
+      metrics: {
+        reached,
+        spent,
+        activeSites,
+        deliverable: prog.metrics.deliverable
+      }
+    };
+  });
+
+  const selectedProgram = dynamicPrograms.find((p) => p.id === selectedProgramId) || dynamicPrograms[0];
+
+  const handleProgramSelect = (prog: any) => {
+    setSelectedProgramId(prog.id);
   };
 
   // Safe representation for Recharts Pie Chart tooltip styling
@@ -177,7 +290,7 @@ export const DonationImpact: React.FC = () => {
     return null;
   };
 
-  const chartData = IMPACT_PROGRAMS.map((p) => ({
+  const chartData = dynamicPrograms.map((p) => ({
     name: p.label,
     value: p.allocation,
     color: p.color,
@@ -291,7 +404,7 @@ export const DonationImpact: React.FC = () => {
                 
                 {/* Program Selector Pills */}
                 <div className="flex flex-wrap gap-2 pb-4 border-b border-slate-100">
-                  {IMPACT_PROGRAMS.map((prog) => {
+                  {dynamicPrograms.map((prog) => {
                     const isActive = selectedProgram.id === prog.id;
                     return (
                       <button
@@ -332,7 +445,7 @@ export const DonationImpact: React.FC = () => {
                   </div>
 
                   <p className="text-sm text-slate-500 font-sans leading-relaxed">
-                    This department {selectedProgram.deliverable} We execute direct operations bypassing commercial middlemen. All allocations undergo comprehensive audit pipelines.
+                    This department {selectedProgram.metrics.deliverable} We execute direct operations bypassing commercial middlemen. All allocations undergo comprehensive audit pipelines.
                   </p>
 
                   {/* Audit Performance Highlights */}
@@ -451,7 +564,7 @@ export const DonationImpact: React.FC = () => {
                 <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Proportional resource allocation breakdown:</p>
                 
                 <div className="h-6 w-full rounded-xl overflow-hidden flex shadow-inner">
-                  {IMPACT_PROGRAMS.map((prog) => {
+                  {dynamicPrograms.map((prog) => {
                     const allocatedVal = (simulatorAmount * prog.allocation) / 100;
                     if (allocatedVal <= 0) return null;
                     return (
@@ -467,7 +580,7 @@ export const DonationImpact: React.FC = () => {
 
                 {/* Simulated Outcomes Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {IMPACT_PROGRAMS.map((prog) => {
+                  {dynamicPrograms.map((prog) => {
                     const allocatedVal = (simulatorAmount * prog.allocation) / 100;
                     
                     // Simple programmatic builder of outcomes based on allocated amount
