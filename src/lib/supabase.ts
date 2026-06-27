@@ -324,10 +324,33 @@ export const db = {
     const local = getLocalDb();
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase
+        // Validate session state to ensure headers are correctly established for RLS contexts
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          console.log("Supabase active session verified for Admin DB fetch:", sessionData.session.user.email);
+        }
+
+        // Try lowercase "ambassadors" first
+        let { data, error } = await supabase
           .from("ambassadors")
           .select("*")
           .order("created_at", { ascending: false });
+        
+        // If lowercase table failed, try uppercase table "Ambassadors" as fallback
+        if (error || !data) {
+          console.warn("Lowercase 'ambassadors' table query unsuccessful, trying fallback capitalized 'Ambassadors' table...", error);
+          const fallbackRes = await supabase
+            .from("Ambassadors")
+            .select("*")
+            .order("created_at", { ascending: false });
+          
+          if (!fallbackRes.error && fallbackRes.data) {
+            data = fallbackRes.data;
+            error = null;
+          } else if (fallbackRes.error) {
+            console.error("Both 'ambassadors' and 'Ambassadors' query routes failed in Supabase:", fallbackRes.error);
+          }
+        }
         
         if (!error && data) {
           const remote = data.map(mapRowToAmbassador);

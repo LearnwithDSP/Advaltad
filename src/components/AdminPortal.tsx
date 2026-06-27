@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
+import { AdminStats } from "./AdminStats";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -148,21 +149,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   const loadDbData = async () => {
+    // Isolate data fetches for maximum resiliency so one failing endpoint does not block the entire load sequence
     try {
       const allAmbassadors = await db.getAmbassadors();
-      const allActivities = await db.getActivities();
       setAmbassadors(allAmbassadors);
-      setActivities(allActivities);
-      await loadBlogs();
-      await loadWallets();
-      try {
-        const logs = await db.getAuditLogs();
-        setAuditLogs(logs);
-      } catch (logErr) {
-        console.error("Failed to load audit logs inside admin portal:", logErr);
-      }
     } catch (err) {
-      console.error("Failed to load DB details inside admin portal:", err);
+      console.error("Failed to load ambassadors inside admin portal:", err);
+    }
+
+    try {
+      const allActivities = await db.getActivities();
+      setActivities(allActivities);
+    } catch (err) {
+      console.error("Failed to load activities inside admin portal:", err);
+    }
+
+    try {
+      await loadBlogs();
+    } catch (err) {
+      console.error("Failed to load blogs inside admin portal:", err);
+    }
+
+    try {
+      await loadWallets();
+    } catch (err) {
+      console.error("Failed to load wallets inside admin portal:", err);
+    }
+
+    try {
+      const logs = await db.getAuditLogs();
+      setAuditLogs(logs);
+    } catch (logErr) {
+      console.error("Failed to load audit logs inside admin portal:", logErr);
     }
   };
 
@@ -938,6 +956,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
             {/* Workspace Contents */}
             <div className="p-6 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
+              
+              {/* Sovereign Real-time Admin statistics panel component */}
+              <AdminStats />
               
               {/* Quick statistics panels cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
