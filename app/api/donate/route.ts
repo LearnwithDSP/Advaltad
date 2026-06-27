@@ -6,9 +6,11 @@ export async function POST(req: NextRequest) {
     const paystackKey = process.env.PAYSTACK_SECRET_KEY;
     const supabaseUrl = process.env.VITE_SUPABASE_URL;
     const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL;
+    
+    // Explicitly target the specified callback URL
+    const callbackUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://advaltad.org";
 
-    // Check configuration
+    // Validate configuration
     if (!paystackKey) {
       return NextResponse.json(
         { error: "PAYSTACK_SECRET_KEY is not configured on the server." },
@@ -17,22 +19,23 @@ export async function POST(req: NextRequest) {
     }
     if (!supabaseUrl || !supabaseServiceRole) {
       return NextResponse.json(
-        { error: "Supabase service role configurations are missing." },
+        { error: "Supabase configuration variables are missing on the server." },
         { status: 500 }
       );
     }
 
     const body = await req.json();
-    const { email, name, phone, amount, currency, program_id, note } = body;
+    const { email, amount, name, phone, currency = "NGN", program_id = "general", note = "" } = body;
 
-    if (!email || !amount || !currency || !program_id) {
+    // Validate required fields
+    if (!email || !amount) {
       return NextResponse.json(
-        { error: "Missing required donation fields (email, amount, currency, program_id)." },
+        { error: "Missing required fields: email and amount." },
         { status: 400 }
       );
     }
 
-    // Convert to minor units (Kobo/Cents) for Paystack
+    // Convert amount in Naira to minor unit (Kobo)
     const amountInMinor = Math.round(parseFloat(amount) * 100);
     if (isNaN(amountInMinor) || amountInMinor <= 0) {
       return NextResponse.json(
@@ -41,10 +44,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generate reference
+    // Generate unique reference ID
     const reference = `don_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
-    // Initialize transaction with Paystack live API
+    // Call Paystack transaction initialization endpoint
     const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
@@ -56,7 +59,7 @@ export async function POST(req: NextRequest) {
         amount: amountInMinor,
         currency,
         reference,
-        callback_url: siteUrl ? `${siteUrl}/donate/success?reference=${reference}` : undefined,
+        callback_url: callbackUrl,
         metadata: {
           custom_fields: [
             { display_name: "Donor Name", variable_name: "donor_name", value: name || "" },
@@ -71,7 +74,7 @@ export async function POST(req: NextRequest) {
     if (!paystackResponse.ok) {
       const errorText = await paystackResponse.text();
       return NextResponse.json(
-        { error: `Paystack transaction initialization failed: ${errorText}` },
+        { error: `Paystack initialisation failure: ${errorText}` },
         { status: 502 }
       );
     }
@@ -79,38 +82,42 @@ export async function POST(req: NextRequest) {
     const paystackData = await paystackResponse.json();
     if (!paystackData.status || !paystackData.data?.authorization_url) {
       return NextResponse.json(
-        { error: "Paystack did not return a valid authorization URL." },
+        { error: "Paystack response did not yield a valid authorization URL." },
         { status: 502 }
       );
     }
 
-    // Log a pending row in Supabase 'donations' table using Service Role key for security
+    // Create a database client using the Supabase Service Role key for secure insert bypasses
     const supabaseClient = createClient(supabaseUrl, supabaseServiceRole);
+    
+    // Log the donation into our Postgres database as 'pending'
     const { error: dbError } = await supabaseClient.from("donations").insert({
       reference,
       email,
-      name: name || null,
-      phone: phone || null,
+      name: name || "Anonymous Donor",
+      phone: phone || "",
       amount: parseFloat(amount),
       currency,
       program_id,
-      note: note || null,
+      note: note || "",
       status: "pending",
       created_at: new Date().toISOString(),
     });
 
     if (dbError) {
-      console.error("Supabase logger error:", dbError);
+      console.error("Supabase Database log error on pending insert:", dbError);
     }
 
     return NextResponse.json({
       status: true,
+      authorization_url: paystackData.data.authorization_url,
       data: {
         authorization_url: paystackData.data.authorization_url,
         reference,
       },
     });
   } catch (err: any) {
+    console.error("Donate route error:", err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 }
