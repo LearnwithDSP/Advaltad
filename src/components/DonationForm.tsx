@@ -278,7 +278,11 @@ export const DonationForm: React.FC = () => {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-4 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs tracking-widest uppercase cursor-pointer transition-all flex items-center justify-center gap-2 hover:translate-y-[-1px] disabled:opacity-50 disabled:pointer-events-none"
+          className={`w-full py-4 rounded-xl text-white font-extrabold text-xs tracking-widest uppercase cursor-pointer transition-all flex items-center justify-center gap-2 hover:translate-y-[-1px] disabled:opacity-50 disabled:pointer-events-none ${
+            paymentMethod === "bank"
+              ? "bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/10"
+              : "bg-slate-800 hover:bg-slate-900"
+          }`}
         >
           {loading ? (
             <>

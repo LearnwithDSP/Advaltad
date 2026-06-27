@@ -1,5 +1,5 @@
 import React from "react";
-import { DonationPanel } from "../components/DonationPanel";
+import { DonationForm } from "../components/DonationForm";
 import { DonationImpact } from "../components/DonationImpact";
 import { Icon } from "../components/Icon";
 
@@ -28,9 +28,8 @@ export const DonatePage: React.FC = () => {
         </div>
       </section>
 
-      {/* Renders the actual core trustworthy Donation Panel */}
-      <div className="bg-white">
-        <DonationPanel />
+      <div className="bg-white py-12">
+        <DonationForm />
       </div>
 
       {/* Renders the magnificent interactive Donation Impact visualization component */}

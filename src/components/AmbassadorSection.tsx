@@ -596,7 +596,10 @@ export const AmbassadorSection: React.FC = () => {
                             referrerPolicy="no-referrer"
                           />
                         </div>
-                        <span className="text-[10px] font-extrabold tracking-wider text-slate-300 uppercase">Adding Value to Africa's Development</span>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black tracking-wider text-white uppercase leading-none">Advaltad Foundation</span>
+                          <span className="text-[8px] font-semibold text-slate-400 mt-0.5 leading-none">Adding Value to Africa's Development</span>
+                        </div>
                       </div>
                       <span className="text-[9px] font-mono font-bold text-brand-accent bg-brand-accent/10 px-2 py-0.5 rounded-md">ID: {Math.floor(Math.random() * 899999 + 100000)}</span>
                     </div>

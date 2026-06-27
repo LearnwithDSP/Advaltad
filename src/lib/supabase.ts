@@ -286,10 +286,10 @@ function isUuid(val: string): boolean {
 
 // Helper to map DB row to DbAmbassador
 function mapRowToAmbassador(row: any): DbAmbassador {
-  const badgeStatus = row.badge_status || row.status || "pending";
+  const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
   const mappedStatus: "pending" | "approved" | "disapproved" = 
-    badgeStatus === "approved" ? "approved" : 
-    badgeStatus === "disapproved" ? "disapproved" : "pending";
+    (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
+    (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
 
   return {
     id: row.user_id || row.id || "",

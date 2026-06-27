@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
     // Explicitly target the specified callback URL
-    const callbackUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://advaltad.org";
+    const callbackUrl = process.env.VITE_SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || "https://advaltad.org";
 
     // Validate configuration
     if (!paystackKey) {

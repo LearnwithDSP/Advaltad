@@ -129,9 +129,9 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
             </div>
             <div className="flex flex-col">
               <span className="text-brand-charcoal font-display font-black leading-tight tracking-tight text-base group-hover:text-brand-primary transition-colors duration-300">
-                Advaltad
+                Advaltad Foundation
               </span>
-              <span className="text-[9.5px] text-brand-primary font-display tracking-tight font-extrabold leading-none mt-0.5">
+              <span className="text-[9.5px] text-slate-500 font-display tracking-tight font-extrabold leading-none mt-0.5">
                 Adding Value to Africa's Development
               </span>
             </div>
@@ -367,7 +367,10 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                       referrerPolicy="no-referrer"
                     />
                   </div>
-                  <span className="font-display font-black text-brand-charcoal text-sm">Advaltad</span>
+                  <div className="flex flex-col">
+                    <span className="font-display font-black text-brand-charcoal text-sm leading-tight">Advaltad Foundation</span>
+                    <span className="text-[8px] text-slate-500 font-display font-extrabold leading-none mt-0.5">Adding Value to Africa's Development</span>
+                  </div>
                 </div>
                 <button
                   id="mobile-drawer-close-btn"
