@@ -193,6 +193,27 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     verifyAndFetch();
   }, []);
 
+  useEffect(() => {
+    if (!profile || profile.status !== "pending") return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const user = await db.findAmbassadorByEmail(profile.email);
+        if (user && user.status === "approved") {
+          setProfile(user);
+          setAmbassadorName(user.name);
+          setAmbassadorRegion(user.city);
+          setAmbassadorField(user.field);
+          setAvuBalance(user.avu_balance);
+        }
+      } catch (err) {
+        console.error("Error polling ambassador status:", err);
+      }
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [profile]);
+
   const handleSimulateApproval = async (idToApprove: string) => {
     setIsSimulatingApproval(true);
     try {
