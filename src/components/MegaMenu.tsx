@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { NAVIGATION_DATA } from "../data";
 import { Icon } from "./Icon";
 import { db } from "../lib/supabase";
-import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
+import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 
 interface MegaMenuProps {
   onDonateClick: () => void;
@@ -131,8 +131,8 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
               <span className="text-brand-charcoal font-display font-black leading-tight tracking-tight text-base group-hover:text-brand-primary transition-colors duration-300">
                 Advaltad
               </span>
-              <span className="text-[10px] text-brand-primary font-display tracking-widest uppercase font-extrabold leading-none">
-                Foundation
+              <span className="text-[9.5px] text-brand-primary font-display tracking-tight font-extrabold leading-none mt-0.5">
+                Adding Value to Africa's Development
               </span>
             </div>
           </a>

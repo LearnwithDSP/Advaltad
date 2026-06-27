@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, supabase, isSupabaseConfigured } from "../lib/supabase";
-import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
+import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 
 export const AmbassadorSection: React.FC = () => {
   const [name, setName] = useState("");
@@ -596,7 +596,7 @@ export const AmbassadorSection: React.FC = () => {
                             referrerPolicy="no-referrer"
                           />
                         </div>
-                        <span className="text-[10px] font-extrabold tracking-wider text-slate-300 uppercase">Advaltad Fellowship</span>
+                        <span className="text-[10px] font-extrabold tracking-wider text-slate-300 uppercase">Adding Value to Africa's Development</span>
                       </div>
                       <span className="text-[9px] font-mono font-bold text-brand-accent bg-brand-accent/10 px-2 py-0.5 rounded-md">ID: {Math.floor(Math.random() * 899999 + 100000)}</span>
                     </div>

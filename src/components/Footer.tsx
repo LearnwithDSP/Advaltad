@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db } from "../lib/supabase";
-import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
+import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 
 interface FooterProps {
   onDonateClick: () => void;
@@ -129,8 +129,8 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                   />
                 </div>
                 <div>
-                  <span className="text-sm font-display font-black tracking-tight text-brand-charcoal">Advaltad</span>
-                  <span className="text-[10px] text-brand-primary tracking-widest block font-extrabold uppercase leading-none">Foundation</span>
+                  <span className="text-sm font-display font-black tracking-tight text-brand-charcoal block leading-tight">Advaltad</span>
+                  <span className="text-[10px] text-brand-primary block font-extrabold leading-none mt-0.5">Adding Value to Africa's Development</span>
                 </div>
               </div>
 

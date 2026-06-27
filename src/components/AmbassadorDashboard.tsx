@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador, isSupabaseConfigured, supabase } from "../lib/supabase";
 import { AmbassadorProfile } from "./AmbassadorProfile";
-import logoUrl from "../assets/images/advaltad_logo_1782390247177.jpg";
+import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -1152,7 +1152,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                           />
                         </div>
                         <span className="text-xs font-sans uppercase font-black tracking-widest text-emerald-800">
-                          Advaltad Growth & Support Foundation
+                          Advaltad: Adding Value to Africa's Development
                         </span>
                         <span className="text-[9px] font-sans font-bold text-slate-400 uppercase tracking-widest">
                           Global Fellowship Commission

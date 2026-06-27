@@ -34,7 +34,7 @@ export const Hero: React.FC<HeroProps> = ({ onDonateClick, onAmbassadorClick }) 
           >
             <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
             <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
-              ADVALTAD FOUNDATION
+              ADDING VALUE TO AFRICA'S DEVELOPMENT
             </span>
           </motion.div>
 
