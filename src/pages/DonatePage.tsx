@@ -1,5 +1,6 @@
 import React from "react";
 import { DonationPanel } from "../components/DonationPanel";
+import { DonationImpact } from "../components/DonationImpact";
 import { Icon } from "../components/Icon";
 
 export const DonatePage: React.FC = () => {
@@ -31,6 +32,9 @@ export const DonatePage: React.FC = () => {
       <div className="bg-white">
         <DonationPanel />
       </div>
+
+      {/* Renders the magnificent interactive Donation Impact visualization component */}
+      <DonationImpact />
 
       {/* Financial Accountability & Auditing indicators */}
       <section className="py-16 bg-[#F7F8FA] border-t border-slate-100">

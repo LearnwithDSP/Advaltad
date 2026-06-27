@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { Confetti } from "./Confetti";
+import { jsPDF } from "jspdf";
 
 interface CurrencyConfig {
   code: string;
@@ -104,35 +105,182 @@ export const DonationPanel: React.FC = () => {
     }
 
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          window.location.hash = "#home";
-          setCheckoutStep("idle");
-          setDonorName("");
-          setDonorEmail("");
-          setDonorPhone("");
-          setDonorNote("");
-          setCustomAmount("");
-          setCardNumber("");
-          setCardExpiry("");
-          setCardCvv("");
-          setMomoPhone("");
-          setMomoProvider("");
-          return 7;
-        }
-        return prev - 1;
-      });
+      setCountdown((prev) => prev - 1);
     }, 1000);
 
     return () => clearInterval(timer);
   }, [checkoutStep]);
+
+  useEffect(() => {
+    if (checkoutStep === "success" && countdown <= 0) {
+      window.location.hash = "#home";
+      setCheckoutStep("idle");
+      setDonorName("");
+      setDonorEmail("");
+      setDonorPhone("");
+      setDonorNote("");
+      setCustomAmount("");
+      setCardNumber("");
+      setCardExpiry("");
+      setCardCvv("");
+      setMomoPhone("");
+      setMomoProvider("");
+      setCountdown(7);
+    }
+  }, [countdown, checkoutStep]);
 
   const activeAmount = customAmount ? parseFloat(customAmount) || 0 : selectedAmount;
 
   // Conversion helper for consistent impact description based on approximate USD equivalence
   const getUSDAmount = () => {
     return activeAmount / selectedCurrency.rateToUSD;
+  };
+
+  const handleDownloadReceipt = () => {
+    const doc = new jsPDF();
+    const ref = `pay_ref_${Math.floor(Math.random() * 899999 + 100000)}`;
+
+    // Set brand colors (Advaltad is Emerald/Green & Charcoal)
+    // Emerald Primary: #10B981 (RGB: 16, 185, 129)
+    // Charcoal: #1E293B (RGB: 30, 41, 59)
+    
+    // Title / Header Banner
+    doc.setFillColor(30, 41, 59); // Charcoal background
+    doc.rect(0, 0, 210, 38, "F");
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("ADVALTAD FOUNDATION", 15, 18);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("Audited Humanitarian Growth and Support Initiative", 15, 24);
+    doc.text("Email: support@advaltad.org  |  Web: www.advaltad.org", 15, 29);
+    
+    // Document Type Header
+    doc.setTextColor(30, 41, 59);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("OFFICIAL DONATION RECEIPT", 15, 52);
+    
+    // Draw a horizontal divider line
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.setLineWidth(0.5);
+    doc.line(15, 56, 195, 56);
+    
+    // Metadata Section
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Receipt Reference:", 15, 66);
+    doc.setFont("helvetica", "normal");
+    doc.text(ref, 60, 66);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Date:", 15, 73);
+    doc.setFont("helvetica", "normal");
+    doc.text(new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), 60, 73);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Payment Status:", 15, 80);
+    doc.setTextColor(16, 185, 129); // Emerald
+    doc.text("VERIFIED SUCCESSFUL (Live Paystack)", 60, 80);
+    doc.setTextColor(30, 41, 59);
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, 86, 195, 86);
+    
+    // Donor Information
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("DONOR DETAILS", 15, 96);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Name:", 15, 106);
+    doc.setFont("helvetica", "normal");
+    doc.text(donorName || "Anonymous Donor", 60, 106);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Email Address:", 15, 113);
+    doc.setFont("helvetica", "normal");
+    doc.text(donorEmail || "N/A", 60, 113);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Phone Number:", 15, 120);
+    doc.setFont("helvetica", "normal");
+    doc.text(donorPhone || "N/A", 60, 120);
+    
+    doc.line(15, 126, 195, 126);
+    
+    // Contribution Details
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("CONTRIBUTION DETAILS", 15, 136);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Gift Type:", 15, 146);
+    doc.setFont("helvetica", "normal");
+    doc.text(frequency === "monthly" ? "Monthly Recurring Gift" : "One-Time Donation", 60, 146);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Amount Contributed:", 15, 153);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(16, 185, 129);
+    doc.text(`${selectedCurrency.symbol}${activeAmount.toLocaleString()} ${selectedCurrency.code}`, 60, 153);
+    doc.setTextColor(30, 41, 59);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Target Program:", 15, 160);
+    doc.setFont("helvetica", "normal");
+    doc.text(selectedProgram.label, 60, 160);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Program Category:", 15, 167);
+    doc.setFont("helvetica", "normal");
+    doc.text(selectedProgram.category, 60, 167);
+    
+    if (donorNote) {
+      doc.setFont("helvetica", "bold");
+      doc.text("Donor's Message / Note:", 15, 174);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // cool gray
+      doc.text(`"${donorNote}"`, 60, 174);
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+    }
+    
+    doc.line(15, 183, 195, 183);
+    
+    // Footer / Thank you
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(16, 185, 129); // Emerald
+    doc.text("YOUR IMPACT", 15, 193);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text("100% of your donation is directed entirely to operational field resources.", 15, 201);
+    doc.text("Your support bypasses commercial bureaucracy to build critical regional infrastructure.", 15, 206);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 41, 59);
+    doc.text("Thank you for choosing to empower on-field action with Advaltad.", 15, 216);
+    
+    // Signature Block
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Advaltad Audited Finance Department", 15, 240);
+    doc.text("Generated securely via Paystack API Integration.", 15, 244);
+    
+    // Border Box around receipt for a premium look
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(8, 8, 194, 280, "S");
+    
+    doc.save(`Advaltad_Donation_Receipt_${ref}.pdf`);
   };
 
   const getDynamicImpact = (amountInCurrency: number) => {
@@ -616,17 +764,17 @@ export const DonationPanel: React.FC = () => {
 
                       {paystackMethod === "bank_transfer" && (
                         <div className="space-y-2 text-xs">
-                          <p className="text-[10px] text-slate-400 font-extrabold uppercase">BANK TRANSFER ALLOCATION</p>
+                          <p className="text-[10px] text-slate-400 font-extrabold uppercase">Bank account details*</p>
                           <div className="p-3.5 bg-[#3bb75e]/10 border border-[#3bb75e]/30 rounded-2xl space-y-1">
-                            <p className="font-extrabold text-[#268943] uppercase text-[9px] tracking-wider">SECURE INSTANT ACCOUNT</p>
+                            <p className="font-extrabold text-[#268943] uppercase text-[9px] tracking-wider">OFFICIAL DIRECT TRANSFER</p>
                             <p className="text-slate-700 font-medium">Please send exactly {selectedCurrency.symbol}{activeAmount.toLocaleString()} to:</p>
                             <div className="font-mono text-sm font-bold text-slate-900 bg-white/50 p-2 rounded-lg mt-1 border border-slate-150 space-y-0.5">
-                              <p className="text-xs text-slate-500 font-sans font-medium">BANK: <span className="font-bold text-slate-800">Providus Bank (via Paystack)</span></p>
-                              <p className="text-xs text-slate-500 font-sans font-medium">ACCOUNT NO: <span className="font-mono font-black text-slate-900 tracking-wider">9923847291</span></p>
-                              <p className="text-xs text-slate-500 font-sans font-medium">NAME: <span className="font-bold text-slate-800">Advaltad Donation Ref #{(activeAmount % 1000) + 100}</span></p>
+                              <p className="text-xs text-slate-500 font-sans font-medium">BANK NAME: <span className="font-bold text-slate-800">GTbank</span></p>
+                              <p className="text-xs text-slate-500 font-sans font-medium">ACCOUNT NAME: <span className="font-bold text-slate-800">Advaltad growth and support foundation</span></p>
+                              <p className="text-xs text-slate-500 font-sans font-medium">NAIRA ACCOUNT NUMBER: <span className="font-mono font-black text-slate-900 tracking-wider">300 292 7219</span></p>
                             </div>
                           </div>
-                          <p className="text-[10px] text-slate-400 leading-relaxed">Account will automatically expire in 30 minutes. The system monitors the payment gateway constantly.</p>
+                          <p className="text-[10px] text-slate-400 leading-relaxed">Your transfer will be automatically detected and credited. The system monitors the gateway constantly.</p>
                         </div>
                       )}
 
@@ -683,7 +831,7 @@ export const DonationPanel: React.FC = () => {
                     <Confetti />
                     <motion.div
                       initial={{ scale: 0, rotate: -45 }}
-                      animate={{ scale: [0, 1.2, 1], rotate: 0 }}
+                      animate={{ scale: 1, rotate: 0 }}
                       transition={{ type: "spring", damping: 12, stiffness: 180, delay: 0.1 }}
                       className="w-20 h-20 rounded-full bg-[#3bb75e] text-white flex items-center justify-center mx-auto shadow-lg shadow-[#3bb75e]/20 relative z-10"
                     >
@@ -719,25 +867,34 @@ export const DonationPanel: React.FC = () => {
                     <span>Redirecting you to the Homepage in <strong className="text-brand-charcoal">{countdown}</strong> seconds...</span>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      window.location.hash = "#home";
-                      setCheckoutStep("idle");
-                      setDonorName("");
-                      setDonorEmail("");
-                      setDonorPhone("");
-                      setDonorNote("");
-                      setCustomAmount("");
-                      setCardNumber("");
-                      setCardExpiry("");
-                      setCardCvv("");
-                      setMomoPhone("");
-                      setMomoProvider("");
-                    }}
-                    className="w-full py-3.5 rounded-xl bg-brand-charcoal hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider uppercase cursor-pointer transition-colors"
-                  >
-                    Go Back Home Now
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button
+                      onClick={handleDownloadReceipt}
+                      className="flex-1 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-extrabold text-xs tracking-wider uppercase cursor-pointer transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Icon name="Download" size={14} />
+                      Download Receipt
+                    </button>
+                    <button
+                      onClick={() => {
+                        window.location.hash = "#home";
+                        setCheckoutStep("idle");
+                        setDonorName("");
+                        setDonorEmail("");
+                        setDonorPhone("");
+                        setDonorNote("");
+                        setCustomAmount("");
+                        setCardNumber("");
+                        setCardExpiry("");
+                        setCardCvv("");
+                        setMomoPhone("");
+                        setMomoProvider("");
+                      }}
+                      className="flex-1 py-3.5 rounded-xl bg-brand-charcoal hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider uppercase cursor-pointer transition-colors"
+                    >
+                      Go Back Home Now
+                    </button>
+                  </div>
                 </div>
               )}
 
