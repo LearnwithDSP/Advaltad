@@ -16,12 +16,17 @@ export interface DbAmbassador {
   user_id?: string;
   db_id?: string;
   name: string;
+  professional_name?: string;
   city: string;
+  base_city?: string;
   field: string;
+  focus_interest?: string;
   email: string;
   phone: string;
+  phone_number?: string;
   password?: string;
   status: "pending" | "approved" | "disapproved";
+  badge_status?: "pending" | "approved" | "disapproved";
   avu_balance: number;
   created_at: string;
 }
@@ -293,16 +298,26 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
     (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
 
+  const nameVal = row.professional_name || row.name || "";
+  const cityVal = row.base_city || row.city || "";
+  const fieldVal = row.focus_interest || row.field || "";
+  const phoneVal = row.phone_number || row.phone || "";
+
   return {
     id: row.user_id || row.id || "",
     user_id: row.user_id || undefined,
     db_id: row.id || undefined,
-    name: row.professional_name || row.name || "",
-    city: row.base_city || row.city || "",
-    field: row.focus_interest || row.field || "",
+    name: nameVal,
+    professional_name: nameVal,
+    city: cityVal,
+    base_city: cityVal,
+    field: fieldVal,
+    focus_interest: fieldVal,
     email: row.email || "",
-    phone: row.phone_number || row.phone || "",
+    phone: phoneVal,
+    phone_number: phoneVal,
     status: mappedStatus,
+    badge_status: mappedStatus,
     avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 1250,
     created_at: row.created_at || new Date().toISOString()
   };
@@ -312,12 +327,24 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 function mapAmbassadorToRow(ambassador: Partial<DbAmbassador & { user_id?: string }>) {
   const row: any = {};
   if (ambassador.user_id !== undefined) row.user_id = ambassador.user_id;
-  if (ambassador.name !== undefined) row.professional_name = ambassador.name;
-  if (ambassador.city !== undefined) row.base_city = ambassador.city;
-  if (ambassador.field !== undefined) row.focus_interest = ambassador.field;
+  
+  if (ambassador.professional_name !== undefined) row.professional_name = ambassador.professional_name;
+  else if (ambassador.name !== undefined) row.professional_name = ambassador.name;
+
+  if (ambassador.base_city !== undefined) row.base_city = ambassador.base_city;
+  else if (ambassador.city !== undefined) row.base_city = ambassador.city;
+
+  if (ambassador.focus_interest !== undefined) row.focus_interest = ambassador.focus_interest;
+  else if (ambassador.field !== undefined) row.focus_interest = ambassador.field;
+
   if (ambassador.email !== undefined) row.email = ambassador.email;
-  if (ambassador.phone !== undefined) row.phone_number = ambassador.phone;
-  if (ambassador.status !== undefined) row.badge_status = ambassador.status;
+
+  if (ambassador.phone_number !== undefined) row.phone_number = ambassador.phone_number;
+  else if (ambassador.phone !== undefined) row.phone_number = ambassador.phone;
+
+  if (ambassador.badge_status !== undefined) row.badge_status = ambassador.badge_status;
+  else if (ambassador.status !== undefined) row.badge_status = ambassador.status;
+
   if (ambassador.avu_balance !== undefined) row.avu_balance = ambassador.avu_balance;
   return row;
 }
@@ -358,7 +385,21 @@ export const db = {
         
         if (!error && data) {
           const remote = data.map(mapRowToAmbassador);
-          return remote; // ONLY return Supabase data when connected, no local/demo merge!
+          
+          // Safeguard: Merge with any non-demo locally registered ambassadors so no live registration is ever lost
+          const localRegs = local.filter(a => 
+            a.email !== "ramon@example.com" && 
+            a.email !== "grace@example.com" && 
+            a.email !== "pending_demo@advaltad.org"
+          );
+          
+          const remoteEmails = new Set(remote.map(r => r.email.toLowerCase()));
+          const merged = [
+            ...remote,
+            ...localRegs.filter(l => !remoteEmails.has(l.email.toLowerCase()))
+          ];
+          
+          return merged;
         }
         console.warn("Supabase fetch failed, falling back to local DB:", error);
       } catch (err) {

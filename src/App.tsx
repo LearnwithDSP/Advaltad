@@ -95,7 +95,7 @@ export default function App() {
   const isDashboardView = lowercaseRoute.includes("growth-ambassadors") || lowercaseRoute.includes("ambassador/dashboard");
   const isAdminView = lowercaseRoute.includes("admin");
   const isAdminAuthenticated = !!localStorage.getItem("advaltad_admin_session_email");
-  const hideHeaderFooter = (isDashboardView && isAuthenticated) || (isAdminView && isAdminAuthenticated);
+  const hideHeaderFooter = (isDashboardView && isAuthenticated) || isAdminView;
 
   const renderContent = () => {
     if (isAdminView) {

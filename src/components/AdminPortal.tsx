@@ -25,7 +25,8 @@ import {
   AlertCircle,
   Plus,
   Edit,
-  History
+  History,
+  Download
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
@@ -100,6 +101,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     id: string;
     name: string;
     action: "approve" | "disapprove" | "suspend";
+  } | null>(null);
+
+  // Bulk action states
+  const [selectedAmbassadorIds, setSelectedAmbassadorIds] = useState<string[]>([]);
+  const [bulkConfirmModal, setBulkConfirmModal] = useState<{
+    ids: string[];
+    action: "approve" | "disapprove";
   } | null>(null);
 
   useEffect(() => {
@@ -406,6 +414,90 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   const handleSuspendAmbassador = async (id: string, name: string) => {
     setStatusConfirmModal({ id, name, action: "suspend" });
+  };
+
+  const executeBulkStatusUpdate = async (ids: string[], action: "approve" | "disapprove") => {
+    try {
+      const statusValue = action === "approve" ? "approved" : "disapproved";
+      for (const id of ids) {
+        await db.updateStatus(id, statusValue);
+        const amb = ambassadors.find(a => a.id === id);
+        const name = amb ? (amb.name || amb.professional_name || "Ambassador") : "Ambassador";
+        
+        await db.logActivity({
+          type: "status_change",
+          desc: `Super Admin "${currentAdmin?.name}" bulk updated Ambassador ${name} verification status to: ${statusValue}.`
+        });
+        
+        await db.createAuditLog({
+          admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
+          admin_name: currentAdmin?.name || "Super Admin",
+          admin_email: currentAdmin?.email || "admin@advaltad.org",
+          ambassador_id: id,
+          ambassador_name: name,
+          action: action === "approve" ? "approved" : "disapproved"
+        });
+      }
+      setSelectedAmbassadorIds([]);
+      loadDbData();
+    } catch (err) {
+      console.error("Bulk status update failed:", err);
+    }
+  };
+
+  const handleExportToCSV = () => {
+    if (ambassadors.length === 0) {
+      alert("No ambassadors available to export.");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Professional Name",
+      "Email Address",
+      "Phone Number",
+      "Verification Status",
+      "AVU Balance",
+      "Focus Specialty",
+      "Base City",
+      "Created At"
+    ];
+
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return "";
+      const str = String(val);
+      const escaped = str.replace(/"/g, '""');
+      if (escaped.includes(",") || escaped.includes("\n") || escaped.includes("\r") || escaped.includes('"')) {
+        return `"${escaped}"`;
+      }
+      return escaped;
+    };
+
+    const csvRows = [
+      headers.join(","),
+      ...ambassadors.map((amb) => [
+        escapeCSV(amb.id),
+        escapeCSV(amb.professional_name || amb.name || "N/A"),
+        escapeCSV(amb.email || "N/A"),
+        escapeCSV(amb.phone_number || amb.phone || "N/A"),
+        escapeCSV(amb.badge_status || amb.status || "pending"),
+        escapeCSV(amb.avu_balance !== undefined ? amb.avu_balance : 1250),
+        escapeCSV(amb.focus_interest || amb.field || "N/A"),
+        escapeCSV(amb.base_city || amb.city || "N/A"),
+        escapeCSV(amb.created_at)
+      ].join(","))
+    ];
+
+    const csvContent = csvRows.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `advaltad_ambassadors_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleSavePortfolioDetails = async (e: React.FormEvent) => {
@@ -954,6 +1046,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
               <div className="flex items-center gap-3">
                 <button
+                  onClick={handleExportToCSV}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm border border-slate-950"
+                >
+                  <Download size={14} />
+                  Export to CSV
+                </button>
+                <button
                   onClick={loadDbData}
                   className="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
                 >
@@ -1143,6 +1242,58 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                     </div>
 
+                    {/* Bulk Action Panel */}
+                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="select-all-ambassadors"
+                          className="w-4 h-4 text-slate-900 border-slate-300 rounded focus:ring-slate-900 focus:ring-2 cursor-pointer accent-slate-900"
+                          checked={filteredAmbassadors.length > 0 && filteredAmbassadors.every(amb => selectedAmbassadorIds.includes(amb.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const newSelections = Array.from(new Set([...selectedAmbassadorIds, ...filteredAmbassadors.map(a => a.id)]));
+                              setSelectedAmbassadorIds(newSelections);
+                            } else {
+                              const filteredIds = filteredAmbassadors.map(a => a.id);
+                              setSelectedAmbassadorIds(selectedAmbassadorIds.filter(id => !filteredIds.includes(id)));
+                            }
+                          }}
+                        />
+                        <label htmlFor="select-all-ambassadors" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                          {selectedAmbassadorIds.length > 0 
+                            ? `${selectedAmbassadorIds.length} Selected` 
+                            : "Select All Visible"
+                          }
+                        </label>
+                      </div>
+
+                      {selectedAmbassadorIds.length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            onClick={() => setBulkConfirmModal({ ids: selectedAmbassadorIds, action: "approve" })}
+                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-1 cursor-pointer"
+                          >
+                            <CheckCircle size={12} />
+                            Bulk Approve
+                          </button>
+                          <button
+                            onClick={() => setBulkConfirmModal({ ids: selectedAmbassadorIds, action: "disapprove" })}
+                            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center gap-1 cursor-pointer"
+                          >
+                            <XCircle size={12} />
+                            Bulk Disapprove
+                          </button>
+                          <button
+                            onClick={() => setSelectedAmbassadorIds([])}
+                            className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Ambassadors directory list */}
                     <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
                       <div className="divide-y divide-slate-100">
@@ -1154,40 +1305,56 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                         ) : (
                           filteredAmbassadors.map((amb) => (
                             <div key={amb.id} className="p-6 hover:bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
-                              <div className="space-y-1.5 flex-1">
-                                <div className="flex items-center gap-2.5 flex-wrap">
-                                  <h4 className="text-sm font-black text-slate-950 tracking-tight">{amb.name}</h4>
-                                  <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
-                                    ID: {amb.id}
-                                  </span>
-                                  {amb.status === "approved" ? (
-                                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Approved
-                                    </span>
-                                  ) : amb.status === "disapproved" ? (
-                                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Disapproved
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending Approval
-                                    </span>
-                                  )}
+                              <div className="flex items-start gap-4 flex-1">
+                                <div className="pt-1 flex-shrink-0">
+                                  <input
+                                    type="checkbox"
+                                    className="w-4 h-4 text-slate-900 border-slate-300 rounded focus:ring-slate-900 focus:ring-2 cursor-pointer accent-slate-900"
+                                    checked={selectedAmbassadorIds.includes(amb.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedAmbassadorIds([...selectedAmbassadorIds, amb.id]);
+                                      } else {
+                                        setSelectedAmbassadorIds(selectedAmbassadorIds.filter(id => id !== amb.id));
+                                      }
+                                    }}
+                                  />
                                 </div>
+                                <div className="space-y-1.5 flex-1">
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    <h4 className="text-sm font-black text-slate-950 tracking-tight">{amb.name}</h4>
+                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
+                                      ID: {amb.id}
+                                    </span>
+                                    {amb.status === "approved" ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Verified
+                                      </span>
+                                    ) : amb.status === "disapproved" ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Flagged
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending
+                                      </span>
+                                    )}
+                                  </div>
 
-                                <div className="grid sm:grid-cols-3 gap-y-1 gap-x-4 text-xs font-sans text-slate-500">
-                                  <p className="flex items-center gap-1.5">
-                                    <MapPin size={12} className="text-slate-400" />
-                                    {amb.city}
-                                  </p>
-                                  <p className="flex items-center gap-1.5">
-                                    <Mail size={12} className="text-slate-400" />
-                                    {amb.email}
-                                  </p>
-                                  <p className="flex items-center gap-1.5">
-                                    <Compass size={12} className="text-slate-400" />
-                                    {amb.field}
-                                  </p>
+                                  <div className="grid sm:grid-cols-3 gap-y-1 gap-x-4 text-xs font-sans text-slate-500">
+                                    <p className="flex items-center gap-1.5">
+                                      <MapPin size={12} className="text-slate-400" />
+                                      {amb.city}
+                                    </p>
+                                    <p className="flex items-center gap-1.5">
+                                      <Mail size={12} className="text-slate-400" />
+                                      {amb.email}
+                                    </p>
+                                    <p className="flex items-center gap-1.5">
+                                      <Compass size={12} className="text-slate-400" />
+                                      {amb.field}
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
 
@@ -2092,6 +2259,93 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     {statusConfirmModal.action === "approve" && "Confirm Approval"}
                     {statusConfirmModal.action === "disapprove" && "Confirm Disapproval"}
                     {statusConfirmModal.action === "suspend" && "Confirm Suspension"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5.1. BULK STATUS CONFIRMATION DIALOG MODAL */}
+      <AnimatePresence>
+        {bulkConfirmModal && (
+          <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl relative border border-slate-100 text-left"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <div className="flex items-center gap-2 text-slate-950">
+                  <ShieldCheck size={18} className={
+                    bulkConfirmModal.action === "approve" ? "text-emerald-600" : "text-rose-600"
+                  } />
+                  <h4 className="text-xs font-black uppercase tracking-wider">
+                    {bulkConfirmModal.action === "approve" ? "Confirm Bulk Approval" : "Confirm Bulk Disapproval"}
+                  </h4>
+                </div>
+                <button
+                  onClick={() => setBulkConfirmModal(null)}
+                  className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 max-h-40 overflow-y-auto">
+                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Selected Ambassadors ({bulkConfirmModal.ids.length})</span>
+                  <div className="mt-1.5 space-y-1">
+                    {bulkConfirmModal.ids.map(id => {
+                      const amb = ambassadors.find(a => a.id === id);
+                      return (
+                        <div key={id} className="flex items-center justify-between text-xs py-0.5 border-b border-slate-100 last:border-0">
+                          <span className="font-bold text-slate-800">{amb ? (amb.name || amb.professional_name) : "Unknown"}</span>
+                          <span className="font-mono text-[9px] text-slate-400">ID: {id.substring(0, 8)}...</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="text-slate-600 leading-relaxed font-medium">
+                  {bulkConfirmModal.action === "approve" ? (
+                    <p>
+                      Are you sure you want to <span className="text-emerald-600 font-extrabold">BULK APPROVE</span> these {bulkConfirmModal.ids.length} selected ambassadors?
+                      This will verify their grassroots assets, issue their credentials, and grant them active status in bulk.
+                    </p>
+                  ) : (
+                    <p>
+                      Are you sure you want to <span className="text-rose-600 font-extrabold">BULK DISAPPROVE</span> these {bulkConfirmModal.ids.length} selected ambassadors?
+                      Their fellowship credentials will be marked as disapproved in bulk, restricting their active platform capabilities.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkConfirmModal(null)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const { ids, action } = bulkConfirmModal;
+                      setBulkConfirmModal(null);
+                      await executeBulkStatusUpdate(ids, action);
+                    }}
+                    className={`px-5 py-2.5 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
+                      bulkConfirmModal.action === "approve"
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-rose-600 hover:bg-rose-700"
+                    }`}
+                  >
+                    {bulkConfirmModal.action === "approve" ? "Bulk Approve" : "Bulk Disapprove"}
                   </button>
                 </div>
               </div>
