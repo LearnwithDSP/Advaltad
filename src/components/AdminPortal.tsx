@@ -591,8 +591,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   });
 
   const totalAVU = ambassadors.reduce((acc, curr) => acc + curr.avu_balance, 0);
-  const pendingCount = ambassadors.filter(a => a.status === "pending").length;
-  const approvedCount = ambassadors.filter(a => a.status === "approved").length;
+  const pendingCount = ambassadors.filter(a => a.badge_status === "pending").length;
+const approvedCount = ambassadors.filter(a => a.badge_status === "approved").length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
