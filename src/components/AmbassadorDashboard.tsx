@@ -1731,11 +1731,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         <button
                           type="button"
                           onClick={(e) => {
-                            e.preventDefault();
-                            console.log("Direct button click triggered!");
-                            handleFundWallet(e);
+                            // Directly call the handler to launch Paystack
+                            handleFundWallet(e); 
                           }}
-                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.99]"
+                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                         >
                           <Icon name="Lock" size={14} className="text-emerald-400" />
                           <span>Fund Wallet (₦{Number(amountNaira || 0).toLocaleString()})</span>
