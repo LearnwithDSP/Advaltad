@@ -1130,15 +1130,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             <div key={amb.id} className="p-6 hover:bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
                               <div className="space-y-1.5 flex-1">
                                 <div className="flex items-center gap-2.5 flex-wrap">
-                                  <h4 className="text-sm font-black text-slate-950 tracking-tight">{amb.name}</h4>
+                                  <h4 className="text-sm font-black text-slate-950 tracking-tight">{amb.professional_name || "N/A"}</h4>
                                   <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
                                     ID: {amb.id}
                                   </span>
-                                  {amb.status === "approved" ? (
+                                  {amb.badge_status === "approved" ? (
                                     <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Approved
                                     </span>
-                                  ) : amb.status === "disapproved" ? (
+                                  ) : amb.badge_status === "disapproved" ? (
                                     <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
                                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Disapproved
                                     </span>
@@ -1167,7 +1167,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
                               {/* Action tools */}
                               <div className="flex items-center gap-2.5 flex-shrink-0">
-                                {amb.status === "pending" && (
+                                {amb.badge_status === "pending" && (
                                   <>
                                     <button
                                       onClick={() => handleApproveAmbassador(amb.id, amb.name)}
