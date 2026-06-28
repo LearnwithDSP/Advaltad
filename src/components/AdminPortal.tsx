@@ -26,7 +26,8 @@ import {
   Plus,
   Edit,
   History,
-  Download
+  Download,
+  CreditCard
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
@@ -54,7 +55,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   // Dashboard states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "history" | "payments">("overview");
+
+  // Payment Gateway Tab states
+  const [selectedAmbId, setSelectedAmbId] = useState("");
+  const [selectedProgram, setSelectedProgram] = useState("Youth Empowerment Initiative");
+  const [milestoneAmount, setMilestoneAmount] = useState("15000");
+  const [directDepositAmount, setDirectDepositAmount] = useState("");
+  const [generatedPublicLink, setGeneratedPublicLink] = useState("");
 
   // Database records
   const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>([]);
@@ -992,6 +1000,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               </button>
 
               <button
+                onClick={() => setActiveTab("payments")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "payments"
+                    ? "bg-emerald-600 text-white"
+                    : "hover:bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                <CreditCard size={16} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span>Payment Gateway</span>}
+              </button>
+
+              <button
                 onClick={() => setActiveTab("history")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
                   activeTab === "history"
@@ -1804,6 +1824,267 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             ))
                         )}
                       </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB 7: PAYMENT GATEWAY & PROGRAM FUNDING SYSTEM */}
+                {activeTab === "payments" && (
+                  <motion.div
+                    key="tab-v-payments"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-6 text-left"
+                  >
+                    <div className="border-b border-slate-100 pb-4">
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Program Funding & Payment Gateway</h3>
+                      <p className="text-xs text-slate-500">Configure public fundraising campaign links or process direct physical/card deposits credited to specific fellowship ambassadors.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      
+                      {/* Left configuration panel */}
+                      <div className="lg:col-span-2 space-y-6">
+                        
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+                          <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            Program Funding Configuration
+                          </h4>
+
+                          {/* Field A: Program Selection */}
+                          <div>
+                            <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
+                              Select Foundational Program
+                            </label>
+                            <select
+                              value={selectedProgram}
+                              onChange={(e) => {
+                                setSelectedProgram(e.target.value);
+                                const amounts: Record<string, string> = {
+                                  "Youth Empowerment Initiative": "15000",
+                                  "Community Health Drive": "25000",
+                                  "Digital Literacy Accelerator": "18500"
+                                };
+                                setMilestoneAmount(amounts[e.target.value] || "10000");
+                              }}
+                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-800 outline-none transition-all"
+                            >
+                              <option value="Youth Empowerment Initiative">Youth Empowerment Initiative</option>
+                              <option value="Community Health Drive">Community Health Drive</option>
+                              <option value="Digital Literacy Accelerator">Digital Literacy Accelerator</option>
+                            </select>
+                          </div>
+
+                          {/* Field B: Total Amount Needed */}
+                          <div>
+                            <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
+                              Required Funding Milestone (USD)
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
+                              <input
+                                type="number"
+                                value={milestoneAmount}
+                                onChange={(e) => setMilestoneAmount(e.target.value)}
+                                className="w-full pl-7 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-slate-800 outline-none transition-all"
+                                placeholder="e.g. 15000"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Field C: Ambassador Selector */}
+                          <div>
+                            <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
+                              Credit to Fellowship Ambassador
+                            </label>
+                            <select
+                              value={selectedAmbId}
+                              onChange={(e) => setSelectedAmbId(e.target.value)}
+                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-800 outline-none transition-all"
+                            >
+                              <option value="">-- Select Approved Ambassador --</option>
+                              {ambassadors.map((amb) => (
+                                <option key={amb.id} value={amb.id}>
+                                  {amb.name} ({amb.city || "No City"})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+                            {/* ACTION BUTTON 1: Generate Public Shareable Link */}
+                            <button
+                              onClick={() => {
+                                if (!selectedAmbId) {
+                                  alert("Please select an ambassador to attribute campaign credit.");
+                                  return;
+                                }
+                                const ambassadorObj = ambassadors.find(a => a.id === selectedAmbId);
+                                const ambName = ambassadorObj ? ambassadorObj.name : "Ambassador";
+                                const queryLink = `${window.location.origin}/#/donate?project=${encodeURIComponent(selectedProgram)}&needed=${milestoneAmount}&ambassador_id=${encodeURIComponent(selectedAmbId)}&ambassador_name=${encodeURIComponent(ambName)}`;
+                                setGeneratedPublicLink(queryLink);
+                              }}
+                              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                            >
+                              Generate Public Shareable Link
+                            </button>
+                          </div>
+
+                          {/* Show Generated Link */}
+                          {generatedPublicLink && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-3.5 bg-slate-50 rounded-xl border border-slate-150 space-y-2 text-xs"
+                            >
+                              <span className="block text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Campaign Link Generated!</span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={generatedPublicLink}
+                                  className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-600 font-mono text-[10px] select-all outline-none"
+                                />
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(generatedPublicLink);
+                                    alert("Link copied to clipboard successfully!");
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-all text-[11px] cursor-pointer"
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-slate-500">Share this link. Any donor using this link will see the initiative details and credit will automatically log to the selected ambassador.</p>
+                            </motion.div>
+                          )}
+                        </div>
+
+                        {/* Direct Ambassador Deposit Form */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                          <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-blue-500" />
+                            Direct Deposit Engine (Paystack Gateway)
+                          </h4>
+
+                          <p className="text-xs text-slate-500 leading-relaxed">
+                            Simulate or process an immediate direct payment securely via the Paystack payment gateway under the sponsorship of the selected ambassador.
+                          </p>
+
+                          <div className="grid sm:grid-cols-3 gap-4 items-end">
+                            <div className="sm:col-span-2">
+                              <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
+                                Deposit Amount (USD)
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
+                                <input
+                                  type="number"
+                                  value={directDepositAmount}
+                                  onChange={(e) => setDirectDepositAmount(e.target.value)}
+                                  className="w-full pl-7 pr-4 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-slate-800 outline-none transition-all"
+                                  placeholder="e.g. 250"
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                if (!selectedAmbId) {
+                                  alert("Please select an ambassador to receive credit.");
+                                  return;
+                                }
+                                const depAmt = parseFloat(directDepositAmount);
+                                if (isNaN(depAmt) || depAmt <= 0) {
+                                  alert("Please enter a valid deposit amount.");
+                                  return;
+                                }
+                                
+                                const ambassadorObj = ambassadors.find(a => a.id === selectedAmbId);
+                                const ambName = ambassadorObj ? ambassadorObj.name : "Ambassador";
+
+                                // Trigger dynamic Paystack Inline SDK or simulation
+                                const paystackPop = (window as any).PaystackPop;
+                                if (paystackPop) {
+                                  const handler = paystackPop.setup({
+                                    key: "pk_test_placeholder",
+                                    email: "admin-deposit@advaltad.org",
+                                    amount: depAmt * 100 * 1500, // Conversion to NGN
+                                    currency: "NGN",
+                                    metadata: {
+                                      ambassador_id: selectedAmbId,
+                                      ambassador_name: ambName,
+                                      project: selectedProgram,
+                                      deposit_type: "direct_deposit"
+                                    },
+                                    callback: function(res: any) {
+                                      alert(`Direct payment processed successfully! Reference: ${res.reference}. Logged credit to ${ambName}.`);
+                                      setDirectDepositAmount("");
+                                    }
+                                  });
+                                  handler.openIframe();
+                                } else {
+                                  // High fidelity simulated modal
+                                  alert(`[SIMULATION] Initiating Paystack Gateway for $${depAmt} USD credited to ${ambName} (${selectedProgram}).\n\nDirect deposit has been simulation-completed. Please adjust the AVU balance manually if needed.`);
+                                  setDirectDepositAmount("");
+                                }
+                              }}
+                              className="py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm h-10 cursor-pointer"
+                            >
+                              Direct Ambassador Deposit
+                            </button>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* Right side reminders and manual override note */}
+                      <div className="space-y-6">
+                        <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 p-6 space-y-4">
+                          <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
+                            <AlertCircle size={14} className="text-amber-600" />
+                            Manual Override Notice
+                          </h4>
+                          <p className="text-xs text-amber-900/80 leading-relaxed">
+                            Once payment confirmations are validated, administrators must manually adjust and update the ambassador's AVU balance to align with their secure wallet limits.
+                          </p>
+                          <div className="pt-2">
+                            <button
+                              onClick={() => {
+                                // Jump directly to Financial Overview tab
+                                setActiveTab("wallets");
+                              }}
+                              className="text-[10px] font-black uppercase text-amber-800 hover:text-amber-950 flex items-center gap-1 hover:underline cursor-pointer"
+                            >
+                              Open Financial Overview to credit AVU
+                              <ChevronRight size={10} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 space-y-3">
+                          <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                            Active Foundational Targets
+                          </h4>
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200/50">
+                              <span className="text-slate-600 font-bold">Youth Empowerment</span>
+                              <span className="font-mono text-slate-900 font-black">$15,000 Needed</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200/50">
+                              <span className="text-slate-600 font-bold">Community Health</span>
+                              <span className="font-mono text-slate-900 font-black">$25,000 Needed</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-600 font-bold">Digital Literacy</span>
+                              <span className="font-mono text-slate-900 font-black">$18,500 Needed</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   </motion.div>
                 )}

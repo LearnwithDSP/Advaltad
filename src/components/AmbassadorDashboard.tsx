@@ -117,6 +117,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
   const [avuBalance, setAvuBalance] = useState(1250);
+  const [hasFunded, setHasFunded] = useState<boolean>(false);
 
   const fetchAmbassadorData = async () => {
     const sessionEmail = localStorage.getItem("advaltad_session_email") || "ramon@example.com";
@@ -156,6 +157,26 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         const d = new Date(user.created_at);
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
         setCommissionDate(d.toLocaleDateString('en-US', options));
+      }
+
+      // Check funding status from DB/localStorage
+      try {
+        const [allDonations, allActivities] = await Promise.all([
+          db.getDonations(),
+          db.getActivities()
+        ]);
+        
+        const matchedDonations = allDonations.filter(d => 
+          d.email?.toLowerCase() === user.email?.toLowerCase() && (d.status === "success" || d.status === "pending")
+        );
+        const matchedActivities = allActivities.filter(act => 
+          act.ambassador_id === user.id && (act.type === "donation_logged" || act.type === "avu_transfer")
+        );
+        
+        const totalDepositsCount = matchedDonations.length + matchedActivities.length;
+        setHasFunded(totalDepositsCount > 0);
+      } catch (err) {
+        console.error("Error checking funding status:", err);
       }
     } catch (e) {
       console.error("Error loading ambassador data", e);
@@ -489,6 +510,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setTermStatus("submitting");
     setTimeout(async () => {
       setTermStatus("completed");
+      setHasFunded(true);
       
       if (profile?.id) {
         try {
@@ -864,7 +886,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">Campaign Impact</span>
               
               <div className="space-y-1">
-                <p className="text-2xl font-black font-mono tracking-tight">$45,820</p>
+                <p className="text-2xl font-black font-mono tracking-tight">{hasFunded ? "$45,820" : "$0"}</p>
                 <p className="text-[10px] text-gray-400">Total Funds Directed Globally</p>
               </div>
 
@@ -872,10 +894,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px] text-gray-400">
                   <span>Target Goal</span>
-                  <span className="font-bold text-emerald-400">91% reached</span>
+                  <span className="font-bold text-emerald-400">{hasFunded ? "91% reached" : "0% reached"}</span>
                 </div>
                 <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: "91.6%" }}></div>
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: hasFunded ? "91.6%" : "0%" }}></div>
                 </div>
               </div>
 
@@ -910,7 +932,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <div className="text-emerald-600 bg-emerald-50 p-2 rounded-xl max-w-max">
                         <Icon name="Coins" size={18} />
                       </div>
-                      <p className="text-2xl font-black tracking-tight">$45,820</p>
+                      <p className="text-2xl font-black tracking-tight">{hasFunded ? "$45,820" : "$0"}</p>
                       <p className="text-xs uppercase font-bold text-gray-400 tracking-wider">Campaign Deposits</p>
                     </motion.div>
 
@@ -922,7 +944,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <div className="text-emerald-600 bg-emerald-50 p-2 rounded-xl max-w-max">
                         <Icon name="TrendingUp" size={18} />
                       </div>
-                      <p className="text-2xl font-black tracking-tight">{avuBalance} AVU</p>
+                      <p className="text-2xl font-black tracking-tight">{hasFunded ? `${avuBalance} AVU` : "0 AVU"}</p>
                       <p className="text-xs uppercase font-bold text-gray-400 tracking-wider">Dynamic Exchange Points</p>
                     </motion.div>
 
@@ -1493,54 +1515,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                   <div className="grid md:grid-cols-12 gap-8 items-start">
                     
-                    {/* Campaign Builder */}
-                    <div className="md:col-span-6 p-6 sm:p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6">
-                      <h4 className="font-bold text-sm text-gray-900">Configure Campaign Link</h4>
-                      <p className="text-xs text-gray-500 font-sans">Develop a direct secure payment link to distribute on social media or send to corporate partners.</p>
-
-                      <div className="space-y-4">
-                        <div className="text-xs font-sans">
-                          <label className="block font-bold text-gray-500 uppercase mb-1">Campaign Title</label>
-                          <input
-                            type="text"
-                            value={campaignTitle}
-                            onChange={(e) => {
-                              setCampaignTitle(e.target.value);
-                              setCampaignGenerated(false);
-                            }}
-                            className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm font-medium"
-                          />
-                        </div>
-
-                        {campaignGenerated && (
-                          <div className="p-3.5 rounded-xl bg-orange-50 border border-orange-200 text-xs text-orange-800 flex items-center justify-between">
-                            <span className="font-mono truncate mr-2">{donationLinkText}</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(donationLinkText);
-                                alert("Campaign checkout link copied to clipboard successfully!");
-                              }}
-                              className="px-2.5 py-1 bg-white border border-orange-255 rounded-md hover:bg-orange-100 font-mono font-bold shrink-0 shadow-sm"
-                            >
-                              Copy
-                            </button>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => {
-                            setDonationLinkText(`https://advaltad.org/campaign/${campaignTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
-                            setCampaignGenerated(true);
-                          }}
-                          className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold text-xs"
-                        >
-                          Synthesize Customized Campaign Checkout URL
-                        </button>
-                      </div>
-                    </div>
-
                     {/* Manual Donor logging from on-field cash allocations */}
-                    <div className="md:col-span-6 p-6 sm:p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6">
+                    <div className="md:col-span-12 max-w-xl mx-auto w-full p-6 sm:p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6">
                       <h4 className="font-bold text-sm text-gray-900">Manual Gateway Logger</h4>
                       <p className="text-xs text-gray-500 font-sans">Log direct checks or cash-allocated resources obtained locally to map them to your regional audit tracker.</p>
 
