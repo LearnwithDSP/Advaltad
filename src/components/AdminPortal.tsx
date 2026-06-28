@@ -575,14 +575,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   // Filter calculations
-  const filteredAmbassadors = ambassadors.filter((ambassador) => {
-    const matchesSearch = 
-      ambassador.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ambassador.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ambassador.phone?.includes(searchQuery);
-      
+  const filteredAmbassadors = (ambassadors || []).filter((ambassador) => {
+    if (!ambassador) return false;
+    
+    // Using the exact database columns from ID.JPG
+    const name = (ambassador.professional_name || "").toLowerCase();
+    const email = (ambassador.email || "").toLowerCase();
+    const phone = ambassador.phone_number || "";
+    const search = searchQuery.toLowerCase();
+
+    const matchesSearch = name.includes(search) || email.includes(search) || phone.includes(search);
+
     if (statusFilter === "all") return matchesSearch;
-    return matchesSearch && ambassador.status === statusFilter;
+    return matchesSearch && ambassador.badge_status === statusFilter;
   });
 
   const totalAVU = ambassadors.reduce((acc, curr) => acc + curr.avu_balance, 0);
