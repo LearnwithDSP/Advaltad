@@ -1730,14 +1730,19 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <div className="pt-2">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            // Directly call the handler to launch Paystack
-                            handleFundWallet(e); 
-                          }}
-                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm relative z-50"
                         >
                           <Icon name="Lock" size={14} className="text-emerald-400" />
-                          <span>Fund Wallet (₦{Number(amountNaira || 0).toLocaleString()})</span>
+                          <span 
+                            className="w-full h-full block cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              alert("Testing Direct Click Connection!");
+                              handleFundWallet(e);
+                            }}
+                          >
+                            Fund Wallet (₦{Number(amountNaira || 0).toLocaleString()})
+                          </span>
                         </button>
                       </div>
                     </form>
