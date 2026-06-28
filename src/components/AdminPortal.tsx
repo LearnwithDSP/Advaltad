@@ -575,18 +575,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   // Filter calculations
-  const filteredAmbassadors = ambassadors.filter((amb) => {
+  const filteredAmbassadors = ambassadors.filter((ambassador) => {
     const matchesSearch = 
-      amb.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      amb.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      amb.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      amb.id.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus = 
-      statusFilter === "all" || 
-      amb.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
+      ambassador.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ambassador.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ambassador.phone?.includes(searchQuery);
+      
+    if (statusFilter === "all") return matchesSearch;
+    return matchesSearch && ambassador.status === statusFilter;
   });
 
   const totalAVU = ambassadors.reduce((acc, curr) => acc + curr.avu_balance, 0);

@@ -13,6 +13,8 @@ export const supabase = isSupabaseConfigured
 // LocalStorage Database helper for fallback/demo mode
 export interface DbAmbassador {
   id: string;
+  user_id?: string;
+  db_id?: string;
   name: string;
   city: string;
   field: string;
@@ -293,6 +295,8 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 
   return {
     id: row.user_id || row.id || "",
+    user_id: row.user_id || undefined,
+    db_id: row.id || undefined,
     name: row.professional_name || row.name || "",
     city: row.base_city || row.city || "",
     field: row.focus_interest || row.field || "",
@@ -806,13 +810,28 @@ export const db = {
     };
     if (isSupabaseConfigured && supabase) {
       try {
+        let resolvedId = wallet.ambassador_id;
+        if (isUuid(wallet.ambassador_id)) {
+          const { data } = await supabase
+            .from("ambassadors")
+            .select("id")
+            .or(`id.eq.${wallet.ambassador_id},user_id.eq.${wallet.ambassador_id}`)
+            .maybeSingle();
+          if (data) {
+            resolvedId = data.id;
+          }
+        }
+
         const { data, error } = await supabase
           .from("ambassador_wallets")
-          .insert([wallet])
+          .insert([{
+            ...wallet,
+            ambassador_id: resolvedId
+          }])
           .select()
           .single();
         if (!error && data) return data as DbAmbassadorWallet;
-        console.warn("Supabase insert wallet failed:", error);
+        console.warn("Supabase insert wallet failed, trying update instead or logged:", error);
       } catch (err) {
         console.warn("Supabase insert wallet exception:", err);
       }
@@ -826,10 +845,22 @@ export const db = {
   async updateWalletBalance(ambassadorId: string, balance: number): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       try {
+        let resolvedId = ambassadorId;
+        if (isUuid(ambassadorId)) {
+          const { data } = await supabase
+            .from("ambassadors")
+            .select("id")
+            .or(`id.eq.${ambassadorId},user_id.eq.${ambassadorId}`)
+            .maybeSingle();
+          if (data) {
+            resolvedId = data.id;
+          }
+        }
+
         const { error } = await supabase
           .from("ambassador_wallets")
           .update({ balance })
-          .eq("ambassador_id", ambassadorId);
+          .eq("ambassador_id", resolvedId);
         if (!error) return true;
         console.warn("Supabase update wallet balance failed:", error);
       } catch (err) {
