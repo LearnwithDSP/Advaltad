@@ -19,11 +19,12 @@ export const StoriesPage: React.FC = () => {
   const combinedStories = [
     ...IMPACT_STORIES.map(s => ({
       ...s,
+      id: `static-${s.id}`,
       isCustom: false,
       fullStoryText: s.fullStory
     })),
     ...customBlogs.map(b => ({
-      id: b.id,
+      id: `custom-${b.id}`,
       title: b.title,
       image: b.image || "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=1200",
       tag: b.tag || "GENERAL UPDATE",

@@ -253,20 +253,16 @@ export const AmbassadorSection: React.FC = () => {
 
   const BENEFITS = [
     {
-      title: "Leadership Development",
-      desc: "Curated mentor alignments, training programs, and direct briefings with international standard NGO experts."
+      title: "1. Dynamic credentials",
+      desc: "instant cryptographic certified badges"
     },
     {
-      title: "Global Network",
-      desc: "Connect seamlessly with peer advocates, regional specialists, and social builders in over 15+ world nations."
+      title: "2. P2P Value Exchange",
+      desc: "Swap project materials using AVU"
     },
     {
-      title: "Community Recognition",
-      desc: "Validating recommendations, physical badges, and certified credentials of global developmental contribution."
-    },
-    {
-      title: "Exclusive Opportunities",
-      desc: "Access to sponsored community builds, global summit invitations, and localized campaign asset co-ownership."
+      title: "3. Audited Pipelines",
+      desc: "100% trace ratios directed on-field."
     }
   ];
 
@@ -282,14 +278,14 @@ export const AmbassadorSection: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
                 <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
-                  GROWTH CORRIDOR
+                  Advaltad Global Networks
                 </span>
               </div>
-              <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight leading-none">
-                Become an Ambassador
+              <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight leading-tight">
+                Advaltad Global Networks
               </h2>
               <p className="text-slate-500 font-sans text-base leading-relaxed">
-                Join our elite fellowship of motivated leaders advancing Sub-Saharan local development. Translate your expertise into sustainable progress.
+                Access the exclusive digital corridor of certified ambassadors overseeing real on-field regional development schemens
               </p>
             </div>
 

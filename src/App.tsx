@@ -30,6 +30,13 @@ export default function App() {
   useEffect(() => {
     const checkRoute = () => {
       const hash = window.location.hash || "#home";
+      
+      // Pull down the old growth-ambassador page and redirect to ambassador
+      if (hash.toLowerCase().includes("growth-ambassador")) {
+        window.location.hash = "#/ambassador";
+        return;
+      }
+      
       setRoute(hash);
 
       // Dynamically sync auth state from localStorage on route transitions
