@@ -119,6 +119,34 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [avuBalance, setAvuBalance] = useState(1250);
   const [hasFunded, setHasFunded] = useState<boolean>(false);
 
+  // Paystack wallet funding form states
+  const [fundingByName, setFundingByName] = useState("");
+  const [fundingPhone, setFundingPhone] = useState("");
+  const [programSponsored, setProgramSponsored] = useState("Youth Empowerment Initiative");
+  const [amountNaira, setAmountNaira] = useState("");
+  const [totalDepositsNaira, setTotalDepositsNaira] = useState(0);
+
+  // Dynamically inject Paystack inline script
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]')) {
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://js.paystack.co/v1/inline.js";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  // Sync funding profile fields when profile loads
+  useEffect(() => {
+    if (profile) {
+      setFundingByName(profile.professional_name || profile.name || "");
+      setFundingPhone(profile.phone_number || profile.phone || "");
+    }
+  }, [profile]);
+
   const fetchAmbassadorData = async () => {
     const sessionEmail = localStorage.getItem("advaltad_session_email") || "ramon@example.com";
     setIsLoadingProfile(true);
@@ -159,24 +187,19 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setCommissionDate(d.toLocaleDateString('en-US', options));
       }
 
-      // Check funding status from DB/localStorage
+      // Check funding status from DB/localStorage deposits table
       try {
-        const [allDonations, allActivities] = await Promise.all([
-          db.getDonations(),
-          db.getActivities()
-        ]);
-        
-        const matchedDonations = allDonations.filter(d => 
-          d.email?.toLowerCase() === user.email?.toLowerCase() && (d.status === "success" || d.status === "pending")
+        const allDeposits = await db.getDeposits();
+        const matchedSuccessDeposits = allDeposits.filter(d => 
+          d.ambassador_id === user.id && d.status === "success"
         );
-        const matchedActivities = allActivities.filter(act => 
-          act.ambassador_id === user.id && (act.type === "donation_logged" || act.type === "avu_transfer")
-        );
-        
-        const totalDepositsCount = matchedDonations.length + matchedActivities.length;
-        setHasFunded(totalDepositsCount > 0);
+        const sumNaira = matchedSuccessDeposits.reduce((acc, curr) => acc + (curr.amount_naira || 0), 0);
+        setTotalDepositsNaira(sumNaira);
+        setHasFunded(matchedSuccessDeposits.length > 0);
       } catch (err) {
-        console.error("Error checking funding status:", err);
+        console.error("Error checking funding status from deposits:", err);
+        setHasFunded(false);
+        setTotalDepositsNaira(0);
       }
     } catch (e) {
       console.error("Error loading ambassador data", e);
@@ -500,6 +523,99 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       setTransferTargetId("");
       setTransferReason("");
     }, 4000);
+  };
+
+  const handleFundWallet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fundingByName.trim()) {
+      alert("Please enter the name of the person funding the project.");
+      return;
+    }
+    if (!fundingPhone.trim()) {
+      alert("Please enter a phone number.");
+      return;
+    }
+    const amt = parseFloat(amountNaira);
+    if (isNaN(amt) || amt <= 0) {
+      alert("Please enter a valid amount in Naira.");
+      return;
+    }
+
+    const paystackRef = `ref_${Date.now()}`;
+    const avuToEarn = Math.floor(amt / 1000);
+
+    // Initial Transaction Registration
+    try {
+      await db.createDeposit({
+        ambassador_id: profile?.id || "unknown",
+        funding_by_name: fundingByName,
+        phone_number: fundingPhone,
+        program_sponsored: programSponsored,
+        amount_naira: amt,
+        avu_earned: avuToEarn,
+        paystack_reference: paystackRef,
+        status: "pending"
+      });
+    } catch (err) {
+      console.error("Failed to register initial transaction payload", err);
+      alert("Error initializing transaction database entry.");
+      return;
+    }
+
+    const paystackPop = (window as any).PaystackPop;
+    if (paystackPop) {
+      const handler = paystackPop.setup({
+        key: "pk_test_placeholder",
+        email: profile?.email || "ambassador@domain.com",
+        amount: Math.round(amt * 100), // Convert to Kobo
+        ref: paystackRef,
+        metadata: {
+          ambassador_id: profile?.id || "unknown",
+          funding_by_name: fundingByName,
+          program_sponsored: programSponsored,
+          avu_earned: avuToEarn
+        },
+        callback: async function(res: any) {
+          try {
+            await db.updateDepositStatus(paystackRef, "success");
+            alert(`Wallet funded successfully! Reference: ${res.reference || paystackRef}. Logged ${avuToEarn} AVU.`);
+            setAmountNaira("");
+            fetchAmbassadorData();
+          } catch (err) {
+            console.error("Error updating successful deposit status", err);
+          }
+        },
+        onClose: async function() {
+          try {
+            await db.updateDepositStatus(paystackRef, "failed");
+            alert("Transaction was cancelled.");
+          } catch (err) {
+            console.error("Error updating failed/cancelled deposit status", err);
+          }
+        }
+      });
+      handler.openIframe();
+    } else {
+      // Simulate high-fidelity gateway fallback
+      const simulatedResponse = confirm(
+        `[PAYSTACK SIMULATED GATEWAY]\n\n` +
+        `Funding project for: ${fundingByName}\n` +
+        `Sponsoring Program: ${programSponsored}\n` +
+        `Amount: ₦${amt.toLocaleString()} NGN\n` +
+        `Calculated AVU: ${avuToEarn} AVU\n\n` +
+        `Click OK to simulate SUCCESS callback, or Cancel to simulate cancellation.`
+      );
+
+      if (simulatedResponse) {
+        await db.updateDepositStatus(paystackRef, "success");
+        alert(`Thank you! Your simulated payment of ₦${amt.toLocaleString()} NGN was processed. Mapped ${avuToEarn} AVU successfully!`);
+        setAmountNaira("");
+        fetchAmbassadorData();
+      } else {
+        await db.updateDepositStatus(paystackRef, "failed");
+        alert("Transaction was cancelled.");
+      }
+    }
   };
 
   const handleDirectDonationGateway = async (e: React.FormEvent) => {
@@ -886,7 +1002,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">Campaign Impact</span>
               
               <div className="space-y-1">
-                <p className="text-2xl font-black font-mono tracking-tight">{hasFunded ? "$45,820" : "$0"}</p>
+                <p className="text-2xl font-black font-mono tracking-tight">{hasFunded ? `₦${totalDepositsNaira.toLocaleString()}` : "₦0"}</p>
                 <p className="text-[10px] text-gray-400">Total Funds Directed Globally</p>
               </div>
 
@@ -932,7 +1048,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <div className="text-emerald-600 bg-emerald-50 p-2 rounded-xl max-w-max">
                         <Icon name="Coins" size={18} />
                       </div>
-                      <p className="text-2xl font-black tracking-tight">{hasFunded ? "$45,820" : "$0"}</p>
+                      <p className="text-2xl font-black tracking-tight">{hasFunded ? `₦${totalDepositsNaira.toLocaleString()}` : "₦0"}</p>
                       <p className="text-xs uppercase font-bold text-gray-400 tracking-wider">Campaign Deposits</p>
                     </motion.div>
 
@@ -956,7 +1072,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <div className="text-emerald-600 bg-emerald-50 p-2 rounded-xl max-w-max">
                         <Icon name="Home" size={18} />
                       </div>
-                      <p className="text-2xl font-black tracking-tight">3 Project Grids</p>
+                      <p className="text-2xl font-black tracking-tight">{hasFunded ? "3 Project Grids" : "0 Project Grids"}</p>
                       <p className="text-xs uppercase font-bold text-gray-400 tracking-wider">Supervised Deployments</p>
                     </motion.div>
 
@@ -1507,90 +1623,108 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
                   className="space-y-8"
+                  style={{ fontFamily: "'Roboto', sans-serif" }}
                 >
                   <div className="pb-4 border-b border-gray-200">
-                    <h3 className="text-xl font-bold text-gray-900">Regional Payment Gateway Hub</h3>
-                    <p className="text-xs text-gray-500 font-sans">Draft custom regional campaign landing links or manually input custom cash-allocated donations securely.</p>
+                    <h3 className="text-xl font-bold text-gray-900">Wallet Funding Terminal</h3>
+                    <p className="text-xs text-gray-500 font-sans">Sponsor programs to fund your wallet and accumulate Advaltad Value Units (AVU) securely.</p>
                   </div>
 
-                  <div className="grid md:grid-cols-12 gap-8 items-start">
-                    
-                    {/* Manual Donor logging from on-field cash allocations */}
-                    <div className="md:col-span-12 max-w-xl mx-auto w-full p-6 sm:p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6">
-                      <h4 className="font-bold text-sm text-gray-900">Manual Gateway Logger</h4>
-                      <p className="text-xs text-gray-500 font-sans">Log direct checks or cash-allocated resources obtained locally to map them to your regional audit tracker.</p>
-
-                      {termStatus === "completed" && (
-                        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-205 text-xs text-emerald-800 flex items-center gap-2">
-                          <Icon name="Check" size={16} />
-                          <span>Direct donation registered on official regional Ledger. Mapped ok!</span>
-                        </div>
-                      )}
-
-                      {termStatus !== "completed" && (
-                        <form onSubmit={handleDirectDonationGateway} className="space-y-4 text-xs font-sans">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block font-bold text-gray-500 uppercase mb-1">Donor Name</label>
-                              <input
-                                required
-                                type="text"
-                                placeholder="Anonymous"
-                                value={termDonorName}
-                                onChange={(e) => setTermDonorName(e.target.value)}
-                                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-bold text-gray-500 uppercase mb-1">Cash Value (USD)</label>
-                              <input
-                                required
-                                type="number"
-                                placeholder="$500"
-                                value={termAmount}
-                                onChange={(e) => setTermAmount(e.target.value)}
-                                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block font-bold text-gray-500 uppercase mb-1">Contact Email</label>
-                            <input
-                              required
-                              type="email"
-                              placeholder="donor@domain.com"
-                              value={termDonorEmail}
-                              onChange={(e) => setTermDonorEmail(e.target.value)}
-                              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100"
-                            />
-                          </div>
-
-                          <button
-                            type="submit"
-                            disabled={termStatus === "submitting"}
-                            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-                          >
-                            {termStatus === "submitting" ? "Processing encrypted allocation..." : "Deposit Manually into Field Reserves"}
-                          </button>
-                        </form>
-                      )}
-
-                      {termStatus === "completed" && (
-                        <button
-                          onClick={() => {
-                            setTermStatus("idle");
-                            setTermAmount("");
-                            setTermDonorName("");
-                            setTermDonorEmail("");
-                          }}
-                          className="w-full py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 text-[11px] font-bold text-gray-700"
-                        >
-                          Log another manual transaction
-                        </button>
-                      )}
+                  <div className="max-w-2xl bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6 mx-auto">
+                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100 font-sans">
+                      <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-700">
+                        <Icon name="Wallet" size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 uppercase tracking-wide">Secure Deposit Gateway</h4>
+                        <p className="text-[11px] text-slate-500">All payments are safely processed via Paystack Inline checkout</p>
+                      </div>
                     </div>
 
+                    <form onSubmit={handleFundWallet} className="space-y-4">
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        {/* Field 1: Who is funding Project */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Who is funding Project</label>
+                          <input
+                            required
+                            type="text"
+                            placeholder="Ambassador Name"
+                            value={fundingByName}
+                            onChange={(e) => setFundingByName(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans"
+                          />
+                        </div>
+
+                        {/* Field 2: Phone Number */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Phone Number</label>
+                          <input
+                            required
+                            type="tel"
+                            placeholder="+234..."
+                            value={fundingPhone}
+                            onChange={(e) => setFundingPhone(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Field 3: Programs to be Sponsored */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Programs to be Sponsored</label>
+                        <select
+                          required
+                          value={programSponsored}
+                          onChange={(e) => setProgramSponsored(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans cursor-pointer"
+                        >
+                          <option value="Youth Empowerment Initiative">Youth Empowerment Initiative</option>
+                          <option value="Community Health Drive">Community Health Drive</option>
+                          <option value="Digital Literacy Accelerator">Digital Literacy Accelerator</option>
+                        </select>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        {/* Field 4: Total Amount to be funded */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Total Amount to be funded (₦)</label>
+                          <div className="relative">
+                            <span className="absolute left-3.5 top-2.5 text-sm font-bold text-slate-400">₦</span>
+                            <input
+                              required
+                              type="number"
+                              min="100"
+                              placeholder="e.g. 50000"
+                              value={amountNaira}
+                              onChange={(e) => setAmountNaira(e.target.value)}
+                              className="w-full pl-8 pr-3.5 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Field 5: Total AVU to receive */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Total AVU to receive</label>
+                          <input
+                            disabled
+                            type="text"
+                            value={`${(Math.floor(Number(amountNaira || 0) / 1000)).toLocaleString()} AVU`}
+                            className="w-full px-3.5 py-2.5 rounded-lg bg-slate-100 border border-slate-200 text-sm font-bold text-emerald-800 font-mono cursor-not-allowed"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                        >
+                          <Icon name="Lock" size={14} className="text-emerald-400" />
+                          <span>Fund Wallet (₦{Number(amountNaira || 0).toLocaleString()})</span>
+                        </button>
+                      </div>
+                    </form>
                   </div>
                 </motion.div>
               )}

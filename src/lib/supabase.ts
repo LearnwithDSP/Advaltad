@@ -95,6 +95,19 @@ export interface DbDonation {
   created_at: string;
 }
 
+export interface DbDeposit {
+  id: string;
+  ambassador_id: string;
+  funding_by_name: string;
+  phone_number: string;
+  program_sponsored: string;
+  amount_naira: number;
+  avu_earned: number;
+  paystack_reference: string;
+  status: "pending" | "success" | "failed";
+  created_at: string;
+}
+
 const LOCAL_STORAGE_KEY = "advaltad_ambassadors_db";
 const ADMIN_LOCAL_STORAGE_KEY = "advaltad_admins_db";
 const ACTIVITIES_LOCAL_STORAGE_KEY = "advaltad_activities_db";
@@ -102,6 +115,19 @@ const BLOGS_LOCAL_STORAGE_KEY = "advaltad_blogs_db";
 const WALLETS_LOCAL_STORAGE_KEY = "advaltad_wallets_db";
 const AUDIT_LOGS_LOCAL_STORAGE_KEY = "advaltad_audit_logs_db";
 const DONATIONS_LOCAL_STORAGE_KEY = "advaltad_donations_db";
+const DEPOSITS_LOCAL_STORAGE_KEY = "advaltad_deposits_db";
+
+function getLocalDepositsDb(): DbDeposit[] {
+  if (typeof window === "undefined") return [];
+  const data = localStorage.getItem(DEPOSITS_LOCAL_STORAGE_KEY);
+  if (data) return JSON.parse(data);
+  return [];
+}
+
+function saveLocalDepositsDb(deposits: DbDeposit[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(DEPOSITS_LOCAL_STORAGE_KEY, JSON.stringify(deposits));
+}
 
 function getLocalDonationsDb(): DbDonation[] {
   if (typeof window === "undefined") return [];
@@ -1036,5 +1062,111 @@ export const db = {
     localDb.unshift(fresh);
     saveLocalDonationsDb(localDb);
     return fresh;
+  },
+
+  async getDeposits(): Promise<DbDeposit[]> {
+    const local = getLocalDepositsDb();
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("deposits")
+          .select("*")
+          .order("created_at", { ascending: false });
+        
+        if (!error && data) {
+          return data as DbDeposit[];
+        }
+        console.warn("Supabase fetch deposits error, falling back to local:", error);
+      } catch (err) {
+        console.warn("Supabase fetch deposits failed, falling back to local:", err);
+      }
+    }
+    return local;
+  },
+
+  async createDeposit(deposit: Omit<DbDeposit, "id" | "created_at">): Promise<DbDeposit> {
+    const fresh: DbDeposit = {
+      id: "dep-" + Math.floor(Math.random() * 899999 + 100000),
+      ...deposit,
+      created_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("deposits")
+          .insert([fresh])
+          .select()
+          .single();
+        
+        if (!error && data) {
+          return data as DbDeposit;
+        }
+        console.warn("Supabase insert deposit error, saving to local only:", error);
+      } catch (err) {
+        console.warn("Supabase insert deposit failed, saving to local only:", err);
+      }
+    }
+
+    const localDb = getLocalDepositsDb();
+    localDb.unshift(fresh);
+    saveLocalDepositsDb(localDb);
+    return fresh;
+  },
+
+  async updateDepositStatus(paystack_reference: string, status: "success" | "failed"): Promise<boolean> {
+    let success = false;
+    let ambassador_id = "";
+    let avu_earned = 0;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: updatedRows, error } = await supabase
+          .from("deposits")
+          .update({ status })
+          .eq("paystack_reference", paystack_reference)
+          .select();
+        
+        if (!error && updatedRows && updatedRows.length > 0) {
+          success = true;
+          const matched = updatedRows[0] as DbDeposit;
+          ambassador_id = matched.ambassador_id;
+          avu_earned = matched.avu_earned;
+        } else {
+          console.warn("Supabase update deposit status failed:", error);
+        }
+      } catch (err) {
+        console.warn("Supabase update deposit status exception:", err);
+      }
+    }
+
+    // Always fallback/sync to local storage to ensure UI works seamlessly
+    const localDb = getLocalDepositsDb();
+    const index = localDb.findIndex(d => d.paystack_reference === paystack_reference);
+    if (index !== -1) {
+      localDb[index].status = status;
+      saveLocalDepositsDb(localDb);
+      if (!success) {
+        success = true;
+        ambassador_id = localDb[index].ambassador_id;
+        avu_earned = localDb[index].avu_earned;
+      }
+    }
+
+    // If status is 'success', increment the ambassador's AVU balance
+    if (status === "success" && success && ambassador_id && avu_earned > 0) {
+      try {
+        const amb = await this.findAmbassadorByEmail(ambassador_id) || 
+                    (await this.getAmbassadors()).find(a => a.id === ambassador_id || a.email === ambassador_id);
+        if (amb) {
+          const currentBalance = amb.avu_balance || 0;
+          await this.updateAvuBalance(amb.id, currentBalance + avu_earned);
+        }
+      } catch (err) {
+        console.error("Failed to increment ambassador balance on successful deposit", err);
+      }
+    }
+
+    return success;
   }
 };
