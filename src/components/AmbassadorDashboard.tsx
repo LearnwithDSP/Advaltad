@@ -97,8 +97,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // Ambassador Database Profile state
   const [profile, setProfile] = useState<DbAmbassador | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
-  const [allPendingAmbassadors, setAllPendingAmbassadors] = useState<DbAmbassador[]>([]);
-  const [isSimulatingApproval, setIsSimulatingApproval] = useState(false);
+
+  const handleSignOut = () => {
+    onLogout();
+  };
 
   // Form states for profile edit
   const [editName, setEditName] = useState("");
@@ -155,10 +157,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
         setCommissionDate(d.toLocaleDateString('en-US', options));
       }
-
-      // Also grab other pending accounts to show in simulator
-      const all = await db.getAmbassadors();
-      setAllPendingAmbassadors(all.filter(a => a.status === "pending"));
     } catch (e) {
       console.error("Error loading ambassador data", e);
     } finally {
@@ -239,18 +237,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     };
   }, [profile]);
 
-  const handleSimulateApproval = async (idToApprove: string) => {
-    setIsSimulatingApproval(true);
-    try {
-      await db.updateStatus(idToApprove, "approved");
-      // Re-fetch database record to update states smoothly
-      await fetchAmbassadorData();
-    } catch (err) {
-      console.error("Error simulating approval", err);
-    } finally {
-      setIsSimulatingApproval(false);
-    }
-  };
+  
 
   
   // Certificate Interactive Form State
@@ -777,67 +764,15 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </div>
               </div>
 
-              {/* Admin simulator panel inside the card! */}
-              <div className="p-6 rounded-2xl bg-[#F7F8FA] border border-slate-200 space-y-4 text-left">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest font-mono">
-                    INTERACTIVE ADMIN SIMULATOR PANEL
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500 font-sans leading-relaxed">
-                    This interactive simulator is built for demonstration purposes. In production, an administrator receives a secure email to approve new candidates via their Supabase console. Click below to simulate an immediate admin approval for this account.
-                  </p>
-                  
-                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                    <button
-                      onClick={() => handleSimulateApproval(profile.id)}
-                      disabled={isSimulatingApproval}
-                      className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white font-bold text-xs tracking-wider uppercase flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-emerald-600/10"
-                    >
-                      {isSimulatingApproval ? (
-                        <>
-                          <div className="w-4 h-4 rounded-full border border-white border-t-transparent animate-spin" />
-                          Approving candidate...
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="CheckCircle" size={14} />
-                          Approve Account Now
-                        </>
-                      )}
-                    </button>
-                    
-                    <button
-                      onClick={onLogout}
-                      className="px-5 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs cursor-pointer text-center"
-                    >
-                      Sign Out
-                    </button>
-                  </div>
-                </div>
-
-                {allPendingAmbassadors.length > 1 && (
-                  <div className="pt-4 border-t border-slate-200 mt-4 space-y-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Other Registered Pending Accounts</p>
-                    <div className="max-h-24 overflow-y-auto space-y-1.5 divide-y divide-slate-100">
-                      {allPendingAmbassadors.map(amb => (
-                        amb.id !== profile.id && (
-                          <div key={amb.id} className="flex items-center justify-between text-xs pt-1.5">
-                            <span className="font-semibold text-slate-700">{amb.name} ({amb.city})</span>
-                            <button
-                              onClick={() => handleSimulateApproval(amb.id)}
-                              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer"
-                            >
-                              Approve
-                            </button>
-                          </div>
-                        )
-                      ))}
-                    </div>
-                  </div>
-                )}
+              {/* Standalone Sign Out section */}
+              <div className="pt-6 border-t border-slate-100 flex justify-end">
+                <button
+                  onClick={handleSignOut}
+                  className="px-6 py-3 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-sm tracking-wide transition-all cursor-pointer shadow-sm flex items-center gap-2"
+                >
+                  <Icon name="LogOut" size={16} />
+                  <span>Sign Out</span>
+                </button>
               </div>
             </div>
           </div>
