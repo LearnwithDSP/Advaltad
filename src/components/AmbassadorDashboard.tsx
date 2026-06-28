@@ -119,6 +119,17 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [avuBalance, setAvuBalance] = useState(1250);
   const [hasFunded, setHasFunded] = useState<boolean>(false);
 
+  // Toast notifications state
+  const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
+
+  const showToast = (type: "success" | "error" | "info", title: string, message: string) => {
+    const id = "toast-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
+    setToasts(prev => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 6000);
+  };
+
   // Paystack wallet funding form states
   const [fundingByName, setFundingByName] = useState("");
   const [fundingPhone, setFundingPhone] = useState("");
@@ -578,17 +589,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         callback: async function(res: any) {
           try {
             await db.updateDepositStatus(paystackRef, "success");
-            alert(`Wallet funded successfully! Reference: ${res.reference || paystackRef}. Logged ${avuToEarn} AVU.`);
+            showToast("success", "Transaction Verified", `Successfully verified payment of ₦${amt.toLocaleString()} NGN via Paystack. Your wallet has been credited with ${avuToEarn} AVU!`);
             setAmountNaira("");
             fetchAmbassadorData();
           } catch (err) {
             console.error("Error updating successful deposit status", err);
+            showToast("error", "Verification Error", "Failed to update deposit status but payment was processed.");
           }
         },
         onClose: async function() {
           try {
             await db.updateDepositStatus(paystackRef, "failed");
-            alert("Transaction was cancelled.");
+            showToast("error", "Transaction Cancelled", "The Paystack transaction was cancelled by the user.");
           } catch (err) {
             console.error("Error updating failed/cancelled deposit status", err);
           }
@@ -608,12 +620,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
       if (simulatedResponse) {
         await db.updateDepositStatus(paystackRef, "success");
-        alert(`Thank you! Your simulated payment of ₦${amt.toLocaleString()} NGN was processed. Mapped ${avuToEarn} AVU successfully!`);
+        showToast("success", "Transaction Verified (Simulated)", `Successfully simulated payment of ₦${amt.toLocaleString()} NGN. Your wallet has been credited with ${avuToEarn} AVU!`);
         setAmountNaira("");
         fetchAmbassadorData();
       } else {
         await db.updateDepositStatus(paystackRef, "failed");
-        alert("Transaction was cancelled.");
+        showToast("error", "Transaction Cancelled", "Simulated transaction was cancelled.");
       }
     }
   };
@@ -1717,8 +1729,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                       <div className="pt-2">
                         <button
-                          type="submit"
-                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            console.log("Direct button click triggered!");
+                            handleFundWallet(e);
+                          }}
+                          className="w-full py-3 rounded-lg bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.99]"
                         >
                           <Icon name="Lock" size={14} className="text-emerald-400" />
                           <span>Fund Wallet (₦{Number(amountNaira || 0).toLocaleString()})</span>
@@ -1728,7 +1745,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </div>
                 </motion.div>
               )}
-
               {/* TAB 5: MANAGED LOCAL PROJECTS */}
               {activeTab === "projects" && (
                 <motion.div
@@ -2006,6 +2022,44 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           </div>
         )}
       </AnimatePresence>
+
+      {/* Toast Notifications Container */}
+      <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.2 } }}
+              className="pointer-events-auto bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xl p-4 flex gap-3 items-start w-full"
+            >
+              <div className={`p-2 rounded-xl shrink-0 ${
+                toast.type === "success" 
+                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" 
+                  : toast.type === "error"
+                  ? "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400"
+                  : "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+              }`}>
+                <Icon 
+                  name={toast.type === "success" ? "CheckCircle2" : toast.type === "error" ? "AlertCircle" : "Info"} 
+                  size={18} 
+                />
+              </div>
+              <div className="flex-1 space-y-0.5">
+                <h5 className="font-bold text-xs text-slate-900 dark:text-slate-100">{toast.title}</h5>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 p-0.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-all"
+              >
+                <Icon name="X" size={14} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
     </div>
   );
