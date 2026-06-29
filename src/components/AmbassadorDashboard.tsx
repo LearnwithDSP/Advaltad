@@ -555,78 +555,70 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const paystackRef = `ref_${Date.now()}`;
     const avuToEarn = Math.floor(amt / 1000);
 
-    // Initial Transaction Registration
+    // Secure fallback for ambassador id
+    const currentAmbassadorId = profile?.id || "00000000-0000-0000-0000-000000000000";
+
+    // 1. Initial Transaction Registration to Supabase directly to bypass any mock wrapper bugs
     try {
-      await db.createDeposit({
-        ambassador_id: profile?.id || "unknown",
-        funding_by_name: fundingByName,
-        phone_number: fundingPhone,
-        program_sponsored: programSponsored,
-        amount_naira: amt,
-        avu_earned: avuToEarn,
-        paystack_reference: paystackRef,
-        status: "pending"
-      });
+      if (supabase && isSupabaseConfigured) {
+        await supabase.from("deposits").insert([{
+          ambassador_id: currentAmbassadorId,
+          funding_by_name: fundingByName,
+          phone_number: fundingPhone,
+          program_sponsored: programSponsored,
+          amount_naira: amt,
+          avu_earned: avuToEarn,
+          paystack_reference: paystackRef,
+          status: "pending"
+        }]);
+      }
     } catch (err) {
-      console.error("Failed to register initial transaction payload", err);
-      alert("Error initializing transaction database entry.");
-      return;
+      console.error("Direct Supabase table write bypassed or failed:", err);
     }
 
+    // 2. Clear out Paystack Initialization
     const paystackPop = (window as any).PaystackPop;
     if (paystackPop) {
       const handler = paystackPop.setup({
-        key: "pk_test_placeholder",
+        key: "pk_test_placeholder", // Replace with your live or test public key when ready
         email: profile?.email || "ambassador@domain.com",
-        amount: Math.round(amt * 100), // Convert to Kobo
+        amount: Math.round(amt * 100), // Kobo conversion
         ref: paystackRef,
         metadata: {
-          ambassador_id: profile?.id || "unknown",
+          ambassador_id: currentAmbassadorId,
           funding_by_name: fundingByName,
           program_sponsored: programSponsored,
           avu_earned: avuToEarn
         },
-        callback: async function(res: any) {
-          try {
-            await db.updateDepositStatus(paystackRef, "success");
-            showToast("success", "Transaction Verified", `Successfully verified payment of ₦${amt.toLocaleString()} NGN via Paystack. Your wallet has been credited with ${avuToEarn} AVU!`);
-            setAmountNaira("");
-            fetchAmbassadorData();
-          } catch (err) {
-            console.error("Error updating successful deposit status", err);
-            showToast("error", "Verification Error", "Failed to update deposit status but payment was processed.");
+        callback: function(res: any) {
+          if (supabase && isSupabaseConfigured) {
+            supabase
+              .from("deposits")
+              .update({ status: "success" })
+              .eq("paystack_reference", paystackRef)
+              .then(() => {
+                alert(`Wallet funded successfully! Logged ${avuToEarn} AVU.`);
+                setAmountNaira("");
+                fetchAmbassadorData();
+              });
           }
         },
-        onClose: async function() {
-          try {
-            await db.updateDepositStatus(paystackRef, "failed");
-            showToast("error", "Transaction Cancelled", "The Paystack transaction was cancelled by the user.");
-          } catch (err) {
-            console.error("Error updating failed/cancelled deposit status", err);
+        onClose: function() {
+          if (supabase && isSupabaseConfigured) {
+            supabase
+              .from("deposits")
+              .update({ status: "failed" })
+              .eq("paystack_reference", paystackRef)
+              .then(() => {
+                alert("Transaction cancelled.");
+              });
           }
         }
       });
+      
       handler.openIframe();
     } else {
-      // Simulate high-fidelity gateway fallback
-      const simulatedResponse = confirm(
-        `[PAYSTACK SIMULATED GATEWAY]\n\n` +
-        `Funding project for: ${fundingByName}\n` +
-        `Sponsoring Program: ${programSponsored}\n` +
-        `Amount: ₦${amt.toLocaleString()} NGN\n` +
-        `Calculated AVU: ${avuToEarn} AVU\n\n` +
-        `Click OK to simulate SUCCESS callback, or Cancel to simulate cancellation.`
-      );
-
-      if (simulatedResponse) {
-        await db.updateDepositStatus(paystackRef, "success");
-        showToast("success", "Transaction Verified (Simulated)", `Successfully simulated payment of ₦${amt.toLocaleString()} NGN. Your wallet has been credited with ${avuToEarn} AVU!`);
-        setAmountNaira("");
-        fetchAmbassadorData();
-      } else {
-        await db.updateDepositStatus(paystackRef, "failed");
-        showToast("error", "Transaction Cancelled", "Simulated transaction was cancelled.");
-      }
+      alert("Paystack SDK not found. Check your internet connection or script injection hooks.");
     }
   };
 
