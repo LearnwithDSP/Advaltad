@@ -580,7 +580,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const paystackPop = (window as any).PaystackPop;
     if (paystackPop) {
       const handler = paystackPop.setup({
-        key: "pk_test_placeholder", // Replace with your live or test public key when ready
+        key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
         email: profile?.email || "ambassador@domain.com",
         amount: Math.round(amt * 100), // Kobo conversion
         ref: paystackRef,
