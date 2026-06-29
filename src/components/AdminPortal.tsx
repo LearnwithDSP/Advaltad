@@ -1880,7 +1880,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           {/* Field B: Total Amount Needed */}
                           <div>
                             <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
-                              Required Funding Milestone (USD)
+                              Required Funding Milestone (NGN)
                             </label>
                             <div className="relative">
                               <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
@@ -1976,7 +1976,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           <div className="grid sm:grid-cols-3 gap-4 items-end">
                             <div className="sm:col-span-2">
                               <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
-                                Deposit Amount (USD)
+                                Deposit Amount (NGN)
                               </label>
                               <div className="relative">
                                 <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
