@@ -2009,7 +2009,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 const paystackPop = (window as any).PaystackPop;
                                 if (paystackPop) {
                                   const handler = paystackPop.setup({
-                                    key: "pk_test_placeholder",
+                                    key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
                                     email: "admin-deposit@advaltad.org",
                                     amount: depAmt * 100 * 1500, // Conversion to NGN
                                     currency: "NGN",
