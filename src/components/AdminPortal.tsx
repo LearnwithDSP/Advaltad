@@ -2073,15 +2073,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           <div className="space-y-2.5">
                             <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200/50">
                               <span className="text-slate-600 font-bold">Youth Empowerment</span>
-                              <span className="font-mono text-slate-900 font-black">$15,000 Needed</span>
+                              <span className="font-mono text-slate-900 font-black">₦150,000 Needed</span>
                             </div>
                             <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200/50">
                               <span className="text-slate-600 font-bold">Community Health</span>
-                              <span className="font-mono text-slate-900 font-black">$25,000 Needed</span>
+                              <span className="font-mono text-slate-900 font-black">₦250,000 Needed</span>
                             </div>
                             <div className="flex justify-between items-center text-xs">
                               <span className="text-slate-600 font-bold">Digital Literacy</span>
-                              <span className="font-mono text-slate-900 font-black">$18,500 Needed</span>
+                              <span className="font-mono text-slate-900 font-black">₦180,500 Needed</span>
                             </div>
                           </div>
                         </div>
