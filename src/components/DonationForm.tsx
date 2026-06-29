@@ -17,9 +17,9 @@ export const DonationForm: React.FC = () => {
 
   // Static bank details
   const BANK_DETAILS = {
-    bankName: "Zenith Bank PLC",
+    bankName: "GTbank",
     accountName: "Advaltad Growth and Support Foundation",
-    accountNumber: "1229348576",
+    accountNumber: "3002927257 (USD ACCOUNT)",
   };
 
   const validateForm = () => {
