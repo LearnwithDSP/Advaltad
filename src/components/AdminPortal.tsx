@@ -1882,16 +1882,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
                               Required Funding Milestone (NGN)
                             </label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
-                              <input
-                                type="number"
-                                value={milestoneAmount}
-                                onChange={(e) => setMilestoneAmount(e.target.value)}
-                                className="w-full pl-7 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-slate-800 outline-none transition-all"
-                                placeholder="e.g. 15000"
-                              />
-                            </div>
+                            <div className="space-y-1">
+  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Required Funding Milestone (₦)</label>
+  <div className="relative">
+    <span className="absolute left-3.5 top-2.5 text-sm font-bold text-slate-400">₦</span>
+    <input
+      type="number"
+      placeholder="e.g. 250000"
+      value={fundingMilestone} // or whatever your state variable is named here
+      onChange={(e) => setFundingMilestone(e.target.value)} // keep your existing onChange line exactly as it is
+      className="w-full pl-8 pr-3.5 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
+    />
+  </div>
+</div>
                           </div>
 
                           {/* Field C: Ambassador Selector */}
