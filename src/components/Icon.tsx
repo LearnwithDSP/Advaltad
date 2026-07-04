@@ -43,10 +43,12 @@ import {
   ExternalLink,
   ChevronRight,
   Send,
-  AlertCircle
+  AlertCircle,
+  Info
 } from "lucide-react";
 
 const iconMap: { [key: string]: React.ComponentType<any> } = {
+  Info,
   Building2,
   Compass,
   Users,
