@@ -18,16 +18,13 @@ import {
   Lock, 
   Compass, 
   User, 
-  TrendingUp, 
-  Sparkles,
-  MapPin,
-  Phone,
-  AlertCircle,
-  Plus,
-  Edit,
-  History,
-  Download,
-  CreditCard
+  AlertCircle, 
+  Plus, 
+  Edit, 
+  History, 
+  Download, 
+  CreditCard,
+  MapPin
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
@@ -145,7 +142,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     loadDbData();
   }, []);
 
-  // Setup real-time Supabase subscription to keep Ambassador records strictly synchronized on all devices
+  // Setup real-time Supabase subscription
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
 
@@ -261,7 +258,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         }
       }
 
-      const admin = await db.createAdmin({
+      await db.createAdmin({
         name: signupName,
         email: signupEmail,
         password: signupPassword,
@@ -270,13 +267,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       });
 
       setAuthSuccess("Admin account created successfully! Please sign in.");
-      // Auto-populate login and toggle view
       setLoginEmail(signupEmail);
       setIsSubmitting(false);
       setTimeout(() => {
         setView("login");
         setAuthSuccess("");
-        // Clear signup fields
         setSignupName("");
         setSignupEmail("");
         setSignupPassword("");
@@ -363,14 +358,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const executeApproveAmbassador = async (id: string, name: string) => {
     try {
       await db.updateStatus(id, "approved");
-      // Log event
       await db.logActivity({
         ambassador_id: id,
         ambassador_name: name,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" approved Ambassador Fellowship credentials.`
       });
-      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -395,14 +388,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const executeDisapproveAmbassador = async (id: string, name: string) => {
     try {
       await db.updateStatus(id, "disapproved");
-      // Log event
       await db.logActivity({
         ambassador_id: id,
         ambassador_name: name,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" disapproved Ambassador Fellowship credentials.`
       });
-      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -427,12 +418,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const executeSuspendAmbassador = async (id: string, name: string) => {
     try {
       await db.deleteAmbassador(id);
-      // Log event
       await db.logActivity({
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" suspended/deleted Ambassador ${name} from registry.`
       });
-      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -489,15 +478,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     }
 
     const headers = [
-      "ID",
-      "Professional Name",
-      "Email Address",
-      "Phone Number",
-      "Verification Status",
-      "AVU Balance",
-      "Focus Specialty",
-      "Base City",
-      "Created At"
+      "ID", "Professional Name", "Email Address", "Phone Number",
+      "Verification Status", "AVU Balance", "Focus Specialty", "Base City", "Created At"
     ];
 
     const escapeCSV = (val: any) => {
@@ -552,15 +534,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       };
       await db.updateProfile(selectedAmbassador.id, updates);
       
-      // Log event
       await db.logActivity({
         ambassador_id: selectedAmbassador.id,
         ambassador_name: editName,
         type: "profile_update",
-        desc: `Super Admin "${currentAdmin?.name}" updated public registry portfolio for ${editName} (City: "${editCity}", Field: "${editField}")`
+        desc: `Super Admin "${currentAdmin?.name}" updated public registry portfolio for ${editName}`
       });
 
-      // Create Audit Log
       await db.createAuditLog({
         admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
         admin_name: currentAdmin?.name || "Super Admin",
@@ -570,12 +550,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         action: "updated_portfolio"
       });
 
-      // Update local state in the selected ambassador
       setSelectedAmbassador(prev => prev ? { ...prev, ...updates } : null);
-      
-      // Reload the list of ambassadors to reflect the change
       loadDbData();
-      
       setEditSuccess(true);
       setTimeout(() => setEditSuccess(false), 3000);
     } catch (err) {
@@ -692,7 +668,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
     setIsFundingWallet(true);
     try {
-      // Find current wallet balance
       const currentWallet = wallets.find(w => w.ambassador_id === selectedWalletAmbassador.id);
       const currentBal = currentWallet ? currentWallet.balance : selectedWalletAmbassador.avu_balance;
       const newBal = currentBal + amount;
@@ -707,7 +682,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         });
       }
 
-      // Also update ambassador balance for parity
       await db.updateAvuBalance(selectedWalletAmbassador.id, newBal);
 
       await db.logActivity({
@@ -750,7 +724,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const approvedCount = ambassadors.filter(a => a.status === "approved").length;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
       
       {/* 1. AUTHENTICATION PAGES FOR ADMIN */}
       {!isAuthenticated && (
@@ -762,7 +736,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             animate={{ opacity: 1, y: 0 }}
             className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl relative z-10 border border-slate-100"
           >
-            {/* Header logo / branding */}
             <div className="text-center space-y-2 mb-8">
               <div className="w-12 h-12 rounded-2xl bg-slate-900 text-emerald-400 mx-auto flex items-center justify-center font-display font-black text-lg shadow-lg">
                 <ShieldCheck size={24} />
@@ -799,7 +772,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 >
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Admin Email Address</label>
-                    <div className="relative">
+                    <div className="relative text-left">
                       <Mail size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
                         type="email" 
@@ -814,7 +787,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Strong Admin Password</label>
-                    <div className="relative">
+                    <div className="relative text-left">
                       <Lock size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
                         type="password" 
@@ -856,7 +829,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   onSubmit={handleSignUp} 
                   className="space-y-5"
                 >
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 text-left">
                     <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Admin Full Name</label>
                     <div className="relative">
                       <User size={16} className="absolute left-4 top-3.5 text-slate-400" />
@@ -871,7 +844,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 text-left">
                     <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Admin Email Address</label>
                     <div className="relative">
                       <Mail size={16} className="absolute left-4 top-3.5 text-slate-400" />
@@ -886,7 +859,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 text-left">
                     <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Strong Admin Password</label>
                     <div className="relative">
                       <Lock size={16} className="absolute left-4 top-3.5 text-slate-400" />
@@ -924,7 +897,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               )}
             </AnimatePresence>
             
-            {/* Quick exit to home link */}
             <div className="mt-6 text-center">
               <a href="#/home" className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center justify-center gap-1">
                 <ChevronLeft size={12} /> Back to Public Foundation Website
@@ -944,7 +916,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               sidebarCollapsed ? "w-16" : "w-64"
             } relative z-20`}
           >
-            {/* Collapse button trigger */}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="absolute right-[-12px] top-10 w-6 h-6 bg-slate-900 border border-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-white cursor-pointer z-30"
@@ -952,8 +923,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
             </button>
 
-            {/* Brand Logo Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center gap-2.5 overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex items-center gap-2.5 overflow-hidden text-left">
               <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-display font-black text-sm flex-shrink-0">
                 A
               </div>
@@ -969,7 +939,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               )}
             </div>
 
-            {/* Menu Items */}
             <nav className="p-3 flex-1 space-y-1">
               <button
                 onClick={() => setActiveTab("overview")}
@@ -1053,14 +1022,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               </button>
             </nav>
 
-            {/* User profile segment in Sidebar bottom */}
             <div className="p-3 border-t border-slate-800">
-              <div className="flex items-center gap-2.5 p-1 rounded-xl bg-slate-850/50 overflow-hidden">
+              <div className="flex items-center gap-2.5 p-1 rounded-xl bg-slate-850/50 overflow-hidden text-left">
                 <div className="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center border border-slate-700 flex-shrink-0 uppercase">
                   {currentAdmin.name.charAt(0)}
                 </div>
                 {!sidebarCollapsed && (
-                  <div className="flex-1 min-w-0 text-left">
+                  <div className="flex-1 min-w-0">
                     <p className="text-[11px] font-bold text-white truncate leading-none">{currentAdmin.name}</p>
                     <p className="text-[9px] text-slate-500 truncate mt-0.5">{currentAdmin.email}</p>
                   </div>
@@ -1077,13 +1045,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 {!sidebarCollapsed && <span>Sign Out</span>}
               </button>
             </div>
-
           </aside>
 
           {/* Main workspace section */}
-          <main className="flex-1 flex flex-col overflow-y-auto">
-            
-            {/* Admin Dashboard Navbar Header */}
+          <main className="flex-1 flex flex-col overflow-y-auto text-left">
             <header className="bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <div>
                 <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
@@ -1111,7 +1076,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               </div>
             </header>
 
-            {/* Workspace Contents */}
             <div className="p-6 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
               
               {/* Quick statistics panels cards */}
@@ -1180,7 +1144,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                     </div>
 
-                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
                       <div className="divide-y divide-slate-100">
                         {activities.length === 0 ? (
                           <div className="p-12 text-center text-slate-400 text-xs">
@@ -1239,9 +1203,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6"
                   >
-                    {/* Filters bar */}
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                      <div className="relative w-full md:max-w-md">
+                      <div className="relative w-full md:max-w-md text-left">
                         <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
                         <input
                           type="text"
@@ -1291,7 +1254,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                     </div>
 
-                    {/* Bulk Action Panel */}
                     <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <input
@@ -1343,7 +1305,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       )}
                     </div>
 
-                    {/* Ambassadors directory list */}
                     <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
                       <div className="divide-y divide-slate-100">
                         {filteredAmbassadors.length === 0 ? (
@@ -1369,7 +1330,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                     }}
                                   />
                                 </div>
-                                <div className="space-y-1.5 flex-1">
+                                <div className="space-y-1.5 flex-1 text-left">
                                   <div className="flex items-center gap-2.5 flex-wrap">
                                     <h4 className="text-sm font-black text-slate-950 tracking-tight">{amb.name}</h4>
                                     <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
@@ -1407,7 +1368,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 </div>
                               </div>
 
-                              {/* Action tools */}
                               <div className="flex items-center gap-2.5 flex-shrink-0">
                                 {amb.status === "pending" && (
                                   <>
@@ -1473,7 +1433,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </motion.div>
                 )}
 
-                {/* TAB 4: BLOG / IMPACT STORY MANAGEMENT */}
+                {/* TAB 4: BLOG MANAGEMENT */}
                 {activeTab === "blogs" && (
                   <motion.div
                     key="tab-v-blogs"
@@ -1482,7 +1442,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6 text-left"
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4 text-left">
                       <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Blog & Impact Stories</h3>
                         <p className="text-xs text-slate-500">Create, edit, and publish dynamic updates and grassroots impact stories to the system.</p>
@@ -1504,12 +1464,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </button>
                     </div>
 
-                    {/* Blog Create / Edit Form */}
                     {isBlogFormOpen && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
-                        className="bg-white border border-slate-150 rounded-2xl p-6 shadow-sm space-y-4"
+                        className="bg-white border border-slate-150 rounded-2xl p-6 shadow-sm space-y-4 text-left"
                       >
                         <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b border-slate-50 pb-2">
                           {editingBlog ? "Edit Impact Story" : "Compose New Impact Story"}
@@ -1524,41 +1483,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 required
                                 value={blogTitle}
                                 onChange={(e) => setBlogTitle(e.target.value)}
-                                placeholder="e.g. From Code-Block to Career: Chidi's Path"
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                                placeholder="e.g. From Code-Block to Career"
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 text-slate-800"
                               />
                             </div>
                             <div className="space-y-1">
-                              <label className="font-bold text-slate-500">Category Tag (e.g. EDUCATION, HOUSING)</label>
+                              <label className="font-bold text-slate-500">Category Tag</label>
                               <input
                                 type="text"
                                 value={blogTag}
                                 onChange={(e) => setBlogTag(e.target.value)}
-                                placeholder="e.g. EDUCATION & TECH EXCELLENCE"
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                                placeholder="e.g. EDUCATION"
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 text-slate-800"
                               />
                             </div>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
-                              <label className="font-bold text-slate-500">Unsplash or Custom Image URL</label>
+                              <label className="font-bold text-slate-500">Image URL</label>
                               <input
                                 type="text"
                                 value={blogImage}
                                 onChange={(e) => setBlogImage(e.target.value)}
                                 placeholder="https://images.unsplash.com/..."
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 text-slate-800"
                               />
                             </div>
                             <div className="space-y-1">
-                              <label className="font-bold text-slate-500">Brief Excerpt / Summary Statement</label>
+                              <label className="font-bold text-slate-500">Brief Excerpt</label>
                               <input
                                 type="text"
                                 value={blogExcerpt}
                                 onChange={(e) => setBlogExcerpt(e.target.value)}
-                                placeholder="A brief one-sentence hook of the story..."
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800"
+                                placeholder="Summary..."
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 text-slate-800"
                               />
                             </div>
                           </div>
@@ -1570,8 +1529,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                               required
                               value={blogContent}
                               onChange={(e) => setBlogContent(e.target.value)}
-                              placeholder="Write the full narrative or update details here..."
-                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 leading-relaxed"
+                              placeholder="Write narrative here..."
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:border-slate-800 text-slate-800 leading-relaxed"
                             />
                           </div>
 
@@ -1597,8 +1556,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </motion.div>
                     )}
 
-                    {/* Blogs List */}
-                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
                       <div className="divide-y divide-slate-100">
                         {blogs.length === 0 ? (
                           <div className="p-12 text-center text-slate-400 text-xs">
@@ -1627,7 +1585,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                   </span>
                                   <h4 className="text-xs font-black text-slate-900 truncate tracking-tight">{blog.title}</h4>
                                   <p className="text-[11px] text-slate-500 line-clamp-1">{blog.excerpt}</p>
-                                  <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                                  <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono text-left">
                                     <span>By {blog.author}</span>
                                     <span>•</span>
                                     <span>{new Date(blog.created_at).toLocaleDateString()}</span>
@@ -1659,7 +1617,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </motion.div>
                 )}
 
-                {/* TAB 5: AMBASSADOR FINANCIAL OVERVIEW */}
+                {/* TAB 5: FINANCIAL OVERVIEW */}
                 {activeTab === "wallets" && (
                   <motion.div
                     key="tab-v-wallets"
@@ -1668,10 +1626,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6 text-left"
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4 text-left">
                       <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Ambassador Financial Overview</h3>
-                        <p className="text-xs text-slate-500">Track and allocate funding directly to certified Ambassador accounts via the ambassador_wallets table.</p>
+                        <p className="text-xs text-slate-500">Track and allocate funding directly to certified Ambassador accounts.</p>
                       </div>
                       <div className="bg-slate-900 text-emerald-400 font-mono text-xs px-4 py-2.5 rounded-xl border border-slate-800 flex items-center gap-2">
                         <Coins size={14} />
@@ -1679,11 +1637,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                     </div>
 
-                    {/* D3 Visualizations */}
                     <FinancialOverviewChart ambassadors={ambassadors} wallets={wallets} />
 
-                    {/* Wallets Grid / Table List */}
-                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
                       <div className="divide-y divide-slate-100">
                         {ambassadors.length === 0 ? (
                           <div className="p-12 text-center text-slate-400 text-xs">
@@ -1698,7 +1654,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
                             return (
                               <div key={amb.id} className="p-6 flex flex-col md:flex-row gap-5 items-start md:items-center justify-between">
-                                <div className="space-y-1 flex-1 min-w-0">
+                                <div className="space-y-1 flex-1 min-w-0 text-left">
                                   <div className="flex items-center gap-2">
                                     <h4 className="text-xs font-black text-slate-900 truncate tracking-tight">{amb.name}</h4>
                                     {amb.status === "approved" ? (
@@ -1721,7 +1677,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 <div className="flex items-center gap-4 self-end md:self-auto flex-shrink-0">
                                   <div className="text-right">
                                     <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-0.5">Wallet Balance</span>
-                                    <span className="font-mono font-black text-sm text-slate-900 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-xl border border-emerald-100 block">
+                                    <span className="font-mono font-black text-sm text-slate-900 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-xl border border-emerald-100 block text-center">
                                       {balance} AVU
                                     </span>
                                   </div>
@@ -1756,20 +1712,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6 text-left"
                   >
-                    <div className="border-b border-slate-100 pb-4">
+                    <div className="border-b border-slate-100 pb-4 text-left">
                       <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Administrative Oversight History</h3>
-                      <p className="text-xs text-slate-500">Track and audit which fellowship ambassadors were approved or disapproved, by which administrator, and at what timestamp.</p>
+                      <p className="text-xs text-slate-500">Track and audit system registration metrics.</p>
                     </div>
 
-                    {/* Filter bar */}
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                      <div className="relative w-full md:max-w-md">
+                      <div className="relative w-full md:max-w-md text-left">
                         <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
                         <input
                           type="text"
                           value={historySearchQuery}
                           onChange={(e) => setHistorySearchQuery(e.target.value)}
-                          placeholder="Search administrator name, admin email, or ambassador..."
+                          placeholder="Search admin, or ambassador..."
                           className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-150 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
                         />
                       </div>
@@ -1778,8 +1733,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                     </div>
 
-                    {/* Audit logs listing */}
-                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
                       <div className="divide-y divide-slate-100">
                         {auditLogs.filter(log => {
                           const query = historySearchQuery.toLowerCase();
@@ -1790,7 +1744,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             log.ambassador_id.toLowerCase().includes(query)
                           );
                         }).length === 0 ? (
-                          <div className="p-16 text-center text-slate-400 text-xs">
+                          <div className="p-16 text-center text-slate-400 text-xs text-left">
                             <History size={36} className="mx-auto mb-3 text-slate-300 animate-pulse" />
                             No administrative oversight logs recorded or found.
                           </div>
@@ -1807,8 +1761,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             })
                             .map((log) => (
                               <div key={log.id} className="p-6 hover:bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
-                                <div className="space-y-2 flex-1 min-w-0">
-                                  {/* Top line with action badge */}
+                                <div className="space-y-2 flex-1 min-w-0 text-left">
                                   <div className="flex items-center gap-2.5 flex-wrap">
                                     <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
                                       Log ID: {log.id}
@@ -1824,7 +1777,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                     )}
                                   </div>
 
-                                  {/* Details layout */}
                                   <div className="grid md:grid-cols-2 gap-4 text-xs font-sans text-slate-600 pt-1">
                                     <div className="space-y-1">
                                       <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">ADMINISTRATIVE AUDITOR</span>
@@ -1839,13 +1791,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                   </div>
                                 </div>
 
-                                {/* Timestamp */}
                                 <div className="flex-shrink-0 text-left md:text-right">
                                   <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-1">AUDIT TIMESTAMP</span>
                                   <p className="text-xs font-mono text-slate-600 font-bold">
                                     {new Date(log.created_at).toLocaleDateString()}
                                   </p>
-                                  <p className="text-[10px] font-mono text-slate-400">
+                                  <p className="text-[10px] font-mono text-slate-400 text-left md:text-right">
                                     {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                   </p>
                                 </div>
@@ -1857,7 +1808,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </motion.div>
                 )}
 
-                {/* TAB 7: PAYMENT GATEWAY & PROGRAM FUNDING SYSTEM */}
+                {/* TAB 7: PAYMENT GATEWAY */}
                 {activeTab === "payments" && (
                   <motion.div
                     key="tab-v-payments"
@@ -1866,23 +1817,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6 text-left"
                   >
-                    <div className="border-b border-slate-100 pb-4">
+                    <div className="border-b border-slate-100 pb-4 text-left">
                       <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Program Funding & Payment Gateway</h3>
-                      <p className="text-xs text-slate-500">Configure public fundraising campaign links or process direct physical/card deposits credited to specific fellowship ambassadors.</p>
+                      <p className="text-xs text-slate-500">Configure public fundraising campaign links or process dynamic updates securely.</p>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      
-                      {/* Left configuration panel */}
                       <div className="lg:col-span-2 space-y-6">
-                        
-                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5 text-left">
                           <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-emerald-500" />
                             Program Funding Configuration
                           </h4>
 
-                          {/* Field A: Program Selection */}
                           <div>
                             <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
                               Select Foundational Program
@@ -1906,7 +1853,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             </select>
                           </div>
 
-                          {/* Field B: Total Amount Needed */}
                           <div>
                             <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
                               Required Funding Milestone (₦)
@@ -1925,7 +1871,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             </div>
                           </div>
 
-                          {/* Field C: Ambassador Selector */}
                           <div>
                             <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
                               Credit to Fellowship Ambassador
@@ -1933,7 +1878,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             <select
                               value={selectedAmbId}
                               onChange={(e) => setSelectedAmbId(e.target.value)}
-                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-800 outline-none transition-all"
+                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-800 outline-none transition-all text-slate-800"
                             >
                               <option value="">-- Select Approved Ambassador --</option>
                               {ambassadors.map((amb) => (
@@ -1945,7 +1890,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           </div>
 
                           <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
-                            {/* ACTION BUTTON 1: Generate Public Shareable Link */}
                             <button
                               onClick={() => {
                                 if (!selectedAmbId) {
@@ -1957,18 +1901,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 const queryLink = `${window.location.origin}/#/donate?project=${encodeURIComponent(selectedProgram)}&needed=${milestoneAmount}&ambassador_id=${encodeURIComponent(selectedAmbId)}&ambassador_name=${encodeURIComponent(ambName)}`;
                                 setGeneratedPublicLink(queryLink);
                               }}
-                              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm cursor-pointer border border-transparent"
                             >
                               Generate Public Shareable Link
                             </button>
                           </div>
 
-                          {/* Show Generated Link */}
                           {generatedPublicLink && (
                             <motion.div
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="p-3.5 bg-slate-50 rounded-xl border border-slate-150 space-y-2 text-xs"
+                              className="p-3.5 bg-slate-50 rounded-xl border border-slate-150 space-y-2 text-xs text-left"
                             >
                               <span className="block text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Campaign Link Generated!</span>
                               <div className="flex items-center gap-2">
@@ -1988,35 +1931,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                   Copy
                                 </button>
                               </div>
-                              <p className="text-[10px] text-slate-500">Share this link. Any donor using this link will see the initiative details and credit will automatically log to the selected ambassador.</p>
                             </motion.div>
                           )}
                         </div>
 
-                        {/* Direct Ambassador Deposit Form */}
-                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4 text-left">
                           <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-blue-500" />
                             Direct Deposit Engine (Paystack Gateway)
                           </h4>
 
-                          <p className="text-xs text-slate-500 leading-relaxed">
-                            Simulate or process an immediate direct payment securely via the Paystack payment gateway under the sponsorship of the selected ambassador.
-                          </p>
-
                           <div className="grid sm:grid-cols-3 gap-4 items-end">
-                            <div className="sm:col-span-2">
+                            <div className="sm:col-span-2 text-left">
                               <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">
                                 Deposit Amount (NGN)
                               </label>
                               <div className="relative">
-                                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
+                                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">₦</span>
                                 <input
                                   type="number"
                                   value={directDepositAmount}
                                   onChange={(e) => setDirectDepositAmount(e.target.value)}
                                   className="w-full pl-7 pr-4 py-2 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-slate-800 outline-none transition-all"
-                                  placeholder="e.g. 250"
+                                  placeholder="e.g. 5000"
                                 />
                               </div>
                             </div>
@@ -2036,13 +1973,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 const ambassadorObj = ambassadors.find(a => a.id === selectedAmbId);
                                 const ambName = ambassadorObj ? ambassadorObj.name : "Ambassador";
 
-                                // Trigger dynamic Paystack Inline SDK or simulation
                                 const paystackPop = (window as any).PaystackPop;
                                 if (paystackPop) {
                                   const handler = paystackPop.setup({
                                     key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
                                     email: "admin-deposit@advaltad.org",
-                                    amount: depAmt * 100 * 1500, // Conversion to NGN
+                                    amount: depAmt * 100,
                                     currency: "NGN",
                                     metadata: {
                                       ambassador_id: selectedAmbId,
@@ -2057,22 +1993,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                   });
                                   handler.openIframe();
                                 } else {
-                                  // High fidelity simulated modal
-                                  alert(`[SIMULATION] Initiating Paystack Gateway for $${depAmt} USD credited to ${ambName} (${selectedProgram}).\n\nDirect deposit has been simulation-completed. Please adjust the AVU balance manually if needed.`);
+                                  alert(`[SIMULATION] Initiating Paystack Gateway for ₦${depAmt} NGN credited to ${ambName}.\n\nSimulation-completed.`);
                                   setDirectDepositAmount("");
                                 }
                               }}
-                              className="py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm h-10 cursor-pointer"
+                              className="py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm h-10 cursor-pointer border border-transparent"
                             >
                               Direct Ambassador Deposit
                             </button>
                           </div>
                         </div>
-
                       </div>
 
-                      {/* Right side reminders and manual override note */}
-                      <div className="space-y-6">
+                      <div className="space-y-6 text-left">
                         <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 p-6 space-y-4">
                           <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
                             <AlertCircle size={14} className="text-amber-600" />
@@ -2083,57 +2016,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           </p>
                           <div className="pt-2">
                             <button
-                              onClick={() => {
-                                // Jump directly to Financial Overview tab
-                                setActiveTab("wallets");
-                              }}
-                              className="text-[10px] font-black uppercase text-amber-800 hover:text-amber-950 flex items-center gap-1 hover:underline cursor-pointer"
+                              onClick={() => setActiveTab("wallets")}
+                              className="text-[10px] font-black uppercase text-amber-800 hover:text-amber-950 flex items-center gap-1 hover:underline cursor-pointer bg-transparent border-0"
                             >
                               Open Financial Overview to credit AVU
                               <ChevronRight size={10} />
                             </button>
                           </div>
                         </div>
-
-                        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 space-y-3">
-                          <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                            Active Foundational Targets
-                          </h4>
-                          <div className="space-y-2.5">
-                            <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200/50">
-                              <span className="text-slate-600 font-bold">Youth Empowerment</span>
-                              <span className="font-mono text-slate-900 font-black">₦150,000 Needed</span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200/50">
-                              <span className="text-slate-600 font-bold">Community Health</span>
-                              <span className="font-mono text-slate-900 font-black">₦250,000 Needed</span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-600 font-bold">Digital Literacy</span>
-                              <span className="font-mono text-slate-900 font-black">₦180,500 Needed</span>
-                            </div>
-                          </div>
-                        </div>
                       </div>
-
                     </div>
                   </motion.div>
                 )}
-
               </AnimatePresence>
-
             </div>
-
           </main>
-
         </div>
       )}
 
-      {/* 3. MANAGE PORTFOLIO / SLIDING DETAIL DRAWER MODAL */}
+      {/* 3. MANAGE PORTFOLIO DRAWER MODAL */}
       <AnimatePresence>
         {isDetailOpen && selectedAmbassador && (
           <div className="fixed inset-0 bg-slate-900/50 z-50 flex justify-end">
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2142,7 +2046,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               className="absolute inset-0 bg-transparent"
             />
 
-            {/* Sliding Drawer Container */}
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -2150,7 +2053,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
               className="w-full max-w-lg bg-white h-full relative z-10 shadow-2xl flex flex-col text-left border-l border-slate-100"
             >
-              {/* Header */}
               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 block mb-1">
@@ -2160,16 +2062,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 </div>
                 <button
                   onClick={() => setIsDetailOpen(false)}
-                  className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer border border-transparent"
                 >
                   <XCircle size={18} />
                 </button>
               </div>
 
-              {/* Body details */}
               <div className="p-6 flex-1 overflow-y-auto space-y-8">
-                
-                {/* Meta details cards */}
                 <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-400 font-mono">ID: {selectedAmbassador.id}</span>
@@ -2203,39 +2102,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       <span className="text-slate-400">Base City & Country</span>
                       <span className="font-semibold text-slate-850">{selectedAmbassador.city}</span>
                     </div>
-                    <div className="flex items-center justify-between py-1.5">
-                      <span className="text-slate-400">Created At</span>
-                      <span className="font-semibold text-slate-850">
-                        {new Date(selectedAmbassador.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
                   </div>
                 </div>
 
-                {/* Focus division banner */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                    Sovereign Field Activity scope
-                  </h4>
-                  <p className="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl p-4 shadow-xs leading-relaxed">
-                    {selectedAmbassador.field}
-                  </p>
-                </div>
-
-                {/* Live Modify Portfolio Form */}
-                <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4">
+                <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4 text-left">
                   <div className="flex items-center gap-2 text-slate-900">
                     <Edit size={16} className="text-emerald-600" />
                     <h4 className="text-xs font-black uppercase tracking-wider">Modify Portfolio Details</h4>
                   </div>
-                  <p className="text-xs text-slate-500 font-sans">
-                    Update this partner's profile credentials on the core database.
-                  </p>
 
                   {editSuccess && (
                     <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 text-[11px] font-semibold flex items-center gap-1.5 animate-bounce">
                       <CheckCircle size={14} className="text-emerald-600" />
-                      Portfolio updated and synced with database!
+                      Portfolio updated and synced!
                     </div>
                   )}
 
@@ -2249,23 +2128,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                         required
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                        placeholder="Full Name"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                          Base City & Country
+                          Base City
                         </label>
                         <input
                           type="text"
                           required
                           value={editCity}
                           onChange={(e) => setEditCity(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                          placeholder="e.g. Lagos, Nigeria"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
                         />
                       </div>
                       <div>
@@ -2276,56 +2153,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           type="text"
                           value={editPhone}
                           onChange={(e) => setEditPhone(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                          placeholder="Phone Number"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
                         />
                       </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                        Focus Interest / Division
-                      </label>
-                      <select
-                        value={editField}
-                        onChange={(e) => setEditField(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                      >
-                        <option value="Enriching African youths initiative">Enriching African youths initiative</option>
-                        <option value="Schools (Stem and Robotic education)">Schools (Stem and Robotic education)</option>
-                        <option value="Green/Agriculture">Green/Agriculture</option>
-                        <option value="Humanitarian housing scheme">Humanitarian housing scheme</option>
-                        <option value="Teen club">Teen club</option>
-                        <option value="Sponsorship">Sponsorship</option>
-                        <option value="Emergency relief">Emergency relief</option>
-                        <option value="Care for the aged">Care for the aged</option>
-                      </select>
                     </div>
 
                     <button
                       type="submit"
                       disabled={isSavingDetails || !editName || !editCity}
-                      className="w-full py-3 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                      className="w-full py-3 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-transparent"
                     >
-                      {isSavingDetails ? "Saving portfolio..." : "Save Portfolio Updates"}
+                      {isSavingDetails ? "Saving..." : "Save Portfolio Updates"}
                     </button>
                   </form>
                 </div>
 
-                {/* Direct Token Grant System */}
-                <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4">
+                <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4 text-left">
                   <div className="flex items-center gap-2 text-slate-900">
                     <Coins size={16} className="text-emerald-600" />
                     <h4 className="text-xs font-black uppercase tracking-wider">Direct Token Grant system</h4>
                   </div>
-                  <p className="text-xs text-slate-500 font-sans">
-                    Authorize a ledger balance boost for this partner's grassroots programs.
-                  </p>
 
                   {grantSuccess && (
                     <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 text-[11px] font-semibold flex items-center gap-1.5">
                       <CheckCircle size={14} className="text-emerald-600" />
-                      Direct token authorization synced with ledger!
+                      Direct token authorization synced!
                     </div>
                   )}
 
@@ -2337,67 +2189,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       placeholder="e.g. 500"
                       value={grantAmount}
                       onChange={(e) => setGrantAmount(e.target.value)}
-                      className="flex-1 px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
                     />
                     <button
                       type="submit"
                       disabled={isGranting}
-                      className="px-4 py-2.5 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                      className="px-4 py-2.5 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-200 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-transparent"
                     >
                       {isGranting ? "..." : "Authorize"}
                     </button>
                   </form>
                 </div>
-
-                {/* Audit Actions */}
-                <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                    Auditor Oversight Actions
-                  </h4>
-
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      {selectedAmbassador.status === "pending" ? (
-                        <>
-                          <button
-                            onClick={() => handleApproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
-                            className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <CheckCircle size={14} /> Approve
-                          </button>
-                          <button
-                            onClick={() => handleDisapproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
-                            className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <XCircle size={14} /> Disapprove
-                          </button>
-                        </>
-                      ) : selectedAmbassador.status === "disapproved" ? (
-                        <button
-                          onClick={() => handleApproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
-                          className="col-span-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <CheckCircle size={14} /> Approve Fellow
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleDisapproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
-                          className="col-span-2 py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <XCircle size={14} /> Disapprove Fellow
-                        </button>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={() => handleSuspendAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
-                      className="w-full py-3 bg-rose-50 hover:bg-rose-100/50 text-rose-700 border border-rose-100 font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Trash2 size={14} /> Suspend/Delete Portfolio
-                    </button>
-                  </div>
-                </div>
-
               </div>
             </motion.div>
           </div>
@@ -2415,70 +2217,69 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl relative border border-slate-100 text-left"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                <div className="flex items-center gap-2 text-slate-950">
-                  <Coins size={18} className="text-emerald-600" />
-                  <h4 className="text-xs font-black uppercase tracking-wider">Allocate Wallet Funding</h4>
+                <div className="flex items-center gap-2">
+                  <Coins className="text-emerald-600" size={18} />
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Allocate Wallet Funds</h3>
                 </div>
                 <button
                   onClick={() => {
-                    setSelectedWalletAmbassador(null);
                     setIsWalletModalOpen(false);
+                    setSelectedWalletAmbassador(null);
                   }}
-                  className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer bg-transparent border-0"
                 >
-                  <XCircle size={16} />
+                  <XCircle size={18} />
                 </button>
               </div>
 
-              <div className="space-y-4 text-xs">
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Recipient Ambassador</span>
-                  <p className="font-bold text-slate-850 text-sm mt-0.5">{selectedWalletAmbassador.name}</p>
-                  <p className="font-mono text-[10px] text-slate-400">{selectedWalletAmbassador.email}</p>
+              <div className="mb-4">
+                <p className="text-xs text-slate-500">
+                  You are funding the primary wallet ledger for <strong className="text-slate-950">{selectedWalletAmbassador.name}</strong> ({selectedWalletAmbassador.email}).
+                </p>
+              </div>
+
+              <form onSubmit={handleFundWallet} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1.5">
+                    Funding Amount (AVU Tokens)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={walletFundAmount}
+                    onChange={(e) => setWalletFundAmount(e.target.value)}
+                    placeholder="e.g. 1000"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl font-semibold outline-none text-slate-800"
+                  />
                 </div>
 
-                <form onSubmit={handleFundWallet} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-500">Allocation Amount (AVU) *</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={walletFundAmount}
-                      onChange={(e) => setWalletFundAmount(e.target.value)}
-                      placeholder="e.g. 500"
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-slate-800"
-                    />
-                    <p className="text-[10px] text-slate-400">Specify the amount of Advaltad Valor Units to transfer to this ambassador's secure wallet.</p>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedWalletAmbassador(null);
-                        setIsWalletModalOpen(false);
-                      }}
-                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isFundingWallet}
-                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-850 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      {isFundingWallet ? "Authorizing..." : "Authorize Allocation"}
-                    </button>
-                  </div>
-                </form>
-              </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsWalletModalOpen(false);
+                      setSelectedWalletAmbassador(null);
+                    }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase rounded-xl transition-all cursor-pointer border-transparent"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isFundingWallet}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold uppercase rounded-xl transition-all cursor-pointer border-transparent flex items-center justify-center min-w-[100px]"
+                  >
+                    {isFundingWallet ? "Processing..." : "Allocate Funds"}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* 5. STATUS CONFIRMATION DIALOG MODAL */}
+      {/* 5. SINGLE STATUS CONFIRMATION MODAL */}
       <AnimatePresence>
         {statusConfirmModal && (
           <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
@@ -2486,100 +2287,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl relative border border-slate-100 text-left"
+              className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl relative text-left"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                <div className="flex items-center gap-2 text-slate-950">
-                  <ShieldCheck size={18} className={
-                    statusConfirmModal.action === "approve" 
-                      ? "text-emerald-600" 
-                      : statusConfirmModal.action === "disapprove" 
-                        ? "text-rose-600" 
-                        : "text-amber-600"
-                  } />
-                  <h4 className="text-xs font-black uppercase tracking-wider">
-                    {statusConfirmModal.action === "approve" && "Confirm Approval"}
-                    {statusConfirmModal.action === "disapprove" && "Confirm Disapproval"}
-                    {statusConfirmModal.action === "suspend" && "Confirm Suspension"}
-                  </h4>
-                </div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2">Confirm Action</h3>
+              <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                Are you sure you want to change the status of <strong className="text-slate-950">{statusConfirmModal.name}</strong> to <span className="font-bold text-emerald-600">{statusConfirmModal.action}</span>?
+              </p>
+              <div className="flex justify-end gap-2 text-xs">
                 <button
                   onClick={() => setStatusConfirmModal(null)}
-                  className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700 cursor-pointer border border-transparent"
                 >
-                  <XCircle size={16} />
+                  Cancel
                 </button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Target Ambassador</span>
-                  <p className="font-bold text-slate-850 text-sm mt-0.5">{statusConfirmModal.name}</p>
-                  <p className="font-mono text-[10px] text-slate-400 mt-0.5">ID: {statusConfirmModal.id}</p>
-                </div>
-
-                <div className="text-slate-600 leading-relaxed font-medium">
-                  {statusConfirmModal.action === "approve" && (
-                    <p>
-                      Are you sure you want to <span className="text-emerald-600 font-extrabold">APPROVE</span> this ambassador?
-                      This will verify their grassroots assets, issue their sovereign ledger credentials, and grant them active fellow status.
-                    </p>
-                  )}
-                  {statusConfirmModal.action === "disapprove" && (
-                    <p>
-                      Are you sure you want to <span className="text-rose-600 font-extrabold">DISAPPROVE / REJECT</span> this ambassador?
-                      Their fellowship credentials will be marked as disapproved, restricting their active platform capabilities.
-                    </p>
-                  )}
-                  {statusConfirmModal.action === "suspend" && (
-                    <p>
-                      Are you sure you want to <span className="text-amber-600 font-extrabold">DELETE / SUSPEND</span> this ambassador?
-                      This action will completely remove them from the Advaltad grassroots growth registry. This action cannot be easily undone.
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setStatusConfirmModal(null)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const { id, name, action } = statusConfirmModal;
-                      setStatusConfirmModal(null);
-                      if (action === "approve") {
-                        await executeApproveAmbassador(id, name);
-                      } else if (action === "disapprove") {
-                        await executeDisapproveAmbassador(id, name);
-                      } else if (action === "suspend") {
-                        await executeSuspendAmbassador(id, name);
-                      }
-                    }}
-                    className={`px-5 py-2.5 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
-                      statusConfirmModal.action === "approve"
-                        ? "bg-emerald-600 hover:bg-emerald-700"
-                        : statusConfirmModal.action === "disapprove"
-                          ? "bg-rose-600 hover:bg-rose-700"
-                          : "bg-amber-600 hover:bg-amber-700"
-                    }`}
-                  >
-                    {statusConfirmModal.action === "approve" && "Confirm Approval"}
-                    {statusConfirmModal.action === "disapprove" && "Confirm Disapproval"}
-                    {statusConfirmModal.action === "suspend" && "Confirm Suspension"}
-                  </button>
-                </div>
+                <button
+                  onClick={async () => {
+                    if (statusConfirmModal.action === "approve") {
+                      await executeApproveAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                    } else if (statusConfirmModal.action === "disapprove") {
+                      await executeDisapproveAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                    } else if (statusConfirmModal.action === "suspend") {
+                      await executeSuspendAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                    }
+                    setStatusConfirmModal(null);
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white font-extrabold rounded-xl cursor-pointer border border-transparent"
+                >
+                  Confirm Action
+                </button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* 5.1. BULK STATUS CONFIRMATION DIALOG MODAL */}
+      {/* 6. BULK STATUS CONFIRMATION MODAL */}
       <AnimatePresence>
         {bulkConfirmModal && (
           <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
@@ -2587,79 +2329,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl relative border border-slate-100 text-left"
+              className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl relative text-left"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                <div className="flex items-center gap-2 text-slate-950">
-                  <ShieldCheck size={18} className={
-                    bulkConfirmModal.action === "approve" ? "text-emerald-600" : "text-rose-600"
-                  } />
-                  <h4 className="text-xs font-black uppercase tracking-wider">
-                    {bulkConfirmModal.action === "approve" ? "Confirm Bulk Approval" : "Confirm Bulk Disapproval"}
-                  </h4>
-                </div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2">Confirm Bulk Action</h3>
+              <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                Are you sure you want to bulk execute <strong className="text-slate-950">{bulkConfirmModal.action}</strong> updates across <strong className="text-slate-950">{bulkConfirmModal.ids.length}</strong> items?
+              </p>
+              <div className="flex justify-end gap-2 text-xs">
                 <button
                   onClick={() => setBulkConfirmModal(null)}
-                  className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700 cursor-pointer border border-transparent"
                 >
-                  <XCircle size={16} />
+                  Cancel
                 </button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 max-h-40 overflow-y-auto">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Selected Ambassadors ({bulkConfirmModal.ids.length})</span>
-                  <div className="mt-1.5 space-y-1">
-                    {bulkConfirmModal.ids.map(id => {
-                      const amb = ambassadors.find(a => a.id === id);
-                      return (
-                        <div key={id} className="flex items-center justify-between text-xs py-0.5 border-b border-slate-100 last:border-0">
-                          <span className="font-bold text-slate-800">{amb ? (amb.name || amb.professional_name) : "Unknown"}</span>
-                          <span className="font-mono text-[9px] text-slate-400">ID: {id.substring(0, 8)}...</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="text-slate-600 leading-relaxed font-medium">
-                  {bulkConfirmModal.action === "approve" ? (
-                    <p>
-                      Are you sure you want to <span className="text-emerald-600 font-extrabold">BULK APPROVE</span> these {bulkConfirmModal.ids.length} selected ambassadors?
-                      This will verify their grassroots assets, issue their credentials, and grant them active status in bulk.
-                    </p>
-                  ) : (
-                    <p>
-                      Are you sure you want to <span className="text-rose-600 font-extrabold">BULK DISAPPROVE</span> these {bulkConfirmModal.ids.length} selected ambassadors?
-                      Their fellowship credentials will be marked as disapproved in bulk, restricting their active platform capabilities.
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setBulkConfirmModal(null)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const { ids, action } = bulkConfirmModal;
-                      setBulkConfirmModal(null);
-                      await executeBulkStatusUpdate(ids, action);
-                    }}
-                    className={`px-5 py-2.5 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
-                      bulkConfirmModal.action === "approve"
-                        ? "bg-emerald-600 hover:bg-emerald-700"
-                        : "bg-rose-600 hover:bg-rose-700"
-                    }`}
-                  >
-                    {bulkConfirmModal.action === "approve" ? "Bulk Approve" : "Bulk Disapprove"}
-                  </button>
-                </div>
+                <button
+                  onClick={async () => {
+                    await executeBulkStatusUpdate(bulkConfirmModal.ids, bulkConfirmModal.action);
+                    setBulkConfirmModal(null);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl cursor-pointer border border-transparent"
+                >
+                  Bulk Execute
+                </button>
               </div>
             </motion.div>
           </div>

@@ -38,7 +38,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email: sanitizedEmail,
+          email: sanitizedEmail, // FIXED: Now strictly uses the lowercase, trimmed email to prevent mobile errors
           password
         });
         if (authError) {
@@ -263,4 +263,3 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
     </div>
   );
 };
-
