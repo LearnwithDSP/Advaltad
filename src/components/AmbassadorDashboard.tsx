@@ -225,19 +225,25 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         try {
           const { data: { user }, error } = await supabase.auth.getUser();
           if (error || !user) {
-            console.error("No authenticated user exists in Supabase Auth:", error);
-            // Clear local states
+            console.warn("No authenticated user exists in Supabase Auth, but checking local session email as fallback...");
+            const localSessionEmail = localStorage.getItem("advaltad_session_email");
+            if (!localSessionEmail) {
+              console.error("No active local session. Force logout.");
+              localStorage.removeItem("advaltad_session_email");
+              onLogout();
+              window.location.href = "/";
+              return;
+            }
+          }
+        } catch (err) {
+          console.error("Error verifying authenticated user via Supabase:", err);
+          const localSessionEmail = localStorage.getItem("advaltad_session_email");
+          if (!localSessionEmail) {
             localStorage.removeItem("advaltad_session_email");
             onLogout();
             window.location.href = "/";
             return;
           }
-        } catch (err) {
-          console.error("Error verifying authenticated user via Supabase:", err);
-          localStorage.removeItem("advaltad_session_email");
-          onLogout();
-          window.location.href = "/";
-          return;
         }
       }
       fetchAmbassadorData();
@@ -972,8 +978,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           <div className="grid lg:grid-cols-12 gap-8 items-start">
           
           {/* Navigation vertical toolbar tabs */}
-          <div className="lg:col-span-3 space-y-2">
-            <button
+          <div className="lg:col-span-3 space-y-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-3">
+              <button
               id="tab-overview"
               onClick={() => setActiveTab("overview")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm text-left transition-all cursor-pointer ${
@@ -1050,8 +1057,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <Icon name="UserCheck" size={16} />
               <span>Update Profile & City</span>
             </button>
+          </div>
 
-            {/* Quick stats panel left card */}
+          {/* Quick stats panel left card */}
             <div className="p-5 rounded-3xl bg-slate-900 text-white border border-gray-850 space-y-4 pt-6">
               <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">Campaign Impact</span>
               

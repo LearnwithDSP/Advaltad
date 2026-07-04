@@ -15,12 +15,13 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) return;
 
     setErrorMsg("");
     setIsLoggingIn(true);
     try {
-      const user = await db.findAmbassadorByEmail(email);
+      const user = await db.findAmbassadorByEmail(cleanEmail);
       if (!user) {
         setErrorMsg("This email is not registered in our Ambassador database. Please register first!");
         setIsLoggingIn(false);
@@ -37,7 +38,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email,
+          email: cleanEmail,
           password
         });
         if (authError) {
@@ -48,8 +49,8 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       }
 
       // Store active session email in localStorage
-      localStorage.setItem("advaltad_session_email", email);
-      onLoginSuccess(email);
+      localStorage.setItem("advaltad_session_email", cleanEmail);
+      onLoginSuccess(cleanEmail);
     } catch (err: any) {
       setErrorMsg(err?.message || "An error occurred during authentication. Please try again.");
     } finally {

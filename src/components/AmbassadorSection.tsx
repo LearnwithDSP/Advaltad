@@ -24,12 +24,13 @@ export const AmbassadorSection: React.FC = () => {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail || !loginPassword) return;
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    if (!cleanEmail || !loginPassword) return;
 
     setLoginError("");
     setIsLoggingIn(true);
     try {
-      const user = await db.findAmbassadorByEmail(loginEmail);
+      const user = await db.findAmbassadorByEmail(cleanEmail);
       if (!user) {
         setLoginError("This email is not registered in our Ambassador database. Please register first!");
         setIsLoggingIn(false);
@@ -45,7 +46,7 @@ export const AmbassadorSection: React.FC = () => {
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email: loginEmail,
+          email: cleanEmail,
           password: loginPassword
         });
         if (authError) {
@@ -56,7 +57,7 @@ export const AmbassadorSection: React.FC = () => {
       }
 
       // Store active session email in localStorage
-      localStorage.setItem("advaltad_session_email", loginEmail);
+      localStorage.setItem("advaltad_session_email", cleanEmail);
       
       // Redirect to dashboard (this will trigger state check in App.tsx and show dashboard)
       window.location.hash = "#/ambassador/dashboard";
@@ -138,9 +139,10 @@ export const AmbassadorSection: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
     
     // STEP 1: Validate all required fields
-    if (!name || !city || !field || !email || !phone || !password) {
+    if (!name || !city || !field || !cleanEmail || !phone || !password) {
       setErrorMessage("Please fill out all required fields.");
       return;
     }
@@ -155,7 +157,7 @@ export const AmbassadorSection: React.FC = () => {
       if (isSupabaseConfigured && supabase) {
         // STEP 2: Create the user account using Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
         });
 
@@ -187,7 +189,7 @@ export const AmbassadorSection: React.FC = () => {
             name,
             city,
             field,
-            email,
+            email: cleanEmail,
             phone,
             password,
             user_id: userId
@@ -202,7 +204,7 @@ export const AmbassadorSection: React.FC = () => {
         }
       } else {
         // Fallback local DB mode
-        const existing = await db.findAmbassadorByEmail(email);
+        const existing = await db.findAmbassadorByEmail(cleanEmail);
         if (existing) {
           setErrorMessage("An ambassador with this email address is already registered.");
           setIsSubmitting(false);
@@ -213,7 +215,7 @@ export const AmbassadorSection: React.FC = () => {
           name,
           city,
           field,
-          email,
+          email: cleanEmail,
           phone,
           password
         });
@@ -234,7 +236,7 @@ export const AmbassadorSection: React.FC = () => {
       }
 
       // Save user session email in localStorage to auto-login
-      localStorage.setItem("advaltad_session_email", email);
+      localStorage.setItem("advaltad_session_email", cleanEmail);
 
       setIsSubmitting(false);
       setIsRegistered(true);

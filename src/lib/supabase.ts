@@ -436,12 +436,13 @@ export const db = {
   },
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
+    const cleanEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from("ambassadors")
           .select("*")
-          .eq("email", email)
+          .ilike("email", cleanEmail)
           .maybeSingle();
         
         if (!error && data) {
@@ -456,13 +457,15 @@ export const db = {
     }
     
     const localDb = getLocalDb();
-    return localDb.find(a => a.email.toLowerCase() === email.toLowerCase()) || null;
+    return localDb.find(a => a.email.trim().toLowerCase() === cleanEmail) || null;
   },
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string }): Promise<DbAmbassador> {
+    const cleanEmail = newAmbassador.email.trim().toLowerCase();
     const fresh: DbAmbassador = {
       id: newAmbassador.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000),
       ...newAmbassador,
+      email: cleanEmail,
       avu_balance: 1250,
       status: "pending",
       created_at: new Date().toISOString()
@@ -637,12 +640,13 @@ export const db = {
   },
 
   async findAdminByEmail(email: string): Promise<DbAdmin | null> {
+    const cleanEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from("admins")
           .select("*")
-          .eq("email", email)
+          .ilike("email", cleanEmail)
           .maybeSingle();
         
         if (!error && data) {
@@ -663,7 +667,7 @@ export const db = {
       }
     }
     const localDb = getLocalAdminsDb();
-    return localDb.find(a => a.email.toLowerCase() === email.toLowerCase()) || null;
+    return localDb.find(a => a.email.trim().toLowerCase() === cleanEmail) || null;
   },
 
   async createAdmin(newAdmin: Omit<DbAdmin, "id" | "created_at"> & { user_id?: string, role?: string }): Promise<DbAdmin> {
