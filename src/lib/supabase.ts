@@ -392,9 +392,9 @@ export const db = {
           .select("*")
           .order("created_at", { ascending: false });
         
-        // If lowercase table failed, try uppercase table "Ambassadors" as fallback
-        if (error || !data) {
-          console.warn("Lowercase 'ambassadors' table query unsuccessful, trying fallback capitalized 'Ambassadors' table...", error);
+        // If lowercase table failed OR returned no records, try uppercase table "Ambassadors" as fallback
+        if (error || !data || data.length === 0) {
+          console.warn("Lowercase 'ambassadors' table query unsuccessful or empty, trying fallback capitalized 'Ambassadors' table...", error);
           const fallbackRes = await supabase
             .from("Ambassadors")
             .select("*")
@@ -427,12 +427,25 @@ export const db = {
     const sanitizedEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
           .from("ambassadors")
           .select("*")
           .ilike("email", sanitizedEmail)
           .maybeSingle();
         
+        // If lowercase query returned error OR no row, fallback to capitalized "Ambassadors" table
+        if (error || !data) {
+          const fallbackRes = await supabase
+            .from("Ambassadors")
+            .select("*")
+            .ilike("email", sanitizedEmail)
+            .maybeSingle();
+          if (!fallbackRes.error && fallbackRes.data) {
+            data = fallbackRes.data;
+            error = null;
+          }
+        }
+
         if (!error && data) {
           return mapRowToAmbassador(data);
         }
@@ -474,12 +487,28 @@ export const db = {
           badge_status: fresh.status,
           avu_balance: fresh.avu_balance
         };
-        const { data, error } = await supabase
+        
+        let { data, error } = await supabase
           .from("ambassadors")
           .insert([rowData])
           .select()
           .single();
         
+        if (error) {
+          console.warn("Insert into lowercase 'ambassadors' failed, trying fallback capitalized 'Ambassadors' table...", error);
+          const fallbackRes = await supabase
+            .from("Ambassadors")
+            .insert([rowData])
+            .select()
+            .single();
+          if (!fallbackRes.error && fallbackRes.data) {
+            data = fallbackRes.data;
+            error = null;
+          } else {
+            error = fallbackRes.error;
+          }
+        }
+
         if (!error && data) {
           return mapRowToAmbassador(data);
         }
@@ -505,7 +534,20 @@ export const db = {
         } else {
           query = query.eq("email", id);
         }
-        const { error } = await query;
+        let { error } = await query;
+        
+        if (error) {
+          console.warn("Update status in lowercase 'ambassadors' failed, trying fallback capitalized 'Ambassadors' table...", error);
+          let fallbackQuery = supabase.from("Ambassadors").update({ badge_status: status });
+          if (isUuid(id)) {
+            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
+          } else {
+            fallbackQuery = fallbackQuery.eq("email", id);
+          }
+          const fallbackRes = await fallbackQuery;
+          error = fallbackRes.error;
+        }
+
         if (!error) return true;
         console.warn("Supabase update status failed:", error);
         throw error;
@@ -534,7 +576,20 @@ export const db = {
         } else {
           query = query.eq("email", id);
         }
-        const { error } = await query;
+        let { error } = await query;
+        
+        if (error) {
+          console.warn("Update balance in lowercase 'ambassadors' failed, trying fallback capitalized 'Ambassadors' table...", error);
+          let fallbackQuery = supabase.from("Ambassadors").update({ avu_balance: amount });
+          if (isUuid(id)) {
+            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
+          } else {
+            fallbackQuery = fallbackQuery.eq("email", id);
+          }
+          const fallbackRes = await fallbackQuery;
+          error = fallbackRes.error;
+        }
+
         if (!error) return true;
         console.warn("Supabase update balance failed:", error);
         throw error;
@@ -563,7 +618,20 @@ export const db = {
         } else {
           query = query.eq("email", id);
         }
-        const { error } = await query;
+        let { error } = await query;
+        
+        if (error) {
+          console.warn("Update profile in lowercase 'ambassadors' failed, trying fallback capitalized 'Ambassadors' table...", error);
+          let fallbackQuery = supabase.from("Ambassadors").update(mapAmbassadorToRow(updates));
+          if (isUuid(id)) {
+            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
+          } else {
+            fallbackQuery = fallbackQuery.eq("email", id);
+          }
+          const fallbackRes = await fallbackQuery;
+          error = fallbackRes.error;
+        }
+
         if (!error) return true;
         console.warn("Supabase update profile failed:", error);
         throw error;
@@ -592,7 +660,20 @@ export const db = {
         } else {
           query = query.eq("email", id);
         }
-        const { error } = await query;
+        let { error } = await query;
+        
+        if (error) {
+          console.warn("Delete in lowercase 'ambassadors' failed, trying fallback capitalized 'Ambassadors' table...", error);
+          let fallbackQuery = supabase.from("Ambassadors").delete();
+          if (isUuid(id)) {
+            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
+          } else {
+            fallbackQuery = fallbackQuery.eq("email", id);
+          }
+          const fallbackRes = await fallbackQuery;
+          error = fallbackRes.error;
+        }
+
         if (!error) return true;
         console.warn("Supabase delete failed:", error);
         throw error;
@@ -883,11 +964,22 @@ export const db = {
       try {
         let resolvedId = wallet.ambassador_id;
         if (isUuid(wallet.ambassador_id)) {
-          const { data } = await supabase
+          let { data, error } = await supabase
             .from("ambassadors")
             .select("id")
             .or(`id.eq.${wallet.ambassador_id},user_id.eq.${wallet.ambassador_id}`)
             .maybeSingle();
+          
+          if (error || !data) {
+            const fallbackRes = await supabase
+              .from("Ambassadors")
+              .select("id")
+              .or(`id.eq.${wallet.ambassador_id},user_id.eq.${wallet.ambassador_id}`)
+              .maybeSingle();
+            if (!fallbackRes.error && fallbackRes.data) {
+              data = fallbackRes.data;
+            }
+          }
           if (data) {
             resolvedId = data.id;
           }
@@ -918,11 +1010,22 @@ export const db = {
       try {
         let resolvedId = ambassadorId;
         if (isUuid(ambassadorId)) {
-          const { data } = await supabase
+          let { data, error } = await supabase
             .from("ambassadors")
             .select("id")
             .or(`id.eq.${ambassadorId},user_id.eq.${ambassadorId}`)
             .maybeSingle();
+          
+          if (error || !data) {
+            const fallbackRes = await supabase
+              .from("Ambassadors")
+              .select("id")
+              .or(`id.eq.${ambassadorId},user_id.eq.${ambassadorId}`)
+              .maybeSingle();
+            if (!fallbackRes.error && fallbackRes.data) {
+              data = fallbackRes.data;
+            }
+          }
           if (data) {
             resolvedId = data.id;
           }
