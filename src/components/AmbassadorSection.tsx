@@ -24,15 +24,15 @@ export const AmbassadorSection: React.FC = () => {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = loginEmail.trim().toLowerCase();
-    if (!cleanEmail || !loginPassword) return;
+    const sanitizedEmail = loginEmail.trim().toLowerCase();
+    if (!sanitizedEmail || !loginPassword) return;
 
     setLoginError("");
     setIsLoggingIn(true);
     try {
-      const user = await db.findAmbassadorByEmail(cleanEmail);
+      const user = await db.findAmbassadorByEmail(sanitizedEmail);
       if (!user) {
-        setLoginError("This email is not registered in our Ambassador database. Please register first!");
+        setLoginError("This email is not registered in our Ambassador database. Please register first.");
         setIsLoggingIn(false);
         return;
       }
@@ -46,7 +46,7 @@ export const AmbassadorSection: React.FC = () => {
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
+          email: sanitizedEmail,
           password: loginPassword
         });
         if (authError) {
@@ -57,7 +57,7 @@ export const AmbassadorSection: React.FC = () => {
       }
 
       // Store active session email in localStorage
-      localStorage.setItem("advaltad_session_email", cleanEmail);
+      localStorage.setItem("advaltad_session_email", sanitizedEmail);
       
       // Redirect to dashboard (this will trigger state check in App.tsx and show dashboard)
       window.location.hash = "#/ambassador/dashboard";
@@ -381,29 +381,6 @@ export const AmbassadorSection: React.FC = () => {
                       >
                         {isLoggingIn ? "Signing In..." : "Sign In to Corridor"}
                       </button>
-
-                      {/* Fast-Tracks inside embedded login */}
-                      <div className="pt-4 border-t border-slate-200 mt-4 space-y-2">
-                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-center">Fast-Track Interactive Prototypes</p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={loadApprovedDemo}
-                            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 rounded-xl text-[10px] font-bold text-emerald-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Icon name="CheckCircle" size={11} />
-                            Ramon (Approved)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={loadPendingDemo}
-                            className="px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-100 rounded-xl text-[10px] font-bold text-amber-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Icon name="Clock" size={11} />
-                            Demo (Pending)
-                          </button>
-                        </div>
-                      </div>
 
                       <div className="pt-2 text-center">
                         <p className="text-xs text-slate-500">

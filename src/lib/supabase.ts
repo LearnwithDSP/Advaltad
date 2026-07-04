@@ -436,13 +436,13 @@ export const db = {
   },
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
-    const cleanEmail = email.trim().toLowerCase();
+    const sanitizedEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from("ambassadors")
           .select("*")
-          .ilike("email", cleanEmail)
+          .ilike("email", sanitizedEmail)
           .maybeSingle();
         
         if (!error && data) {
@@ -457,7 +457,7 @@ export const db = {
     }
     
     const localDb = getLocalDb();
-    return localDb.find(a => a.email.trim().toLowerCase() === cleanEmail) || null;
+    return localDb.find(a => a.email.trim().toLowerCase() === sanitizedEmail) || null;
   },
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string }): Promise<DbAmbassador> {

@@ -15,15 +15,15 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !password) return;
+    const sanitizedEmail = email.trim().toLowerCase();
+    if (!sanitizedEmail || !password) return;
 
     setErrorMsg("");
     setIsLoggingIn(true);
     try {
-      const user = await db.findAmbassadorByEmail(cleanEmail);
+      const user = await db.findAmbassadorByEmail(sanitizedEmail);
       if (!user) {
-        setErrorMsg("This email is not registered in our Ambassador database. Please register first!");
+        setErrorMsg("This email is not registered in our Ambassador database. Please register first.");
         setIsLoggingIn(false);
         return;
       }
@@ -38,7 +38,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
+          email: sanitizedEmail,
           password
         });
         if (authError) {
@@ -49,8 +49,8 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       }
 
       // Store active session email in localStorage
-      localStorage.setItem("advaltad_session_email", cleanEmail);
-      onLoginSuccess(cleanEmail);
+      localStorage.setItem("advaltad_session_email", sanitizedEmail);
+      onLoginSuccess(sanitizedEmail);
     } catch (err: any) {
       setErrorMsg(err?.message || "An error occurred during authentication. Please try again.");
     } finally {
@@ -257,32 +257,6 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
               </p>
             </div>
           </form>
-
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-gray-100"></div>
-            <span className="flex-shrink mx-4 text-[10px] text-gray-400 font-bold uppercase">Or skip to examine demo</span>
-            <div className="flex-grow border-t border-gray-100"></div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              id="login-approved-demo-btn"
-              onClick={loadApprovedDemo}
-              className="py-3 px-2 rounded-xl border border-gray-200 hover:bg-gray-50 font-bold text-[10px] sm:text-xs text-gray-700 flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:border-emerald-200"
-            >
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-              Approved Demo
-            </button>
-
-            <button
-              id="login-pending-demo-btn"
-              onClick={loadPendingDemo}
-              className="py-3 px-2 rounded-xl border border-gray-200 hover:bg-gray-50 font-bold text-[10px] sm:text-xs text-gray-700 flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:border-amber-200"
-            >
-              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
-              Pending Demo
-            </button>
-          </div>
         </div>
 
       </div>

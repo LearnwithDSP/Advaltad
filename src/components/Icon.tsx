@@ -44,7 +44,12 @@ import {
   ChevronRight,
   Send,
   AlertCircle,
-  Info
+  Info,
+  Trophy,
+  Crown,
+  Zap,
+  Medal,
+  Target
 } from "lucide-react";
 
 const iconMap: { [key: string]: React.ComponentType<any> } = {
@@ -92,7 +97,12 @@ const iconMap: { [key: string]: React.ComponentType<any> } = {
   ExternalLink,
   ChevronRight,
   Send,
-  AlertCircle
+  AlertCircle,
+  Trophy,
+  Crown,
+  Zap,
+  Medal,
+  Target
 };
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {

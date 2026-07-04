@@ -92,7 +92,7 @@ const hubFlowData = [
 ];
 
 export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<"overview" | "certificate" | "p2p" | "payments" | "projects" | "profile">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "certificate" | "p2p" | "payments" | "projects" | "profile" | "leaderboard">("overview");
   
   // Ambassador Database Profile state
   const [profile, setProfile] = useState<DbAmbassador | null>(null);
@@ -136,6 +136,132 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [programSponsored, setProgramSponsored] = useState("Youth Empowerment Initiative");
   const [amountNaira, setAmountNaira] = useState("");
   const [totalDepositsNaira, setTotalDepositsNaira] = useState(0);
+
+  // Leaderboard filters
+  const [leaderSearch, setLeaderSearch] = useState("");
+  const [leaderRegionFilter, setLeaderRegionFilter] = useState("All");
+  const [leaderDivisionFilter, setLeaderDivisionFilter] = useState("All");
+
+  // Leaderboard Entry TypeScript contract
+  interface LeaderEntry {
+    id: string;
+    name: string;
+    city: string;
+    field: string;
+    avu_balance: number;
+    totalDeposits: number;
+    projects: number;
+    avatarBg: string;
+    initials: string;
+    isCurrentUser: boolean;
+    points: number;
+    level: number;
+    rankTitle: string;
+    badgeColor: string;
+  }
+
+  // Preset list of high-performing mock ambassadors across Africa
+  const baseMockLeaders = [
+    { id: "AV-001", name: "Nia Tolani", city: "Nairobi, Kenya", field: "Mobile clinics hygiene", avu_balance: 1450, totalDeposits: 170000, projects: 4, avatarBg: "from-purple-500 to-indigo-600", initials: "NT", isCurrentUser: false },
+    { id: "AV-002", name: "Kofi Mensah", city: "Accra, Ghana", field: "Youth Technology Labs", avu_balance: 1320, totalDeposits: 140000, projects: 3, avatarBg: "from-blue-500 to-teal-500", initials: "KM", isCurrentUser: false },
+    { id: "AV-003", name: "Marie Diallo", city: "Kigali, Rwanda", field: "Eco-sustainable housing", avu_balance: 1210, totalDeposits: 120000, projects: 3, avatarBg: "from-emerald-500 to-emerald-700", initials: "MD", isCurrentUser: false },
+    { id: "AV-004", name: "Amadi Chukwu", city: "Surulere, Nigeria", field: "Youth Technology Labs", avu_balance: 1100, totalDeposits: 90000, projects: 2, avatarBg: "from-orange-500 to-red-500", initials: "AC", isCurrentUser: false },
+    { id: "AV-005", name: "Fatoumata Bâ", city: "Dakar, Senegal", field: "NextGen Scholarships", avu_balance: 1050, totalDeposits: 80000, projects: 2, avatarBg: "from-pink-500 to-rose-500", initials: "FB", isCurrentUser: false },
+    { id: "AV-006", name: "Musa Hassan", city: "Mombasa, Kenya", field: "Eco-sustainable housing", avu_balance: 950, totalDeposits: 45000, projects: 2, avatarBg: "from-yellow-500 to-amber-600", initials: "MH", isCurrentUser: false },
+    { id: "AV-007", name: "Grace Mwangi", city: "Nairobi, Kenya", field: "Mobile clinics hygiene", avu_balance: 820, totalDeposits: 20000, projects: 1, avatarBg: "from-teal-400 to-emerald-600", initials: "GM", isCurrentUser: false },
+    { id: "AV-008", name: "Ezenwa Cole", city: "Lekki, Nigeria", field: "NextGen Scholarships", avu_balance: 750, totalDeposits: 10000, projects: 1, avatarBg: "from-indigo-400 to-purple-600", initials: "EC", isCurrentUser: false },
+  ];
+
+  // Helper to get region group for filters
+  const getBroadRegion = (city: string) => {
+    const c = city.toLowerCase();
+    if (c.includes("lagos") || c.includes("accra") || c.includes("dakar") || c.includes("nigeria") || c.includes("ghana") || c.includes("senegal") || c.includes("lekki") || c.includes("surulere")) {
+      return "West Africa";
+    }
+    if (c.includes("nairobi") || c.includes("mombasa") || c.includes("kigali") || c.includes("kenya") || c.includes("rwanda")) {
+      return "East Africa";
+    }
+    return "Other";
+  };
+
+  // Helper to get division group for filters
+  const getBroadDivision = (field: string) => {
+    const f = field.toLowerCase();
+    if (f.includes("tech") || f.includes("software") || f.includes("initiative")) {
+      return "Technology";
+    }
+    if (f.includes("housing") || f.includes("sustainable") || f.includes("eco")) {
+      return "Sustainability";
+    }
+    if (f.includes("clinic") || f.includes("hygiene") || f.includes("health")) {
+      return "Healthcare";
+    }
+    return "Education & Other";
+  };
+
+  // Dynamically calculate current logged in user's entry and scores
+  const currentUserEntry = {
+    id: profile?.id || "AV-ME",
+    name: profile?.name || ambassadorName,
+    city: profile?.city || ambassadorRegion,
+    field: profile?.field || ambassadorField,
+    avu_balance: avuBalance,
+    totalDeposits: totalDepositsNaira,
+    projects: 3, // 3 supervised deployments
+    avatarBg: "from-emerald-600 to-teal-700",
+    initials: (profile?.name || ambassadorName).split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() || "RB",
+    isCurrentUser: true,
+  };
+
+  // Compile full leader list
+  const allLeadersCombined = [
+    currentUserEntry,
+    ...baseMockLeaders.filter(l => l.id !== (profile?.id || "AV-ME"))
+  ];
+
+  // Point scoring formula:
+  // Points = (avu_balance * 10) + Math.floor(totalDeposits / 100) + (projects_count * 500)
+  const getImpactPoints = (leader: any) => {
+    const avuContribution = (leader.avu_balance || 0) * 10;
+    const depositContribution = Math.floor((leader.totalDeposits || 0) / 100);
+    const projectContribution = (leader.projects || 0) * 500;
+    return avuContribution + depositContribution + projectContribution;
+  };
+
+  // Map to detailed leader object with calculated scores and rank badges
+  const processedLeaders: LeaderEntry[] = allLeadersCombined.map(l => {
+    const points = getImpactPoints(l);
+    
+    // Assign Rank Titles based on Points
+    let level = 1;
+    let rankTitle = "Active Fellow";
+    let badgeColor = "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900";
+    if (points >= 15000) {
+      level = 5;
+      rankTitle = "Sovereign Catalyst";
+      badgeColor = "bg-purple-100 text-purple-900 border-purple-200 dark:bg-purple-950/40 dark:text-purple-350 dark:border-purple-900";
+    } else if (points >= 12000) {
+      level = 4;
+      rankTitle = "Regional Champion";
+      badgeColor = "bg-blue-100 text-blue-900 border-blue-200 dark:bg-blue-950/40 dark:text-blue-350 dark:border-blue-900";
+    } else if (points >= 9000) {
+      level = 3;
+      rankTitle = "Impact Pioneer";
+      badgeColor = "bg-emerald-100 text-emerald-900 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-350 dark:border-emerald-900";
+    } else if (points >= 6000) {
+      level = 2;
+      rankTitle = "Growth Vanguard";
+      badgeColor = "bg-slate-100 text-slate-900 border-slate-200 dark:bg-slate-850/40 dark:text-slate-300 dark:border-slate-800";
+    }
+
+    return {
+      ...l,
+      points,
+      level,
+      rankTitle,
+      badgeColor
+    };
+  }).sort((a, b) => b.points - a.points); // Sort high to low
 
   // Dynamically inject Paystack inline script
   useEffect(() => {
@@ -994,6 +1120,22 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             </button>
 
             <button
+              id="tab-leaderboard"
+              onClick={() => setActiveTab("leaderboard")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm text-left transition-all cursor-pointer ${
+                activeTab === "leaderboard"
+                  ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/10"
+                  : "bg-white hover:bg-gray-100/50 text-gray-700 border border-gray-100"
+              }`}
+            >
+              <Icon name="Trophy" size={16} className={activeTab === "leaderboard" ? "text-amber-200" : "text-amber-500"} />
+              <span className="flex items-center gap-1.5 w-full justify-between">
+                <span>Top Leaders</span>
+                <span className="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">RANKING</span>
+              </span>
+            </button>
+
+            <button
               id="tab-certificate"
               onClick={() => setActiveTab("certificate")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm text-left transition-all cursor-pointer ${
@@ -1233,7 +1375,124 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                   </motion.div>
 
-                  {/* Why Hold AVU Educational Panel */}
+                  {/* Gamified Leaderboard Spotlight & Progress Meter */}
+                  <motion.div
+                    variants={itemVariants}
+                    className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-900 to-emerald-950 text-white shadow-xl border border-emerald-500/20 space-y-6 relative overflow-hidden"
+                  >
+                    {/* Visual glowing overlay circles */}
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-teal-500/5 rounded-full blur-2xl pointer-events-none" />
+
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10 relative z-10">
+                      <div className="space-y-1">
+                        <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-max">
+                          <Icon name="Trophy" size={10} className="text-amber-400" />
+                          Ambassador Arena
+                        </span>
+                        <h3 className="text-lg font-bold tracking-tight">Community Contribution Spotlight</h3>
+                        <p className="text-xs text-gray-300 font-sans leading-normal">
+                          High-performing fellows directing field resources and creating certified regional growth.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => setActiveTab("leaderboard")}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer self-start md:self-auto"
+                      >
+                        <Icon name="Trophy" size={13} />
+                        <span>View Full Leaderboard</span>
+                      </button>
+                    </div>
+
+                    {/* Miniature top ranks visual row */}
+                    <div className="grid sm:grid-cols-3 gap-4 relative z-10">
+                      {/* Top 1 */}
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-600 flex items-center justify-center font-bold text-slate-950 text-sm shadow-md shrink-0">
+                          👑 1st
+                        </div>
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="font-bold text-xs truncate">Nia Tolani</p>
+                          <p className="text-[10px] text-gray-400 truncate">Nairobi • 16,200 pts</p>
+                          <span className="text-[9px] font-bold text-amber-400">Sovereign Catalyst</span>
+                        </div>
+                      </div>
+
+                      {/* Top 2 */}
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-300 to-gray-500 flex items-center justify-center font-bold text-slate-950 text-sm shadow-md shrink-0">
+                          🥈 2nd
+                        </div>
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="font-bold text-xs truncate">Kofi Mensah</p>
+                          <p className="text-[10px] text-gray-400 truncate font-sans">Accra • 14,800 pts</p>
+                          <span className="text-[9px] font-bold text-gray-300">Regional Champion</span>
+                        </div>
+                      </div>
+
+                      {/* User Current Live Standing */}
+                      <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center gap-3 relative">
+                        <div className="absolute top-2 right-2 flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </div>
+                        
+                        <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0 border border-emerald-400">
+                          ⚡ YOU
+                        </div>
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="font-bold text-xs truncate">{ambassadorName || "Ramon Bisola"}</p>
+                          <p className="text-[10px] text-emerald-300 font-mono font-bold truncate">
+                            {((avuBalance * 10) + Math.floor(totalDepositsNaira / 100) + 1500).toLocaleString()} PTS
+                          </p>
+                          <span className="text-[9px] font-bold text-emerald-400">
+                            {((avuBalance * 10) + Math.floor(totalDepositsNaira / 100) + 1500) >= 15000 
+                              ? "👑 Sovereign Catalyst" 
+                              : "🏆 Regional Champion"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress tracking gauge */}
+                    <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3 relative z-10 font-sans">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-gray-200">Your Leaderboard Standing: Rank #3 Overall</p>
+                          <p className="text-[10px] text-gray-400">
+                            You are currently trailing <span className="text-white font-bold">Kofi Mensah</span> by only <span className="text-emerald-400 font-bold font-mono">{Math.max(0, 14800 - ((avuBalance * 10) + Math.floor(totalDepositsNaira / 100) + 1500)).toLocaleString()} points</span>!
+                          </p>
+                        </div>
+                        
+                        <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">
+                          NEXT TIER: 14,800 PTS
+                        </span>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="space-y-1">
+                        <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-1000" 
+                            style={{ 
+                              width: `${Math.min(100, (((avuBalance * 10) + Math.floor(totalDepositsNaira / 100) + 1500) / 14800) * 100)}%` 
+                            }} 
+                          />
+                        </div>
+                        <div className="flex justify-between text-[9px] text-gray-400">
+                          <span>{((avuBalance * 10) + Math.floor(totalDepositsNaira / 100) + 1500).toLocaleString()} PTS</span>
+                          <span>14,800 PTS</span>
+                        </div>
+                      </div>
+                      
+                      <p className="text-[10px] text-gray-300 leading-normal flex items-center gap-1">
+                        <Icon name="Sparkles" size={10} className="text-amber-400 shrink-0" />
+                        <span>Tip: Fund your wallet or complete active milestones in the Leaderboard tab to gain massive point boosts instantly!</span>
+                      </p>
+                    </div>
+
+                  </motion.div>
                   <motion.div
                     variants={itemVariants}
                     className="p-6 sm:p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6"
@@ -1995,6 +2254,440 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     profile={profile!}
                     onProfileUpdated={fetchAmbassadorData}
                   />
+                </motion.div>
+              )}
+
+              {/* TAB 7: GAMIFIED LEADERBOARD */}
+              {activeTab === "leaderboard" && (
+                <motion.div
+                  key="v-leaderboard"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="space-y-8"
+                >
+                  {/* Title Header Row */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-gray-200">
+                    <div className="space-y-1">
+                      <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                        <Icon name="Trophy" size={24} className="text-amber-500 shrink-0" />
+                        Ambassador Contribution Leaderboard
+                      </h3>
+                      <p className="text-xs text-gray-500 font-sans">
+                        Recognizing regional community leads based on active co-funding, program supervision, and peer operations.
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-xs font-mono bg-amber-50 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200 font-bold self-start sm:self-auto">
+                      <Icon name="Sparkles" size={14} className="text-amber-500 animate-pulse" />
+                      <span>Ledger Verified Scores</span>
+                    </div>
+                  </div>
+
+                  {/* Top 3 Physical Podium Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end pt-4">
+                    {/* 2nd Place (Silver) */}
+                    <div className="order-2 md:order-1 flex flex-col items-center">
+                      {(() => {
+                        const leader2 = processedLeaders[1];
+                        return (
+                          <div className="w-full text-center space-y-3">
+                            <div className="relative inline-block">
+                              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-200 to-slate-400 p-0.5 shadow-lg">
+                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-slate-350">
+                                  {leader2.initials || "KM"}
+                                </div>
+                              </div>
+                              <span className="absolute -top-2 -right-1 bg-slate-300 text-slate-900 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
+                                2
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <p className="font-extrabold text-sm text-slate-800">{leader2.name}</p>
+                              <p className="text-[10px] text-gray-400 font-medium">{leader2.city} • {leader2.field}</p>
+                              <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-700 bg-slate-100 border border-slate-200 rounded-md">
+                                {leader2.rankTitle}
+                              </span>
+                              <p className="text-xs font-black font-mono text-slate-650 pt-1">{leader2.points.toLocaleString()} PTS</p>
+                            </div>
+
+                            {/* Podium Pedestal block */}
+                            <div className="h-16 w-full bg-gradient-to-t from-slate-150 to-slate-100 rounded-t-2xl border-t border-x border-slate-200/60 shadow-[0_-4px_12px_rgba(0,0,0,0.02)] flex items-center justify-center font-mono font-black text-slate-400 text-lg">
+                              SILVER
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 1st Place (Gold) - Elevated center block */}
+                    <div className="order-1 md:order-2 flex flex-col items-center">
+                      {(() => {
+                        const leader1 = processedLeaders[0];
+                        return (
+                          <div className="w-full text-center space-y-3 relative">
+                            {/* Confetti element simulation */}
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-8 text-xl animate-bounce">
+                              👑
+                            </div>
+                            
+                            <div className="relative inline-block">
+                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-yellow-600 p-1 shadow-xl ring-4 ring-amber-400/20">
+                                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white font-bold text-xl border-2 border-amber-400">
+                                  {leader1.initials || "NT"}
+                                </div>
+                              </div>
+                              <span className="absolute -top-2 -right-1 bg-amber-400 text-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow-md">
+                                1
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-1 pb-2">
+                              <p className="font-black text-base text-gray-950 flex items-center justify-center gap-1">
+                                {leader1.name}
+                                {leader1.isCurrentUser && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
+                              </p>
+                              <p className="text-[10px] text-gray-400 font-medium">{leader1.city} • {leader1.field}</p>
+                              <span className="inline-block px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-805 bg-amber-100/80 border border-amber-200 rounded-md">
+                                {leader1.rankTitle}
+                              </span>
+                              <p className="text-sm font-extrabold font-mono text-amber-600 pt-1">{leader1.points.toLocaleString()} PTS</p>
+                            </div>
+
+                            {/* Podium Pedestal block */}
+                            <div className="h-24 w-full bg-gradient-to-t from-amber-100/60 to-amber-50/40 rounded-t-2xl border-t border-x border-amber-200/60 shadow-[0_-6px_20px_rgba(245,158,11,0.05)] flex flex-col items-center justify-center font-mono font-black text-amber-500 text-xl">
+                              <span>GOLD</span>
+                              <span className="text-[9px] text-amber-400/80 uppercase tracking-widest mt-0.5">Arena Leader</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 3rd Place (Bronze) */}
+                    <div className="order-3 md:order-3 flex flex-col items-center">
+                      {(() => {
+                        const leader3 = processedLeaders[2];
+                        return (
+                          <div className="w-full text-center space-y-3">
+                            <div className="relative inline-block">
+                              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-600 to-orange-800 p-0.5 shadow-lg">
+                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-amber-700">
+                                  {leader3.initials || "MD"}
+                                </div>
+                              </div>
+                              <span className="absolute -top-2 -right-1 bg-orange-700 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
+                                3
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <p className="font-extrabold text-sm text-slate-800 flex items-center justify-center gap-1">
+                                {leader3.name}
+                                {leader3.isCurrentUser && <span className="text-[9px] bg-emerald-100 text-emerald-850 px-1.5 py-0.5 rounded font-black uppercase">You</span>}
+                              </p>
+                              <p className="text-[10px] text-gray-400 font-medium">{leader3.city} • {leader3.field}</p>
+                              <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 rounded-md">
+                                {leader3.rankTitle}
+                              </span>
+                              <p className="text-xs font-black font-mono text-amber-800 pt-1">{leader3.points.toLocaleString()} PTS</p>
+                            </div>
+
+                            {/* Podium Pedestal block */}
+                            <div className="h-12 w-full bg-gradient-to-t from-orange-50 to-orange-50/20 rounded-t-2xl border-t border-x border-orange-200/40 shadow-[0_-4px_12px_rgba(0,0,0,0.01)] flex items-center justify-center font-mono font-black text-orange-600/70 text-lg">
+                              BRONZE
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Main Grid: Leaders table (Left 8 cols) & Quest list (Right 4 cols) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
+                    
+                    {/* LEADER TABLE (8 COLS) */}
+                    <div className="lg:col-span-8 space-y-6">
+                      
+                      {/* Interactive Search & Filters Panel */}
+                      <div className="p-4 rounded-2xl bg-white border border-gray-100 shadow-sm space-y-4">
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-3 text-gray-400">
+                            <Icon name="Search" size={14} />
+                          </span>
+                          <input
+                            type="text"
+                            placeholder="Search ambassadors by name..."
+                            value={leaderSearch}
+                            onChange={(e) => setLeaderSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-emerald-600 text-xs font-medium focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 text-[10px]">
+                          {/* Region Filter */}
+                          <div className="space-y-1">
+                            <label className="block font-bold text-gray-400 uppercase tracking-widest">Region Group</label>
+                            <select
+                              value={leaderRegionFilter}
+                              onChange={(e) => setLeaderRegionFilter(e.target.value)}
+                              className="w-full p-2 rounded-lg bg-gray-50 border border-gray-100 text-xs font-bold text-slate-700 cursor-pointer"
+                            >
+                              <option value="All">All Regions</option>
+                              <option value="West Africa">West Africa</option>
+                              <option value="East Africa">East Africa</option>
+                            </select>
+                          </div>
+
+                          {/* Division Filter */}
+                          <div className="space-y-1">
+                            <label className="block font-bold text-gray-400 uppercase tracking-widest">Field Division</label>
+                            <select
+                              value={leaderDivisionFilter}
+                              onChange={(e) => setLeaderDivisionFilter(e.target.value)}
+                              className="w-full p-2 rounded-lg bg-gray-50 border border-gray-100 text-xs font-bold text-slate-700 cursor-pointer"
+                            >
+                              <option value="All">All Divisions</option>
+                              <option value="Technology">Technology</option>
+                              <option value="Sustainability">Sustainability</option>
+                              <option value="Healthcare">Healthcare</option>
+                              <option value="Education & Other">Education & Other</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Leaders Table Rows */}
+                      <div className="space-y-3">
+                        <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest px-2">Rankings List</h4>
+                        
+                        {(() => {
+                          // Apply client-side search and filters to processedLeaders
+                          const filteredLeaders = processedLeaders.filter(leader => {
+                            const matchSearch = leader.name.toLowerCase().includes(leaderSearch.toLowerCase()) || 
+                                                leader.city.toLowerCase().includes(leaderSearch.toLowerCase());
+                            const matchRegion = leaderRegionFilter === "All" || getBroadRegion(leader.city) === leaderRegionFilter;
+                            const matchDivision = leaderDivisionFilter === "All" || getBroadDivision(leader.field) === leaderDivisionFilter;
+                            return matchSearch && matchRegion && matchDivision;
+                          });
+
+                          if (filteredLeaders.length === 0) {
+                            return (
+                              <div className="p-8 text-center bg-white rounded-3xl border border-gray-100 text-xs text-gray-400 space-y-2">
+                                <Icon name="AlertCircle" size={24} className="mx-auto text-gray-300" />
+                                <p className="font-bold">No matching ambassadors found.</p>
+                                <p className="text-[11px]">Try clearing your search query or adjusting filters.</p>
+                              </div>
+                            );
+                          }
+
+                          return filteredLeaders.map((leader, index) => {
+                            const isUser = leader.isCurrentUser;
+                            // Find their absolute index/rank inside sortedProcessedLeaders
+                            const absoluteRank = processedLeaders.findIndex(l => l.id === leader.id) + 1;
+                            
+                            return (
+                              <div
+                                key={leader.id}
+                                className={`p-4 rounded-2xl bg-white border transition-all flex items-center justify-between gap-4 ${
+                                  isUser 
+                                    ? "border-emerald-500 shadow-md ring-2 ring-emerald-500/10 relative" 
+                                    : "border-gray-100 hover:border-gray-200 hover:shadow-sm"
+                                }`}
+                              >
+                                {isUser && (
+                                  <div className="absolute top-0 right-12 -translate-y-1/2 bg-emerald-600 text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow tracking-wider">
+                                    Your Score
+                                  </div>
+                                )}
+
+                                <div className="flex items-center gap-3.5 min-w-0">
+                                  {/* Rank Number Circle */}
+                                  <span className={`w-6 text-center font-mono text-sm font-black shrink-0 ${
+                                    absoluteRank === 1 ? "text-amber-500 text-lg" : absoluteRank === 2 ? "text-slate-400 text-base" : absoluteRank === 3 ? "text-orange-700" : "text-gray-400"
+                                  }`}>
+                                    #{absoluteRank}
+                                  </span>
+
+                                  {/* Initials Circle */}
+                                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${leader.avatarBg || "from-slate-400 to-slate-500"} p-0.5 shrink-0 shadow-sm`}>
+                                    <div className="w-full h-full rounded-lg bg-slate-900 flex items-center justify-center text-white font-bold text-xs">
+                                      {leader.initials || leader.name.split(" ").map((n: string) => n[0]).join("").substring(0,2).toUpperCase()}
+                                    </div>
+                                  </div>
+
+                                  {/* Name & Region */}
+                                  <div className="min-w-0 space-y-0.5">
+                                    <h5 className="font-bold text-xs text-slate-900 flex items-center gap-1.5 truncate">
+                                      {leader.name}
+                                      {isUser && <span className="text-[8px] bg-emerald-50 text-emerald-800 px-1 rounded font-bold uppercase">YOU</span>}
+                                    </h5>
+                                    <p className="text-[10px] text-gray-400 truncate font-sans">
+                                      {leader.city} • <span className="font-semibold text-slate-500">{leader.field}</span>
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Score & Status Badge */}
+                                <div className="text-right shrink-0 space-y-1.5">
+                                  <span className={`inline-block text-[8px] font-bold px-2 py-0.5 border rounded-full ${leader.badgeColor}`}>
+                                    {leader.rankTitle}
+                                  </span>
+                                  <p className="font-mono text-xs font-black text-slate-800 leading-none">
+                                    {leader.points?.toLocaleString()} <span className="text-[9px] text-gray-400 font-bold">PTS</span>
+                                  </p>
+                                </div>
+
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+
+                    </div>
+
+                    {/* MILITARY/QUEST MILESTONE BOARD (4 COLS) */}
+                    <div className="lg:col-span-4 space-y-6">
+                      <div className="p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-5">
+                        <div className="space-y-1">
+                          <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                            <Icon name="Target" size={15} className="text-emerald-600 shrink-0" />
+                            Milestone Quest Board
+                          </h4>
+                          <p className="text-[10px] text-gray-400 leading-normal">
+                            Complete official ambassador actions to gain massive verified score boots instantly!
+                          </p>
+                        </div>
+
+                        {/* Quests Container */}
+                        <div className="space-y-3">
+                          {/* Quest 1: Approved status */}
+                          {(() => {
+                            const isApproved = profile?.status === "approved";
+                            return (
+                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
+                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${isApproved ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
+                                  <Icon name={isApproved ? "Check" : "Lock"} size={13} />
+                                </div>
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Elite Commission</h6>
+                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+1,000 PTS</span>
+                                  </div>
+                                  <p className="text-[9px] text-gray-400 leading-tight">Secure official Approved Fellowship status.</p>
+                                  {isApproved ? (
+                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
+                                  ) : (
+                                    <span className="inline-block text-[8px] font-bold bg-amber-50 text-amber-800 px-1.5 py-0.2 rounded uppercase">PENDING HQ APPROVAL</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Quest 2: Fund Wallet */}
+                          {(() => {
+                            const isFunded = totalDepositsNaira > 0 || hasFunded;
+                            return (
+                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
+                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${isFunded ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
+                                  <Icon name={isFunded ? "Check" : "Plus"} size={13} />
+                                </div>
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Resource Co-funding</h6>
+                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+1,500 PTS</span>
+                                  </div>
+                                  <p className="text-[9px] text-gray-400 leading-tight font-sans">Complete first wallet funding to fuel development.</p>
+                                  {isFunded ? (
+                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setActiveTab("payments")}
+                                      className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase mt-1 cursor-pointer transition-colors"
+                                    >
+                                      Fund Now ➜
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Quest 3: Customize profile */}
+                          {(() => {
+                            const isCustomized = (profile?.city && profile.city !== "Lagos, Nigeria") || profile?.phone;
+                            return (
+                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
+                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${isCustomized ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
+                                  <Icon name={isCustomized ? "Check" : "User"} size={13} />
+                                </div>
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Regional Sync</h6>
+                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+500 PTS</span>
+                                  </div>
+                                  <p className="text-[9px] text-gray-400 leading-tight">Customize base city or phone contact details.</p>
+                                  {isCustomized ? (
+                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setActiveTab("profile")}
+                                      className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase mt-1 cursor-pointer transition-colors"
+                                    >
+                                      Edit Profile ➜
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Quest 4: AVU peer transfer */}
+                          {(() => {
+                            const hasTransferred = avuBalance < 1250;
+                            return (
+                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
+                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${hasTransferred ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
+                                  <Icon name={hasTransferred ? "Check" : "Zap"} size={13} />
+                                </div>
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Peer-to-Peer Transit</h6>
+                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+800 PTS</span>
+                                  </div>
+                                  <p className="text-[9px] text-gray-400 leading-tight">Complete first peer transfer of AVU points.</p>
+                                  {hasTransferred ? (
+                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setActiveTab("p2p")}
+                                      className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase mt-1 cursor-pointer transition-colors"
+                                    >
+                                      Transfer ➜
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                        </div>
+
+                        <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl text-[10px] text-emerald-850 leading-normal font-sans">
+                          <p className="font-bold mb-1">Rank Thresholds Guide:</p>
+                          <ul className="space-y-1 list-disc list-inside text-[9.5px]">
+                            <li>👑 <span className="font-bold">Sovereign Catalyst:</span> 15,000+ PTS</li>
+                            <li>🏆 <span className="font-bold">Regional Champion:</span> 12,000+ PTS</li>
+                            <li>🏅 <span className="font-bold">Impact Pioneer:</span> 9,000+ PTS</li>
+                            <li>🥈 <span className="font-bold">Growth Vanguard:</span> 6,000+ PTS</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
                 </motion.div>
               )}
 
