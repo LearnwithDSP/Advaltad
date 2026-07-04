@@ -378,7 +378,6 @@ function mapAmbassadorToRow(ambassador: Partial<DbAmbassador & { user_id?: strin
 // Global Database API (Unified interface for both Supabase and LocalStorage fallback)
 export const db = {
   async getAmbassadors(): Promise<DbAmbassador[]> {
-    const local = getLocalDb();
     if (isSupabaseConfigured && supabase) {
       try {
         // Validate session state to ensure headers are correctly established for RLS contexts
@@ -410,29 +409,18 @@ export const db = {
         }
         
         if (!error && data) {
-          const remote = data.map(mapRowToAmbassador);
-          
-          // Safeguard: Merge with any non-demo locally registered ambassadors so no live registration is ever lost
-          const localRegs = local.filter(a => 
-            a.email !== "ramon@example.com" && 
-            a.email !== "grace@example.com" && 
-            a.email !== "pending_demo@advaltad.org"
-          );
-          
-          const remoteEmails = new Set(remote.map(r => r.email.toLowerCase()));
-          const merged = [
-            ...remote,
-            ...localRegs.filter(l => !remoteEmails.has(l.email.toLowerCase()))
-          ];
-          
-          return merged;
+          return data.map(mapRowToAmbassador);
         }
-        console.warn("Supabase fetch failed, falling back to local DB:", error);
+        if (error) {
+          console.error("Supabase fetch failed:", error);
+          throw error;
+        }
       } catch (err) {
-        console.warn("Supabase fetch failed with exception:", err);
+        console.error("Supabase fetch failed with exception:", err);
+        throw err;
       }
     }
-    return local;
+    return getLocalDb();
   },
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
@@ -449,10 +437,13 @@ export const db = {
           return mapRowToAmbassador(data);
         }
         if (error) {
-          console.warn("Supabase query failed, falling back to local DB:", error);
+          console.warn("Supabase query failed:", error);
+          throw error;
         }
+        return null;
       } catch (err) {
         console.warn("Supabase query failed with exception:", err);
+        throw err;
       }
     }
     
@@ -492,9 +483,10 @@ export const db = {
         if (!error && data) {
           return mapRowToAmbassador(data);
         }
-        console.warn("Supabase insert failed, using local DB fallback:", error);
+        throw new Error(error?.message || "Supabase insert failed");
       } catch (err) {
-        console.warn("Supabase insert exception, using local DB fallback:", err);
+        console.error("Supabase insert exception:", err);
+        throw err;
       }
     }
 
@@ -516,8 +508,10 @@ export const db = {
         const { error } = await query;
         if (!error) return true;
         console.warn("Supabase update status failed:", error);
+        throw error;
       } catch (err) {
         console.warn("Supabase update status exception:", err);
+        throw err;
       }
     }
 
@@ -543,8 +537,10 @@ export const db = {
         const { error } = await query;
         if (!error) return true;
         console.warn("Supabase update balance failed:", error);
+        throw error;
       } catch (err) {
         console.warn("Supabase update balance exception:", err);
+        throw err;
       }
     }
 
@@ -570,8 +566,10 @@ export const db = {
         const { error } = await query;
         if (!error) return true;
         console.warn("Supabase update profile failed:", error);
+        throw error;
       } catch (err) {
         console.warn("Supabase update profile exception:", err);
+        throw err;
       }
     }
 
@@ -597,8 +595,10 @@ export const db = {
         const { error } = await query;
         if (!error) return true;
         console.warn("Supabase delete failed:", error);
+        throw error;
       } catch (err) {
         console.warn("Supabase delete exception:", err);
+        throw err;
       }
     }
 

@@ -145,12 +145,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     loadDbData();
   }, []);
 
-  // Reload data on tab change or authentication status change
+  // Setup real-time Supabase subscription to keep Ambassador records strictly synchronized on all devices
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel("admin-ambassadors-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassadors" },
+        () => {
+          console.info("Realtime Postgres update received on 'ambassadors' table, refetching fresh records...");
+          loadDbData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "Ambassadors" },
+        () => {
+          console.info("Realtime Postgres update received on 'Ambassadors' table, refetching fresh records...");
+          loadDbData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated]);
+
+  // Reload data on tab change, view change, or authentication status change
   useEffect(() => {
     if (isAuthenticated) {
       loadDbData();
     }
-  }, [activeTab, isAuthenticated]);
+  }, [activeTab, view, isAuthenticated]);
 
   const loadBlogs = async () => {
     try {
