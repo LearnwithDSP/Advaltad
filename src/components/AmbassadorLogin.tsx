@@ -15,7 +15,20 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const sanitizedEmail = email.replace(/200$/, '').trim().toLowerCase();
+    
+    // Strict sanitization function applied to email input
+    const sanitizeEmailInput = (raw: string): string => {
+      return raw.replace(/200$/, '').trim().toLowerCase();
+    };
+
+    const sanitizedEmail = sanitizeEmailInput(email);
+
+    // Unified logging wrapper for the email input immediately after submission
+    console.log("[AMBASSADOR LOGIN] Unified Input Logger:");
+    console.log("  - Raw Email Input:", email);
+    console.log("  - Processed Email String (Sanitized):", sanitizedEmail);
+    console.log("  - Final Query Object Sent to Supabase:", { email: sanitizedEmail });
+
     if (!sanitizedEmail || !password) return;
 
     setErrorMsg("");
@@ -23,6 +36,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
     try {
       let user = null;
       if (isSupabaseConfigured && supabase) {
+        // Query for the sanitized email using strict match filter
         let { data, error } = await supabase
           .from("ambassadors")
           .select("*")
@@ -41,7 +55,8 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         if (data && data.length > 0) {
           const matched = data.find(u => {
             const statusVal = (u.badge_status || u.status || "pending").toString().toLowerCase().trim();
-            return statusVal !== "disapproved";
+            // Allow all statuses (such as 'pending', 'approved', 'active') provided they are not set to 'disapproved'
+            return statusVal !== "disapproved" && statusVal !== "rejected" && statusVal !== "suspended";
           });
 
           if (matched) {

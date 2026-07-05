@@ -125,9 +125,25 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
         <div className="md:col-span-4 space-y-6 text-left">
           <div className="p-6 rounded-3xl bg-slate-900 text-white border border-slate-800 space-y-4 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center">
-              <Icon name="Shield" size={18} />
+            
+            {/* Visual badge_status indicator in Header */}
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center">
+                <Icon name="Shield" size={18} />
+              </div>
+              {profile.status === "approved" ? (
+                <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Approved
+                </span>
+              ) : (
+                <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Pending
+                </span>
+              )}
             </div>
+
             <div>
               <h4 className="text-xs font-bold uppercase tracking-widest text-emerald-400">Current Registered Details</h4>
               <p className="text-xs text-slate-300 mt-2 leading-relaxed">
@@ -159,14 +175,32 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
 
             <div className="pt-2 text-[9px] font-mono text-slate-500 space-y-0.5">
               <p>REGISTRY_ID: {profile.id}</p>
-              <p>STATUS: {profile.status.toUpperCase()}</p>
+              <p className="flex items-center gap-1">
+                <span>VERIFICATION_STATUS:</span>
+                {profile.status === "approved" ? (
+                  <span className="text-emerald-400 font-bold uppercase">APPROVED_SYNCED</span>
+                ) : (
+                  <span className="text-amber-400 font-bold uppercase">PENDING_APPROVAL</span>
+                )}
+              </p>
             </div>
           </div>
 
           <div className="p-6 rounded-3xl bg-emerald-50/50 border border-emerald-100/50 space-y-3">
-            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider">
-              Fellowship Active Preview
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider">
+                Fellowship Active Preview
+              </span>
+              {profile.status === "approved" ? (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-200 border border-emerald-300 text-emerald-900 text-[9px] font-black uppercase tracking-wider">
+                  Approved Badge
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-amber-200 border border-amber-300 text-amber-900 text-[9px] font-black uppercase tracking-wider animate-pulse">
+                  Pending Verification
+                </span>
+              )}
+            </div>
             <div className="space-y-1.5 pt-1">
               <h5 className="text-sm font-black text-slate-800 tracking-tight">{editName || profile.name}</h5>
               <p className="text-xs text-slate-500">{editCity || profile.city}</p>

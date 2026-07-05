@@ -204,7 +204,64 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setIsLoadingDb(true);
     setDbError("");
     try {
-      const allAmbassadors = await db.getAmbassadors();
+      let allAmbassadors: DbAmbassador[] = [];
+      if (isSupabaseConfigured && supabase) {
+        console.log("[ADMIN PORTAL] Executing direct select('*') query on 'public.ambassadors' table (Supabase direct fetch)...");
+        let { data, error } = await supabase
+          .from("ambassadors")
+          .select("*");
+
+        if (error || !data) {
+          console.warn("[ADMIN PORTAL] Querying 'ambassadors' table directly failed or returned no data. Trying 'Ambassadors' fallback casing...", error);
+          const fallbackRes = await supabase
+            .from("Ambassadors")
+            .select("*");
+          if (!fallbackRes.error && fallbackRes.data) {
+            data = fallbackRes.data;
+          } else if (fallbackRes.error) {
+            console.error("[ADMIN PORTAL] All direct queries to Supabase ambassadors table failed.", fallbackRes.error);
+            throw fallbackRes.error;
+          }
+        }
+
+        if (data) {
+          console.log(`[ADMIN PORTAL] Successfully fetched ${data.length} records directly from Supabase with no local fallbacks.`);
+          allAmbassadors = data.map((row: any) => {
+            const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
+            const mappedStatus: "pending" | "approved" | "disapproved" = 
+              (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
+              (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
+
+            const nameVal = row.professional_name || row.name || "";
+            const cityVal = row.base_city || row.city || "";
+            const fieldVal = row.focus_interest || row.field || "";
+            const phoneVal = row.phone_number || row.phone || "";
+
+            return {
+              id: row.user_id || row.id || "",
+              user_id: row.user_id || undefined,
+              db_id: row.id || undefined,
+              name: nameVal,
+              professional_name: nameVal,
+              city: cityVal,
+              base_city: cityVal,
+              field: fieldVal,
+              focus_interest: fieldVal,
+              email: row.email || "",
+              phone: phoneVal,
+              phone_number: phoneVal,
+              status: mappedStatus,
+              badge_status: mappedStatus,
+              avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 0,
+              created_at: row.created_at || new Date().toISOString()
+            };
+          });
+        }
+      } else {
+        // Fallback only if Supabase environment is completely unconfigured
+        allAmbassadors = await db.getAmbassadors();
+      }
+
       if (!allAmbassadors || allAmbassadors.length === 0) {
         console.error("Error: Ambassadors array returned empty from 'public.ambassadors' table query.");
       }
