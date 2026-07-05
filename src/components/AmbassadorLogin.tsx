@@ -15,15 +15,67 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const sanitizedEmail = email.trim().toLowerCase();
+    const sanitizedEmail = email.replace(/200$/, '').trim().toLowerCase();
     if (!sanitizedEmail || !password) return;
 
     setErrorMsg("");
     setIsLoggingIn(true);
     try {
-      const user = await db.findAmbassadorByEmail(sanitizedEmail);
+      let user = null;
+      if (isSupabaseConfigured && supabase) {
+        let { data, error } = await supabase
+          .from("ambassadors")
+          .select("*")
+          .eq("email", sanitizedEmail);
+
+        if (error || !data || data.length === 0) {
+          const fallbackRes = await supabase
+            .from("Ambassadors")
+            .select("*")
+            .eq("email", sanitizedEmail);
+          if (!fallbackRes.error && fallbackRes.data) {
+            data = fallbackRes.data;
+          }
+        }
+
+        if (data && data.length > 0) {
+          const matched = data.find(u => {
+            const statusVal = (u.badge_status || u.status || "pending").toString().toLowerCase().trim();
+            return statusVal !== "disapproved";
+          });
+
+          if (matched) {
+            const rawStatus = (matched.badge_status || matched.status || "pending").toString().toLowerCase().trim();
+            const mappedStatus = (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
+                                 (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
+            user = {
+              id: matched.user_id || matched.id || "",
+              user_id: matched.user_id || undefined,
+              db_id: matched.id || undefined,
+              name: matched.professional_name || matched.name || "",
+              city: matched.base_city || matched.city || "",
+              field: matched.focus_interest || matched.field || "",
+              email: matched.email || "",
+              phone: matched.phone_number || matched.phone || "",
+              password: matched.password,
+              status: mappedStatus,
+              badge_status: mappedStatus,
+              avu_balance: typeof matched.avu_balance === "number" ? matched.avu_balance : 0,
+              created_at: matched.created_at || new Date().toISOString()
+            };
+          }
+        }
+      }
+
       if (!user) {
-        setErrorMsg("This email is not registered in our Ambassador database. Please register first.");
+        const potentialUser = await db.findAmbassadorByEmail(sanitizedEmail);
+        if (potentialUser && potentialUser.status !== "disapproved") {
+          user = potentialUser;
+        }
+      }
+
+      if (!user) {
+        setErrorMsg("This email is not registered in our Ambassador database or the account has been disapproved. Please register first.");
         setIsLoggingIn(false);
         return;
       }
@@ -38,7 +90,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email: sanitizedEmail, // FIXED: Now strictly uses the lowercase, trimmed email to prevent mobile errors
+          email: sanitizedEmail,
           password
         });
         if (authError) {

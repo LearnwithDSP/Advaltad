@@ -108,6 +108,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     action: "approve" | "disapprove" | "suspend";
   } | null>(null);
 
+  // Loading state for database fetching
+  const [isLoadingDb, setIsLoadingDb] = useState(false);
+  const [dbError, setDbError] = useState("");
+
   // Bulk action states
   const [selectedAmbassadorIds, setSelectedAmbassadorIds] = useState<string[]>([]);
   const [bulkConfirmModal, setBulkConfirmModal] = useState<{
@@ -197,11 +201,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   const loadDbData = async () => {
+    setIsLoadingDb(true);
+    setDbError("");
     try {
       const allAmbassadors = await db.getAmbassadors();
+      if (!allAmbassadors || allAmbassadors.length === 0) {
+        console.error("Error: Ambassadors array returned empty from 'public.ambassadors' table query.");
+      }
       const allActivities = await db.getActivities();
-      setAmbassadors(allAmbassadors);
-      setActivities(allActivities);
+      setAmbassadors(allAmbassadors || []);
+      setActivities(allActivities || []);
       await loadBlogs();
       await loadWallets();
       try {
@@ -210,8 +219,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       } catch (logErr) {
         console.error("Failed to load audit logs inside admin portal:", logErr);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load DB details inside admin portal:", err);
+      setDbError(err?.message || "Failed to load database details.");
+    } finally {
+      setIsLoadingDb(false);
     }
   };
 
@@ -1127,9 +1139,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
               {/* TABS SELECTIVITY */}
               <AnimatePresence mode="wait">
-                
-                {/* TAB 1: OVERVIEW & ACTIVITIES */}
-                {activeTab === "overview" && (
+                {isLoadingDb ? (
+                  <motion.div
+                    key="live-db-loading"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="w-full flex flex-col items-center justify-center py-20 bg-white border border-slate-100 rounded-3xl shadow-sm text-center"
+                  >
+                    <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4 mx-auto" />
+                    <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-tight">Syncing Live Ledger...</h3>
+                    <p className="text-xs text-slate-400 mt-1">Verifying direct digital certificates with the public.ambassadors registry.</p>
+                  </motion.div>
+                ) : (
+                  <>
+                    {/* TAB 1: OVERVIEW & ACTIVITIES */}
+                    {activeTab === "overview" && (
                   <motion.div
                     key="tab-v-overview"
                     initial={{ opacity: 0, y: 15 }}
@@ -2027,6 +2052,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                     </div>
                   </motion.div>
+                )}
+                  </>
                 )}
               </AnimatePresence>
             </div>
