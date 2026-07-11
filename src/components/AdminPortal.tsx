@@ -572,64 +572,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     }
   };
 
-  const handleApproveAmbassador = async (id: string, email: string, name: string) => {
-  if (!id) return;
-  setActionLoadingId(id);
+  const handleApproveAmbassador = async (id: string, name: string) => {
+    setStatusConfirmModal({ id, name, action: "approve" });
+  };
 
-  try {
-    let success = false;
-    
-    // 1. Target the 'id' directly and ONLY update the 'badge_status' column
-    if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from("ambassadors")
-        .update({ badge_status: "approved" })
-        .eq("id", id);
-      
-      if (!error) {
-        success = true;
-      } else {
-        // Fallback safety if the ID maps to the user_id column
-        const { error: userKeyErr } = await supabase
-          .from("ambassadors")
-          .update({ badge_status: "approved" })
-          .eq("user_id", id);
-          
-        if (!userKeyErr) success = true;
+  const executeDisapproveAmbassador = async (id: string, name: string) => {
+    try {
+      await db.updateStatus(id, "disapproved");
+      await db.logActivity({
+        ambassador_id: id,
+        ambassador_name: name,
+        type: "status_change",
+        desc: `Super Admin "${currentAdmin?.name}" disapproved Ambassador Fellowship credentials.`
+      });
+      await db.createAuditLog({
+        admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
+        admin_name: currentAdmin?.name || "Super Admin",
+        admin_email: currentAdmin?.email || "admin@advaltad.org",
+        ambassador_id: id,
+        ambassador_name: name,
+        action: "disapproved"
+      });
+      loadDbData();
+      if (selectedAmbassador?.id === id) {
+        setSelectedAmbassador(prev => prev ? { ...prev, status: "disapproved" } : null);
       }
+    } catch (err) {
+      console.error(err);
     }
-
-    // Local DB fallback handling
-    const localUpdate = await db.updateStatus(id, "approved");
-    if (localUpdate) success = true;
-
-    if (success) {
-      // 2. Force instant local UI update so it changes on your screen immediately
-      setAmbassadors(prev => 
-        prev.map(amb => 
-          amb.id === id || amb.user_id === id ? { ...amb, badge_status: "approved" } : amb
-        )
-      );
-
-      // 3. Trigger email service
-      try {
-        await triggerApprovalEmail(email, name);
-      } catch (emailErr) {
-        console.warn("Mail dispatch skipped:", emailErr);
-      }
-
-      // Re-fetch system tables to ensure everything is perfectly in sync
-      await fetchAllAdminData();
-    } else {
-      alert("Database update rejected.");
-    }
-  } catch (err: any) {
-    console.error("Dashboard error:", err);
-    alert("Error processing approval: " + err.message);
-  } finally {
-    setActionLoadingId(null);
-  }
-};
+  };
 
   const handleDisapproveAmbassador = async (id: string, name: string) => {
     setStatusConfirmModal({ id, name, action: "disapprove" });
