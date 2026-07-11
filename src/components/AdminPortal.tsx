@@ -27,6 +27,7 @@ import {
   MapPin
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
+import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
 
@@ -108,6 +109,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     name: string;
     action: "approve" | "disapprove" | "suspend";
   } | null>(null);
+
+  // Transactional Email states
+  const [sentEmails, setSentEmails] = useState<SentEmailLog[]>([]);
+  const [historySubTab, setHistorySubTab] = useState<"audit" | "emails">("audit");
+  const [selectedEmailForView, setSelectedEmailForView] = useState<SentEmailLog | null>(null);
 
   // Loading state for database fetching
   const [isLoadingDb, setIsLoadingDb] = useState(false);
@@ -292,6 +298,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       } catch (logErr) {
         console.error("Failed to load audit logs inside admin portal:", logErr);
       }
+      try {
+        const emails = await getSentEmails();
+        setSentEmails(emails);
+      } catch (emErr) {
+        console.error("Failed to load sent emails inside admin portal:", emErr);
+      }
     } catch (err: any) {
       console.error("Failed to load DB details inside admin portal:", err);
       setDbError(err?.message || "Failed to load database details.");
@@ -443,6 +455,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const executeApproveAmbassador = async (id: string, name: string) => {
     try {
       await db.updateStatus(id, "approved");
+
+      // Dispatch transactional email notification
+      const amb = ambassadors.find(a => a.id === id);
+      if (amb) {
+        try {
+          console.log("[ADMIN PORTAL] Dispatching transactional email notification for approved ambassador:", name);
+          const mailRes = await triggerApprovalEmail(amb);
+          console.log("[ADMIN PORTAL] Transactional email notification dispatched successfully:", mailRes);
+        } catch (mailErr) {
+          console.error("[ADMIN PORTAL] Failed to dispatch transactional email:", mailErr);
+        }
+      }
+
       await db.logActivity({
         ambassador_id: id,
         ambassador_name: name,
@@ -535,6 +560,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         const amb = ambassadors.find(a => a.id === id);
         const name = amb ? (amb.name || amb.professional_name || "Ambassador") : "Ambassador";
         
+        if (action === "approve" && amb) {
+          try {
+            console.log("[ADMIN PORTAL] Bulk dispatching transactional email notification for:", name);
+            await triggerApprovalEmail(amb);
+          } catch (mailErr) {
+            console.error("[ADMIN PORTAL] Failed to dispatch bulk transactional email:", mailErr);
+          }
+        }
+
         await db.logActivity({
           type: "status_change",
           desc: `Super Admin "${currentAdmin?.name}" bulk updated Ambassador ${name} verification status to: ${statusValue}.`
@@ -1812,45 +1846,59 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6 text-left"
                   >
-                    <div className="border-b border-slate-100 pb-4 text-left">
-                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Administrative Oversight History</h3>
-                      <p className="text-xs text-slate-500">Track and audit system registration metrics.</p>
+                    <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Administrative Oversight History</h3>
+                        <p className="text-xs text-slate-500">Track and audit system registration metrics & transactional notifications.</p>
+                      </div>
+                      
+                      {/* Segment selector */}
+                      <div className="flex bg-slate-100 p-1 rounded-xl self-start sm:self-center border border-slate-200">
+                        <button
+                          onClick={() => setHistorySubTab("audit")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                            historySubTab === "audit"
+                              ? "bg-white text-slate-900 shadow-sm"
+                              : "text-slate-500 hover:text-slate-950"
+                          }`}
+                        >
+                          Audit Logs
+                        </button>
+                        <button
+                          onClick={() => setHistorySubTab("emails")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5 ${
+                            historySubTab === "emails"
+                              ? "bg-white text-slate-900 shadow-sm"
+                              : "text-slate-500 hover:text-slate-950"
+                          }`}
+                        >
+                          <Mail size={12} />
+                          Transactional Emails
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                      <div className="relative w-full md:max-w-md text-left">
-                        <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
-                        <input
-                          type="text"
-                          value={historySearchQuery}
-                          onChange={(e) => setHistorySearchQuery(e.target.value)}
-                          placeholder="Search admin, or ambassador..."
-                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-150 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                        />
-                      </div>
-                      <div className="text-xs font-mono text-slate-400">
-                        Total Records: {auditLogs.length}
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
-                      <div className="divide-y divide-slate-100">
-                        {auditLogs.filter(log => {
-                          const query = historySearchQuery.toLowerCase();
-                          return (
-                            log.admin_name.toLowerCase().includes(query) ||
-                            log.admin_email.toLowerCase().includes(query) ||
-                            log.ambassador_name.toLowerCase().includes(query) ||
-                            log.ambassador_id.toLowerCase().includes(query)
-                          );
-                        }).length === 0 ? (
-                          <div className="p-16 text-center text-slate-400 text-xs text-left">
-                            <History size={36} className="mx-auto mb-3 text-slate-300 animate-pulse" />
-                            No administrative oversight logs recorded or found.
+                    {historySubTab === "audit" ? (
+                      <>
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
+                          <div className="relative w-full md:max-w-md text-left">
+                            <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
+                            <input
+                              type="text"
+                              value={historySearchQuery}
+                              onChange={(e) => setHistorySearchQuery(e.target.value)}
+                              placeholder="Search admin, or ambassador..."
+                              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-150 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                            />
                           </div>
-                        ) : (
-                          auditLogs
-                            .filter(log => {
+                          <div className="text-xs font-mono text-slate-400">
+                            Total Records: {auditLogs.length}
+                          </div>
+                        </div>
+
+                        <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
+                          <div className="divide-y divide-slate-100">
+                            {auditLogs.filter(log => {
                               const query = historySearchQuery.toLowerCase();
                               return (
                                 log.admin_name.toLowerCase().includes(query) ||
@@ -1858,53 +1906,175 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 log.ambassador_name.toLowerCase().includes(query) ||
                                 log.ambassador_id.toLowerCase().includes(query)
                               );
-                            })
-                            .map((log) => (
-                              <div key={log.id} className="p-6 hover:bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
-                                <div className="space-y-2 flex-1 min-w-0 text-left">
-                                  <div className="flex items-center gap-2.5 flex-wrap">
-                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
-                                      Log ID: {log.id}
-                                    </span>
-                                    {log.action === "approved" ? (
-                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                        <CheckCircle size={10} className="text-emerald-500" /> Approved
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                        <XCircle size={10} className="text-rose-500" /> Disapproved
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="grid md:grid-cols-2 gap-4 text-xs font-sans text-slate-600 pt-1">
-                                    <div className="space-y-1">
-                                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">ADMINISTRATIVE AUDITOR</span>
-                                      <p className="font-bold text-slate-900">{log.admin_name}</p>
-                                      <p className="text-[10px] font-mono text-slate-500">{log.admin_email}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">FELLOWSHIP TARGET</span>
-                                      <p className="font-bold text-slate-900">{log.ambassador_name}</p>
-                                      <p className="text-[10px] font-mono text-slate-500">ID: {log.ambassador_id}</p>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="flex-shrink-0 text-left md:text-right">
-                                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-1">AUDIT TIMESTAMP</span>
-                                  <p className="text-xs font-mono text-slate-600 font-bold">
-                                    {new Date(log.created_at).toLocaleDateString()}
-                                  </p>
-                                  <p className="text-[10px] font-mono text-slate-400 text-left md:text-right">
-                                    {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </p>
-                                </div>
+                            }).length === 0 ? (
+                              <div className="p-16 text-center text-slate-400 text-xs text-left">
+                                <History size={36} className="mx-auto mb-3 text-slate-300 animate-pulse" />
+                                No administrative oversight logs recorded or found.
                               </div>
-                            ))
-                        )}
-                      </div>
-                    </div>
+                            ) : (
+                              auditLogs
+                                .filter(log => {
+                                  const query = historySearchQuery.toLowerCase();
+                                  return (
+                                    log.admin_name.toLowerCase().includes(query) ||
+                                    log.admin_email.toLowerCase().includes(query) ||
+                                    log.ambassador_name.toLowerCase().includes(query) ||
+                                    log.ambassador_id.toLowerCase().includes(query)
+                                  );
+                                })
+                                .map((log) => (
+                                  <div key={log.id} className="p-6 hover:bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
+                                    <div className="space-y-2 flex-1 min-w-0 text-left">
+                                      <div className="flex items-center gap-2.5 flex-wrap">
+                                        <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
+                                          Log ID: {log.id}
+                                        </span>
+                                        {log.action === "approved" ? (
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                            <CheckCircle size={10} className="text-emerald-500" /> Approved
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                            <XCircle size={10} className="text-rose-500" /> Disapproved
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="grid md:grid-cols-2 gap-4 text-xs font-sans text-slate-600 pt-1">
+                                        <div className="space-y-1">
+                                          <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">ADMINISTRATIVE AUDITOR</span>
+                                          <p className="font-bold text-slate-900">{log.admin_name}</p>
+                                          <p className="text-[10px] font-mono text-slate-500">{log.admin_email}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">FELLOWSHIP TARGET</span>
+                                          <p className="font-bold text-slate-900">{log.ambassador_name}</p>
+                                          <p className="text-[10px] font-mono text-slate-500">ID: {log.ambassador_id}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex-shrink-0 text-left md:text-right">
+                                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-1">AUDIT TIMESTAMP</span>
+                                      <p className="text-xs font-mono text-slate-600 font-bold">
+                                        {new Date(log.created_at).toLocaleDateString()}
+                                      </p>
+                                      <p className="text-[10px] font-mono text-slate-400 text-left md:text-right">
+                                        {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
+                          <div className="relative w-full md:max-w-md text-left">
+                            <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
+                            <input
+                              type="text"
+                              value={historySearchQuery}
+                              onChange={(e) => setHistorySearchQuery(e.target.value)}
+                              placeholder="Search recipient email, name, or subject..."
+                              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-150 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                            />
+                          </div>
+                          <div className="text-xs font-mono text-slate-400">
+                            Total Dispatched: {sentEmails.length}
+                          </div>
+                        </div>
+
+                        <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
+                          <div className="divide-y divide-slate-100">
+                            {sentEmails.filter(email => {
+                              const query = historySearchQuery.toLowerCase();
+                              return (
+                                email.recipientEmail.toLowerCase().includes(query) ||
+                                email.recipientName.toLowerCase().includes(query) ||
+                                email.subject.toLowerCase().includes(query)
+                              );
+                            }).length === 0 ? (
+                              <div className="p-16 text-center text-slate-400 text-xs text-left">
+                                <Mail size={36} className="mx-auto mb-3 text-slate-300 animate-pulse" />
+                                No transactional email notifications triggered yet.
+                              </div>
+                            ) : (
+                              sentEmails
+                                .filter(email => {
+                                  const query = historySearchQuery.toLowerCase();
+                                  return (
+                                    email.recipientEmail.toLowerCase().includes(query) ||
+                                    email.recipientName.toLowerCase().includes(query) ||
+                                    email.subject.toLowerCase().includes(query)
+                                  );
+                                })
+                                .map((email) => (
+                                  <div key={email.id} className="p-6 hover:bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
+                                    <div className="space-y-2 flex-1 min-w-0 text-left">
+                                      <div className="flex items-center gap-2.5 flex-wrap">
+                                        <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
+                                          ID: {email.id}
+                                        </span>
+                                        {email.status === "sent" ? (
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                            <CheckCircle size={10} className="text-emerald-500" /> Sent via SMTP
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                            <Activity size={10} className="text-blue-500" /> Logged Fallback
+                                          </span>
+                                        )}
+                                        {email.generatedWithAI && (
+                                          <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100 text-[9px] font-black uppercase tracking-wider">
+                                            ✨ Gemini AI Personalized
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="pt-1">
+                                        <h4 className="text-xs font-bold text-slate-900">{email.subject}</h4>
+                                      </div>
+
+                                      <div className="grid md:grid-cols-2 gap-4 text-xs font-sans text-slate-600 pt-1">
+                                        <div className="space-y-1">
+                                          <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">RECIPIENT</span>
+                                          <p className="font-bold text-slate-900">{email.recipientName}</p>
+                                          <p className="text-[10px] font-mono text-slate-500">{email.recipientEmail}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block">DISPATCH ROUTE</span>
+                                          <p className="font-bold text-slate-800 uppercase text-[10px]">{email.method}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-col md:items-end gap-3 flex-shrink-0">
+                                      <div className="text-left md:text-right">
+                                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 block mb-1">TRIGGER TIMESTAMP</span>
+                                        <p className="text-xs font-mono text-slate-600 font-bold">
+                                          {new Date(email.sentAt).toLocaleDateString()}
+                                        </p>
+                                        <p className="text-[10px] font-mono text-slate-400 text-left md:text-right">
+                                          {new Date(email.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </p>
+                                      </div>
+                                      <button
+                                        onClick={() => setSelectedEmailForView(email)}
+                                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 self-start md:self-end cursor-pointer"
+                                      >
+                                        <Eye size={10} /> View HTML Email
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </motion.div>
                 )}
 
@@ -2452,6 +2622,59 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl cursor-pointer border border-transparent"
                 >
                   Bulk Execute
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 7. TRANSACTIONAL EMAIL PREVIEW MODAL */}
+      <AnimatePresence>
+        {selectedEmailForView && (
+          <div className="fixed inset-0 bg-slate-900/65 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 15, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              className="w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl relative text-left flex flex-col max-h-[85vh] z-[60]"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-900 text-white">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Transactional Email Preview</h3>
+                  <p className="text-[10px] text-slate-300 font-mono mt-0.5">ID: {selectedEmailForView.id}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedEmailForView(null)}
+                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer"
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+
+              {/* Metadata fields */}
+              <div className="bg-slate-50 p-4 border-b border-slate-100 text-xs space-y-1.5">
+                <p className="text-slate-500 font-mono"><strong className="text-slate-700">Subject:</strong> {selectedEmailForView.subject}</p>
+                <p className="text-slate-500 font-mono"><strong className="text-slate-700">To:</strong> {selectedEmailForView.recipientName} &lt;{selectedEmailForView.recipientEmail}&gt;</p>
+                <p className="text-slate-500 font-mono"><strong className="text-slate-700">Sent Via:</strong> <span className="bg-slate-200 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">{selectedEmailForView.method}</span></p>
+              </div>
+
+              {/* Content Area with direct injection inside sandbox boundaries */}
+              <div className="p-4 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
+                <div 
+                  className="w-full max-w-full bg-white rounded-xl shadow-sm p-4 overflow-hidden border border-slate-200 max-h-[50vh] overflow-y-auto"
+                  dangerouslySetInnerHTML={{ __html: selectedEmailForView.bodyHtml }}
+                />
+              </div>
+
+              {/* Footer action */}
+              <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50">
+                <button
+                  onClick={() => setSelectedEmailForView(null)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer"
+                >
+                  Close Preview
                 </button>
               </div>
             </motion.div>

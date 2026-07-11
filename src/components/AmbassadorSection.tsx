@@ -133,6 +133,12 @@ export const AmbassadorSection: React.FC = () => {
         return;
       }
 
+      if (user.status === "pending" || user.badge_status === "pending") {
+        setLoginError("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
+        setIsLoggingIn(false);
+        return;
+      }
+
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         try {
@@ -355,7 +361,8 @@ export const AmbassadorSection: React.FC = () => {
             focus_interest: field,
             phone_number: phone,
             email: cleanEmail,
-            badge_status: "pending"
+            badge_status: "pending",
+            avu_balance: 1250
           };
 
           try {
@@ -367,44 +374,67 @@ export const AmbassadorSection: React.FC = () => {
               .single();
 
             if (insertError) {
+              console.warn("[AMBASSADOR SIGNUP] Direct table insert into 'ambassadors' failed, trying capitalized fallback:", insertError);
               const fallbackRes = await supabase
                 .from("Ambassadors")
                 .insert([rowData])
                 .select()
                 .single();
               if (fallbackRes.error) {
-                console.warn("[AMBASSADOR SIGNUP] Direct table inserts failed, fallback will follow:", fallbackRes.error);
+                console.error("[AMBASSADOR SIGNUP] Fallback table insert failed as well:", fallbackRes.error);
               } else if (fallbackRes.data) {
                 console.log("[AMBASSADOR SIGNUP] Fallback table insert succeeded:", fallbackRes.data);
+                insertedData = fallbackRes.data;
               }
             } else {
               console.log("[AMBASSADOR SIGNUP] Direct table insert succeeded:", insertedData);
             }
+
+            // Sync to local storage database cache
+            const localDb = JSON.parse(localStorage.getItem("advaltad_ambassadors_db") || "[]");
+            const freshLocal = {
+              id: authData.user.id,
+              user_id: authData.user.id,
+              name,
+              professional_name: name,
+              city,
+              base_city: city,
+              field,
+              focus_interest: field,
+              email: cleanEmail,
+              phone,
+              phone_number: phone,
+              password,
+              status: "pending" as const,
+              badge_status: "pending" as const,
+              avu_balance: 1250,
+              created_at: new Date().toISOString()
+            };
+            const existingIdx = localDb.findIndex((a: any) => a.email.trim().toLowerCase() === cleanEmail);
+            if (existingIdx !== -1) {
+              localDb[existingIdx] = freshLocal;
+            } else {
+              localDb.push(freshLocal);
+            }
+            localStorage.setItem("advaltad_ambassadors_db", JSON.stringify(localDb));
           } catch (dbDirectErr) {
             console.warn("[AMBASSADOR SIGNUP] Direct table insert experienced an exception:", dbDirectErr);
           }
-        }
-
-        // Map the form fields explicitly to Supabase database columns for ingestion
-        const registrationData = {
-          professional_name: name,
-          base_city: city,
-          focus_interest: field,
-          phone_number: phone,
-          email: cleanEmail,
-          password,
-          user_id: userId
-        };
-
-        // STEP 3: Insert the ambassador profile into the Supabase table
-        try {
-          const newlyCreated = await db.createAmbassador(registrationData);
-          newlyCreatedId = newlyCreated.id;
-          newlyCreatedName = newlyCreated.name || name;
-        } catch (dbError: any) {
-          console.warn("[AMBASSADOR SIGNUP] Supabase Database/RLS insertion failed, continuing with local storage registration fallback:", dbError);
-          newlyCreatedId = userId;
-          newlyCreatedName = name;
+        } else {
+          // If Supabase server issue / fallback auth is down
+          try {
+            await db.createAmbassador({
+              name,
+              city,
+              field,
+              email: cleanEmail,
+              phone,
+              password,
+              user_id: userId
+            });
+          } catch (dbError) {
+            console.warn("[AMBASSADOR SIGNUP] Database/RLS fallback table insert failed:", dbError);
+          }
         }
       } else {
         // Fallback local DB mode

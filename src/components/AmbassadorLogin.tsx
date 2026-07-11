@@ -132,6 +132,12 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         return;
       }
 
+      if (user.status === "pending" || user.badge_status === "pending") {
+        setErrorMsg("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
+        setIsLoggingIn(false);
+        return;
+      }
+
       // If Supabase is configured, sign in via Supabase Auth as well
       if (isSupabaseConfigured && supabase) {
         try {
