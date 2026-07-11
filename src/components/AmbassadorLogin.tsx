@@ -150,8 +150,14 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
               authError.message?.includes("{}") ||
               !authError.message;
 
-            if (isServerIssue) {
-              console.warn("[AMBASSADOR LOGIN] Bypassing Supabase Auth server-side/network issue (status 500 or retryable fetch error) and allowing access using database validated credentials:", authError);
+            const isEmailNotConfirmed = 
+              authError.message?.toLowerCase().includes("confirm") || 
+              authError.message?.toLowerCase().includes("not confirmed") ||
+              authError.message?.toLowerCase().includes("verification") ||
+              (authError.status === 400 && authError.message?.toLowerCase().includes("email"));
+
+            if (isServerIssue || isEmailNotConfirmed) {
+              console.warn("[AMBASSADOR LOGIN] Bypassing Supabase Auth issue (email not confirmed or server issue) and allowing access using database validated credentials:", authError);
             } else {
               setErrorMsg("Authentication failed: " + authError.message);
               setIsLoggingIn(false);

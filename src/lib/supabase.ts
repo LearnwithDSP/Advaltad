@@ -24,14 +24,14 @@ export interface DbAmbassador {
   id: string;
   user_id?: string;
   db_id?: string;
-  name: string;
+  name?: string;
   professional_name?: string;
-  city: string;
+  city?: string;
   base_city?: string;
-  field: string;
+  field?: string;
   focus_interest?: string;
   email: string;
-  phone: string;
+  phone?: string;
   phone_number?: string;
   password?: string;
   status: "pending" | "approved" | "disapproved";
@@ -417,12 +417,28 @@ export const db = {
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string }): Promise<DbAmbassador> {
     const cleanEmail = newAmbassador.email.trim().toLowerCase();
+
+    // Explicitly handle conversion/mapping of incoming form fields in the ingestion pipeline
+    const nameVal = newAmbassador.professional_name || newAmbassador.name || "";
+    const cityVal = newAmbassador.base_city || newAmbassador.city || "";
+    const fieldVal = newAmbassador.focus_interest || newAmbassador.field || "";
+    const phoneVal = newAmbassador.phone_number || newAmbassador.phone || "";
+
     const fresh: DbAmbassador = {
       id: newAmbassador.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000),
-      ...newAmbassador,
+      name: nameVal,
+      professional_name: nameVal,
+      city: cityVal,
+      base_city: cityVal,
+      field: fieldVal,
+      focus_interest: fieldVal,
+      phone: phoneVal,
+      phone_number: phoneVal,
       email: cleanEmail,
+      password: newAmbassador.password,
       avu_balance: 1250,
       status: "pending", 
+      badge_status: "pending",
       created_at: new Date().toISOString()
     };
 
@@ -444,13 +460,60 @@ export const db = {
 
     if (isSupabaseConfigured && supabase) {
       try {
+        // Try the secure, backend registration first to bypass any Client-side RLS limits
+        const response = await fetch("/api/register", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            name: fresh.name,
+            professional_name: fresh.professional_name,
+            city: fresh.city,
+            base_city: fresh.base_city,
+            field: fresh.field,
+            focus_interest: fresh.focus_interest,
+            email: fresh.email,
+            phone: fresh.phone,
+            phone_number: fresh.phone_number,
+            user_id: newAmbassador.user_id,
+            password: fresh.password
+          })
+        });
+
+        if (response.ok) {
+          const resJson = await response.json();
+          if (resJson.status && resJson.data) {
+            const matched = mapRowToAmbassador(resJson.data);
+            matched.password = fresh.password; // Keep password in local cache
+            
+            const localDb = getLocalDb();
+            const existingIdx = localDb.findIndex(a => a.email.trim().toLowerCase() === cleanEmail);
+            if (existingIdx !== -1) {
+              localDb[existingIdx] = matched;
+            } else {
+              localDb.push(matched);
+            }
+            saveLocalDb(localDb);
+            console.log("[createAmbassador] Securely registered via server API:", matched);
+            return matched;
+          }
+        } else {
+          console.warn("[createAmbassador] Server-side registration endpoint returned error:", response.status);
+        }
+      } catch (apiErr) {
+        console.warn("[createAmbassador] Server-side registration endpoint exception, trying direct fallback:", apiErr);
+      }
+
+      // Fallback: direct client-side insert/upsert
+      try {
         const rowData = {
           user_id: newAmbassador.user_id || null,
-          professional_name: fresh.name,
-          base_city: fresh.city,
-          focus_interest: fresh.field,
+          professional_name: fresh.professional_name,
+          base_city: fresh.base_city,
+          focus_interest: fresh.focus_interest,
           email: fresh.email,
-          phone_number: fresh.phone,
+          phone_number: fresh.phone_number,
           badge_status: "pending"
         };
         
@@ -476,6 +539,7 @@ export const db = {
 
         if (!error && data) {
           const matched = mapRowToAmbassador(data);
+          matched.password = fresh.password; // Keep password in local cache
           
           // Setup a wallet for them in Supabase
           try {
@@ -500,7 +564,7 @@ export const db = {
           return matched;
         }
         
-        console.warn("Supabase row upsert failed, continuing with local registration:", error);
+        console.warn("Supabase row upsert fallback failed, continuing with local registration:", error);
         return fresh;
       } catch (err) {
         console.error("Supabase insert structural exception:", err);

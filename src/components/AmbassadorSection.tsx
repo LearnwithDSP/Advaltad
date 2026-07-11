@@ -338,19 +338,22 @@ export const AmbassadorSection: React.FC = () => {
 
         newlyCreatedId = userId;
 
+        // Map the form fields explicitly to Supabase database columns for ingestion
+        const registrationData = {
+          professional_name: name,
+          base_city: city,
+          focus_interest: field,
+          phone_number: phone,
+          email: cleanEmail,
+          password,
+          user_id: userId
+        };
+
         // STEP 3: Insert the ambassador profile into the Supabase table
         try {
-          const newlyCreated = await db.createAmbassador({
-            name,
-            city,
-            field,
-            email: cleanEmail,
-            phone,
-            password,
-            user_id: userId
-          });
+          const newlyCreated = await db.createAmbassador(registrationData);
           newlyCreatedId = newlyCreated.id;
-          newlyCreatedName = newlyCreated.name;
+          newlyCreatedName = newlyCreated.name || name;
         } catch (dbError: any) {
           console.warn("[AMBASSADOR SIGNUP] Supabase Database/RLS insertion failed, continuing with local storage registration fallback:", dbError);
           newlyCreatedId = userId;
