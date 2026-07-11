@@ -254,7 +254,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     phone_number: phoneVal,
     status: mappedStatus,
     badge_status: mappedStatus,
-    avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 0,
+    avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 1250,
     created_at: row.created_at || new Date().toISOString()
   };
 }
@@ -273,7 +273,6 @@ function mapAmbassadorToRow(ambassador: Partial<DbAmbassador>) {
   else if (ambassador.phone !== undefined) row.phone_number = ambassador.phone;
   if (ambassador.badge_status !== undefined) row.badge_status = ambassador.badge_status;
   else if (ambassador.status !== undefined) row.badge_status = ambassador.status;
-  if (ambassador.avu_balance !== undefined) row.avu_balance = ambassador.avu_balance;
   return row;
 }
 
@@ -300,8 +299,26 @@ export const db = {
           }
         }
         
+        // Fetch all wallets to merge their balances
+        let wallets: DbAmbassadorWallet[] = [];
+        try {
+          const walletsRes = await supabase.from("ambassador_wallets").select("*");
+          if (!walletsRes.error && walletsRes.data) {
+            wallets = walletsRes.data as DbAmbassadorWallet[];
+          }
+        } catch (wErr) {
+          console.warn("Could not fetch wallets for merge in getAmbassadors:", wErr);
+        }
+
         const localList = getLocalDb();
-        const liveList = data ? data.map(mapRowToAmbassador) : [];
+        const liveList = data ? data.map(row => {
+          const mapped = mapRowToAmbassador(row);
+          const wallet = wallets.find(w => w.ambassador_id === mapped.id || w.email.toLowerCase() === mapped.email.toLowerCase());
+          if (wallet) {
+            mapped.avu_balance = wallet.balance;
+          }
+          return mapped;
+        }) : [];
         
         const mergedMap = new Map<string, DbAmbassador>();
         localList.forEach(item => {
@@ -357,6 +374,21 @@ export const db = {
 
         if (data) {
           const matched = mapRowToAmbassador(data);
+          
+          // Fetch wallet balance to merge into avu_balance
+          try {
+            const { data: walletData } = await supabase
+              .from("ambassador_wallets")
+              .select("balance")
+              .or(`ambassador_id.eq.${matched.id},email.eq.${sanitizedEmail}`)
+              .maybeSingle();
+            if (walletData) {
+              matched.avu_balance = walletData.balance;
+            }
+          } catch (wErr) {
+            console.warn("Could not fetch wallet in findAmbassadorByEmail:", wErr);
+          }
+
           // Mirror to local DB
           const localDb = getLocalDb();
           const idx = localDb.findIndex(a => a.email.trim().toLowerCase() === sanitizedEmail);
@@ -389,7 +421,7 @@ export const db = {
       id: newAmbassador.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000),
       ...newAmbassador,
       email: cleanEmail,
-      avu_balance: 0,
+      avu_balance: 1250,
       status: "pending", 
       created_at: new Date().toISOString()
     };
@@ -413,14 +445,13 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       try {
         const rowData = {
-          user_id: newAmbassador.user_id,
+          user_id: newAmbassador.user_id || null,
           professional_name: fresh.name,
           base_city: fresh.city,
           focus_interest: fresh.field,
           email: fresh.email,
           phone_number: fresh.phone,
-          badge_status: "pending", 
-          avu_balance: fresh.avu_balance
+          badge_status: "pending"
         };
         
         let { data, error } = await supabase
@@ -445,6 +476,19 @@ export const db = {
 
         if (!error && data) {
           const matched = mapRowToAmbassador(data);
+          
+          // Setup a wallet for them in Supabase
+          try {
+            await this.createWallet({
+              ambassador_id: matched.id,
+              email: matched.email,
+              balance: 1250
+            });
+            matched.avu_balance = 1250;
+          } catch (walletErr) {
+            console.warn("Failed to auto-create wallet for new ambassador:", walletErr);
+          }
+
           const localDb = getLocalDb();
           const existingIdx = localDb.findIndex(a => a.email.trim().toLowerCase() === cleanEmail);
           if (existingIdx !== -1) {
@@ -468,9 +512,10 @@ export const db = {
   },
 
   async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
+    const sanitizedId = typeof id === "string" && !isUuid(id) ? id.replace(/200$/, "").trim().toLowerCase() : id;
     try {
       const localDb = getLocalDb();
-      const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+      const index = localDb.findIndex(a => a.id === sanitizedId || a.email.toLowerCase() === sanitizedId.toLowerCase());
       if (index !== -1) {
         localDb[index].status = status;
         saveLocalDb(localDb);
@@ -482,12 +527,12 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       try {
         let query = supabase.from("ambassadors").update({ badge_status: status });
-        query = isUuid(id) ? query.or(`id.eq.${id},user_id.eq.${id}`) : query.eq("email", id);
+        query = isUuid(sanitizedId) ? query.or(`id.eq.${sanitizedId},user_id.eq.${sanitizedId}`) : query.eq("email", sanitizedId);
         let { error } = await query;
         
         if (error) {
           let fallbackQuery = supabase.from("Ambassadors").update({ badge_status: status });
-          fallbackQuery = isUuid(id) ? fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`) : fallbackQuery.eq("email", id);
+          fallbackQuery = isUuid(sanitizedId) ? fallbackQuery.or(`id.eq.${sanitizedId},user_id.eq.${sanitizedId}`) : fallbackQuery.eq("email", sanitizedId);
           const fallbackRes = await fallbackQuery;
           error = fallbackRes.error;
         }
@@ -504,9 +549,10 @@ export const db = {
   },
 
   async updateAvuBalance(id: string, amount: number): Promise<boolean> {
+    const sanitizedId = typeof id === "string" && !isUuid(id) ? id.replace(/200$/, "").trim().toLowerCase() : id;
     try {
       const localDb = getLocalDb();
-      const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+      const index = localDb.findIndex(a => a.id === sanitizedId || a.email.toLowerCase() === sanitizedId.toLowerCase());
       if (index !== -1) {
         localDb[index].avu_balance = amount;
         saveLocalDb(localDb);
@@ -517,21 +563,10 @@ export const db = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        let query = supabase.from("ambassadors").update({ avu_balance: amount });
-        query = isUuid(id) ? query.or(`id.eq.${id},user_id.eq.${id}`) : query.eq("email", id);
-        let { error } = await query;
-        
-        if (error) {
-          let fallbackQuery = supabase.from("Ambassadors").update({ avu_balance: amount });
-          fallbackQuery = isUuid(id) ? fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`) : fallbackQuery.eq("email", id);
-          const fallbackRes = await fallbackQuery;
-          error = fallbackRes.error;
-        }
-        if (!error) return true;
-        console.warn("Failed to update balance on Supabase, but balance is synced locally:", error);
-        return true;
+        const walletSuccess = await db.updateWalletBalance(sanitizedId, amount);
+        return walletSuccess;
       } catch (err) {
-        console.warn("Supabase balance shift exception:", err);
+        console.warn("Supabase balance shift exception via wallet:", err);
         return true;
       }
     } else {
@@ -540,15 +575,16 @@ export const db = {
   },
 
   async updateProfile(id: string, updates: Partial<Omit<DbAmbassador, "id" | "email" | "avu_balance" | "status" | "created_at">>): Promise<boolean> {
+    const sanitizedId = typeof id === "string" && !isUuid(id) ? id.replace(/200$/, "").trim().toLowerCase() : id;
     if (isSupabaseConfigured && supabase) {
       try {
         let query = supabase.from("ambassadors").update(mapAmbassadorToRow(updates));
-        query = isUuid(id) ? query.or(`id.eq.${id},user_id.eq.${id}`) : query.eq("email", id);
+        query = isUuid(sanitizedId) ? query.or(`id.eq.${sanitizedId},user_id.eq.${sanitizedId}`) : query.eq("email", sanitizedId);
         let { error } = await query;
         
         if (error) {
           let fallbackQuery = supabase.from("Ambassadors").update(mapAmbassadorToRow(updates));
-          fallbackQuery = isUuid(id) ? fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`) : fallbackQuery.eq("email", id);
+          fallbackQuery = isUuid(sanitizedId) ? fallbackQuery.or(`id.eq.${sanitizedId},user_id.eq.${sanitizedId}`) : fallbackQuery.eq("email", sanitizedId);
           const fallbackRes = await fallbackQuery;
           error = fallbackRes.error;
         }
@@ -560,7 +596,7 @@ export const db = {
       }
     } else {
       const localDb = getLocalDb();
-      const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+      const index = localDb.findIndex(a => a.id === sanitizedId || a.email.toLowerCase() === sanitizedId.toLowerCase());
       if (index !== -1) {
         localDb[index] = { ...localDb[index], ...updates };
         saveLocalDb(localDb);
@@ -571,15 +607,16 @@ export const db = {
   },
 
   async deleteAmbassador(id: string): Promise<boolean> {
+    const sanitizedId = typeof id === "string" && !isUuid(id) ? id.replace(/200$/, "").trim().toLowerCase() : id;
     if (isSupabaseConfigured && supabase) {
       try {
         let query = supabase.from("ambassadors").delete();
-        query = isUuid(id) ? query.or(`id.eq.${id},user_id.eq.${id}`) : query.eq("email", id);
+        query = isUuid(sanitizedId) ? query.or(`id.eq.${sanitizedId},user_id.eq.${sanitizedId}`) : query.eq("email", sanitizedId);
         let { error } = await query;
         
         if (error) {
           let fallbackQuery = supabase.from("Ambassadors").delete();
-          fallbackQuery = isUuid(id) ? fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`) : fallbackQuery.eq("email", id);
+          fallbackQuery = isUuid(sanitizedId) ? fallbackQuery.or(`id.eq.${sanitizedId},user_id.eq.${sanitizedId}`) : fallbackQuery.eq("email", sanitizedId);
           const fallbackRes = await fallbackQuery;
           error = fallbackRes.error;
         }
@@ -591,7 +628,7 @@ export const db = {
       }
     } else {
       const localDb = getLocalDb();
-      const filtered = localDb.filter(a => a.id !== id && a.email.toLowerCase() !== id.toLowerCase());
+      const filtered = localDb.filter(a => a.id !== sanitizedId && a.email.toLowerCase() !== sanitizedId.toLowerCase());
       if (filtered.length !== localDb.length) {
         saveLocalDb(filtered);
         return true;

@@ -204,6 +204,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setIsLoadingDb(true);
     setDbError("");
     try {
+      // Load wallets first so we have accurate balance data to merge
+      let walletsData: DbAmbassadorWallet[] = [];
+      try {
+        walletsData = await db.getWallets();
+        setWallets(walletsData);
+      } catch (wErr) {
+        console.error("[ADMIN PORTAL] Failed to pre-load wallets:", wErr);
+      }
+
       let allAmbassadors: DbAmbassador[] = [];
       if (isSupabaseConfigured && supabase) {
         console.log("[ADMIN PORTAL] Executing direct select('*') query on 'public.ambassadors' table (Supabase direct fetch)...");
@@ -237,8 +246,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             const fieldVal = row.focus_interest || row.field || "";
             const phoneVal = row.phone_number || row.phone || "";
 
+            const ambId = row.user_id || row.id || "";
+            const ambEmail = row.email || "";
+            
+            // Find matched wallet balance
+            const wallet = walletsData.find(w => w.ambassador_id === ambId || w.email.toLowerCase() === ambEmail.toLowerCase());
+            const walletBal = wallet ? wallet.balance : 1250;
+
             return {
-              id: row.user_id || row.id || "",
+              id: ambId,
               user_id: row.user_id || undefined,
               db_id: row.id || undefined,
               name: nameVal,
@@ -247,12 +263,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               base_city: cityVal,
               field: fieldVal,
               focus_interest: fieldVal,
-              email: row.email || "",
+              email: ambEmail,
               phone: phoneVal,
               phone_number: phoneVal,
               status: mappedStatus,
               badge_status: mappedStatus,
-              avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 0,
+              avu_balance: walletBal,
               created_at: row.created_at || new Date().toISOString()
             };
           });
@@ -269,7 +285,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       setAmbassadors(allAmbassadors || []);
       setActivities(allActivities || []);
       await loadBlogs();
-      await loadWallets();
       try {
         const logs = await db.getAuditLogs();
         setAuditLogs(logs);
