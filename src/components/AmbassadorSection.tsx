@@ -292,10 +292,18 @@ export const AmbassadorSection: React.FC = () => {
         let authError: any = null;
         
         try {
-          // STEP 2: Create the user account using Supabase Auth
+          // STEP 2: Create the user account using Supabase Auth with metadata options
           const res = await supabase.auth.signUp({
             email: cleanEmail,
             password,
+            options: {
+              data: {
+                name,
+                city,
+                field,
+                phone
+              }
+            }
           });
           authData = res.data;
           authError = res.error;
@@ -337,6 +345,45 @@ export const AmbassadorSection: React.FC = () => {
         }
 
         newlyCreatedId = userId;
+
+        // Perform a secure, immediate database row insert into public.ambassadors using precise column mappings
+        if (authData?.user?.id) {
+          const rowData = {
+            user_id: authData.user.id,
+            professional_name: name,
+            base_city: city,
+            focus_interest: field,
+            phone_number: phone,
+            email: cleanEmail,
+            badge_status: "pending"
+          };
+
+          try {
+            console.log("[AMBASSADOR SIGNUP] Performing secure database row insert:", rowData);
+            let { data: insertedData, error: insertError } = await supabase
+              .from("ambassadors")
+              .insert([rowData])
+              .select()
+              .single();
+
+            if (insertError) {
+              const fallbackRes = await supabase
+                .from("Ambassadors")
+                .insert([rowData])
+                .select()
+                .single();
+              if (fallbackRes.error) {
+                console.warn("[AMBASSADOR SIGNUP] Direct table inserts failed, fallback will follow:", fallbackRes.error);
+              } else if (fallbackRes.data) {
+                console.log("[AMBASSADOR SIGNUP] Fallback table insert succeeded:", fallbackRes.data);
+              }
+            } else {
+              console.log("[AMBASSADOR SIGNUP] Direct table insert succeeded:", insertedData);
+            }
+          } catch (dbDirectErr) {
+            console.warn("[AMBASSADOR SIGNUP] Direct table insert experienced an exception:", dbDirectErr);
+          }
+        }
 
         // Map the form fields explicitly to Supabase database columns for ingestion
         const registrationData = {

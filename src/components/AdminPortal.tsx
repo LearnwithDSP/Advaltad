@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
+import { RegionalGrowthChart } from "./RegionalGrowthChart";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -1234,7 +1235,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6"
                   >
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <RegionalGrowthChart ambassadors={ambassadors} />
+
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-4 pt-2">
                       <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Sovereign Registry Audit Trail</h3>
                         <p className="text-xs text-slate-500">Chronological history of registered ambassador events, credentials updates, and financial logs.</p>
