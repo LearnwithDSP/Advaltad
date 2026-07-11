@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Icon } from "./Icon";
-import { db, isSupabaseConfigured, supabase } from "../lib/supabase";
+import { db, isSupabaseConfigured, supabase, supabaseAdmin } from "../lib/supabase";
 import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
 
 interface AmbassadorLoginProps {
@@ -33,7 +33,45 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
     setIsLoggingIn(true);
 
     try {
+      // PRE-CHECK: Query the database using the sanitized email to check for a 'pending' state case-insensitively
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        const client = supabaseAdmin || supabase;
+        let preQuery = client.from("ambassadors").select("*").ilike("email", sanitizedEmail);
+        let preRes = await preQuery;
+        if (preRes.error || !preRes.data || preRes.data.length === 0) {
+          const fallbackPre = await client.from("Ambassadors").select("*").ilike("email", sanitizedEmail);
+          if (!fallbackPre.error && fallbackPre.data && fallbackPre.data.length > 0) {
+            preRes = fallbackPre;
+          }
+        }
+        if (preRes.data && preRes.data.length > 0) {
+          const amb = preRes.data[0];
+          const badgeStatus = amb.badge_status ? amb.badge_status.toString().toLowerCase().trim() : "";
+          const status = amb.status ? amb.status.toString().toLowerCase().trim() : "";
+          if (badgeStatus === "pending" || status === "pending") {
+            const pendingMsg = "Awaiting Admin Approval: Your growth ambassador application is currently under review by our executive board. You will receive access details once approved.";
+            setErrorMsg(pendingMsg);
+            setIsLoggingIn(false);
+            return;
+          }
+        }
+      } else {
+        // Fallback local DB check for pending status
+        const localAmb = await db.findAmbassadorByEmail(sanitizedEmail);
+        if (localAmb) {
+          const badgeStatus = localAmb.badge_status ? localAmb.badge_status.toString().toLowerCase().trim() : "";
+          const status = localAmb.status ? localAmb.status.toString().toLowerCase().trim() : "";
+          if (badgeStatus === "pending" || status === "pending") {
+            const pendingMsg = "Awaiting Admin Approval: Your growth ambassador application is currently under review by our executive board. You will receive access details once approved.";
+            setErrorMsg(pendingMsg);
+            setIsLoggingIn(false);
+            return;
+          }
+        }
+      }
+
       let authUserId: string | null = null;
+      let authEmail = sanitizedEmail;
 
       // STEP 1: Authenticate the user credentials FIRST to establish a session and unlock RLS
       if (isSupabaseConfigured && supabase) {
@@ -54,8 +92,9 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
         if (authData?.user) {
           authUserId = authData.user.id;
-          console.log("[AMBASSADOR LOGIN] Session unlocked! User UUID:", authUserId);
-          logDbOperation("Ambassador Supabase Auth Signin Success", { email: sanitizedEmail, userId: authUserId }, null);
+          authEmail = authData.user.email || sanitizedEmail;
+          console.log("[AMBASSADOR LOGIN] Session unlocked! User UUID:", authUserId, "Email:", authEmail);
+          logDbOperation("Ambassador Supabase Auth Signin Success", { email: authEmail, userId: authUserId }, null);
         }
       }
 
@@ -64,23 +103,24 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       if (isSupabaseConfigured && supabase) {
         console.log("[AMBASSADOR LOGIN] Fetching public profile data row...");
         
-        // Match by authenticated user_id OR email to eliminate field discrepancies
+        // Match by authenticated user's email or user_id to eliminate field discrepancies (case-insensitive)
         const fetchProfile = async () => {
-          let query = supabase.from("ambassadors").select("*");
+          const client = supabaseAdmin || supabase;
+          let query = client.from("ambassadors").select("*");
           if (authUserId) {
-            query = query.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+            query = query.or(`user_id.eq.${authUserId},email.ilike.${authEmail}`);
           } else {
-            query = query.eq("email", sanitizedEmail);
+            query = query.ilike("email", authEmail);
           }
           let res = await query;
           
           // Capitalized table name fallback matching original setup
           if (res.error || !res.data || res.data.length === 0) {
-            let fallbackQuery = supabase.from("Ambassadors").select("*");
+            let fallbackQuery = client.from("Ambassadors").select("*");
             if (authUserId) {
-              fallbackQuery = fallbackQuery.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+              fallbackQuery = fallbackQuery.or(`user_id.eq.${authUserId},email.ilike.${authEmail}`);
             } else {
-              fallbackQuery = fallbackQuery.eq("email", sanitizedEmail);
+              fallbackQuery = fallbackQuery.ilike("email", authEmail);
             }
             const fallbackRes = await fallbackQuery;
             if (!fallbackRes.error && fallbackRes.data) {
@@ -92,15 +132,15 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
         const response = await traceDbOperation(
           "Fetch Ambassador Profile on Login",
-          { authUserId, email: sanitizedEmail },
+          { authUserId, email: authEmail },
           fetchProfile
         );
 
         if (response.data && response.data.length > 0) {
           dbProfile = response.data[0];
-          logDbOperation("Fetch Ambassador Profile Success", { email: sanitizedEmail, profile: dbProfile }, null);
+          logDbOperation("Fetch Ambassador Profile Success", { email: authEmail, profile: dbProfile }, null);
         } else {
-          logDbOperation("Fetch Ambassador Profile Empty Result", { email: sanitizedEmail }, new Error("Profile table query returned zero rows"));
+          logDbOperation("Fetch Ambassador Profile Empty Result", { email: authEmail }, new Error("Profile table query returned zero rows"));
         }
 
         // AUTO-RESTORE SAFETY NET:
@@ -199,7 +239,19 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       }
 
       // STEP 4: Validate application status limits
+      // Explicit check for the 'badge_status' column to handle 'pending' statuses gracefully
+      const explicitBadgeStatus = dbProfile.badge_status ? dbProfile.badge_status.toString().toLowerCase().trim() : null;
       const rawStatus = (dbProfile.badge_status || dbProfile.status || "pending").toString().toLowerCase().trim();
+      
+      if (explicitBadgeStatus === "pending") {
+        console.log("[AMBASSADOR LOGIN] Detected 'pending' badge_status explicitly.");
+        const pendingMsg = "Awaiting Admin Approval: Your growth ambassador application is currently under review by our executive board. You will receive access details once approved.";
+        logDbOperation("Ambassador Account Pending via badge_status", { email: sanitizedEmail, badge_status: dbProfile.badge_status }, null);
+        setErrorMsg(pendingMsg);
+        if (supabase) await supabase.auth.signOut();
+        setIsLoggingIn(false);
+        return;
+      }
       
       if (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") {
         const disapprovedErr = new Error("Your ambassador account application has been disapproved by the executive board.");

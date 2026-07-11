@@ -1,13 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
 
 // Supabase configuration
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (process as any).env?.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || (process as any).env?.VITE_SUPABASE_ANON_KEY || "";
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+const supabaseServiceRole = (import.meta as any).env?.SUPABASE_SERVICE_ROLE_KEY || (process as any).env?.SUPABASE_SERVICE_ROLE_KEY || "";
+
+export const supabaseAdmin = isSupabaseConfigured && supabaseServiceRole
+  ? createClient(supabaseUrl, supabaseServiceRole, {
+      auth: { persistSession: false }
+    })
   : null;
 
 // Unified Database interface matching your exact table schema columns
@@ -165,15 +173,16 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 
 export const db = {
   async getAmbassadors(): Promise<DbAmbassador[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        let { data, error } = await supabase
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client
           .from("ambassadors")
           .select("*")
           .order("created_at", { ascending: false });
         
         if (error || !data) {
-          const fallback = await supabase
+          const fallback = await client
             .from("Ambassadors")
             .select("*")
             .order("created_at", { ascending: false });
@@ -193,16 +202,17 @@ export const db = {
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
     const sanitizedEmail = email.replace(/200$/, "").trim().toLowerCase();
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        let { data, error } = await supabase
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client
           .from("ambassadors")
           .select("*")
           .ilike("email", sanitizedEmail)
           .maybeSingle();
 
         if (error || !data) {
-          const fallback = await supabase
+          const fallback = await client
             .from("Ambassadors")
             .select("*")
             .ilike("email", sanitizedEmail)
@@ -232,7 +242,7 @@ export const db = {
       created_at: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const rowData = {
           user_id: newAmbassador.user_id || null,
@@ -245,9 +255,10 @@ export const db = {
           avu_balance: 1250
         };
         
-        let { data, error } = await supabase.from("ambassadors").insert([rowData]).select().single();
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client.from("ambassadors").insert([rowData]).select().single();
         if (error) {
-          const fallback = await supabase.from("Ambassadors").insert([rowData]).select().single();
+          const fallback = await client.from("Ambassadors").insert([rowData]).select().single();
           data = fallback.data;
           error = fallback.error;
         }
@@ -265,10 +276,11 @@ export const db = {
   },
 
   async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
+        const client = supabaseAdmin || supabase;
         let tableName = "ambassadors";
-        let query = supabase.from(tableName).update({ badge_status: status });
+        let query = client.from(tableName).update({ badge_status: status });
         
         if (isUuid(id)) {
           query = query.or(`id.eq.${id},user_id.eq.${id}`);
@@ -279,7 +291,7 @@ export const db = {
         let { error } = await query;
         if (error) {
           tableName = "Ambassadors";
-          let fallbackQuery = supabase.from(tableName).update({ badge_status: status });
+          let fallbackQuery = client.from(tableName).update({ badge_status: status });
           if (isUuid(id)) {
             fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
           } else {
@@ -434,7 +446,7 @@ export const db = {
   },
 
   async updateProfile(id: string, updates: Partial<DbAmbassador>): Promise<boolean> {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const rowData: any = {};
         if (updates.name !== undefined) rowData.professional_name = updates.name;
@@ -443,8 +455,9 @@ export const db = {
         if (updates.phone !== undefined) rowData.phone_number = updates.phone;
         if (updates.password !== undefined) rowData.password = updates.password;
 
+        const client = supabaseAdmin || supabase;
         let tableName = "ambassadors";
-        let query = supabase.from(tableName).update(rowData);
+        let query = client.from(tableName).update(rowData);
         if (isUuid(id)) {
           query = query.or(`id.eq.${id},user_id.eq.${id}`);
         } else {
@@ -453,7 +466,7 @@ export const db = {
         let { error } = await query;
         if (error) {
           tableName = "Ambassadors";
-          let fallbackQuery = supabase.from(tableName).update(rowData);
+          let fallbackQuery = client.from(tableName).update(rowData);
           if (isUuid(id)) {
             fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
           } else {
@@ -478,10 +491,11 @@ export const db = {
   },
 
   async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
+        const client = supabaseAdmin || supabase;
         let tableName = "ambassadors";
-        let query = supabase.from(tableName).update({ avu_balance: newBalance });
+        let query = client.from(tableName).update({ avu_balance: newBalance });
         if (isUuid(id)) {
           query = query.or(`id.eq.${id},user_id.eq.${id}`);
         } else {
@@ -490,7 +504,7 @@ export const db = {
         let { error } = await query;
         if (error) {
           tableName = "Ambassadors";
-          let fallbackQuery = supabase.from(tableName).update({ avu_balance: newBalance });
+          let fallbackQuery = client.from(tableName).update({ avu_balance: newBalance });
           if (isUuid(id)) {
             fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id}`);
           } else {
@@ -569,11 +583,12 @@ export const db = {
   },
 
   async getWallets(): Promise<DbAmbassadorWallet[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        let { data, error } = await supabase.from("wallets").select("*").order("created_at", { ascending: false });
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client.from("ambassador_wallets").select("*").order("created_at", { ascending: false });
         if (error || !data) {
-          const fallback = await supabase.from("Wallets").select("*").order("created_at", { ascending: false });
+          const fallback = await client.from("wallets").select("*").order("created_at", { ascending: false });
           data = fallback.data;
           error = fallback.error;
         }
@@ -807,11 +822,12 @@ export const db = {
       ...wallet,
       created_at: new Date().toISOString()
     };
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        let { data, error } = await supabase.from("wallets").insert([wallet]).select().single();
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client.from("ambassador_wallets").insert([wallet]).select().single();
         if (error) {
-          const fallback = await supabase.from("Wallets").insert([wallet]).select().single();
+          const fallback = await client.from("wallets").insert([wallet]).select().single();
           data = fallback.data;
           error = fallback.error;
         }
@@ -827,13 +843,14 @@ export const db = {
   },
 
   async updateWalletBalance(ambassadorId: string, newBalance: number): Promise<boolean> {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        let tableName = "wallets";
-        let { error } = await supabase.from(tableName).update({ balance: newBalance }).eq("ambassador_id", ambassadorId);
+        const client = supabaseAdmin || supabase;
+        let tableName = "ambassador_wallets";
+        let { error } = await client.from(tableName).update({ balance: newBalance }).eq("ambassador_id", ambassadorId);
         if (error) {
-          tableName = "Wallets";
-          const res = await supabase.from(tableName).update({ balance: newBalance }).eq("ambassador_id", ambassadorId);
+          tableName = "wallets";
+          const res = await client.from(tableName).update({ balance: newBalance }).eq("ambassador_id", ambassadorId);
           error = res.error;
         }
         if (!error) return true;

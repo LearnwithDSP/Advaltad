@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, supabase, isSupabaseConfigured } from "../lib/supabase";
-import { traceDbOperation, traceGenericOperation } from "../lib/db-logger";
+import { db, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
+import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 
 export const AmbassadorSection: React.FC = () => {
@@ -45,89 +45,171 @@ export const AmbassadorSection: React.FC = () => {
     setIsLoggingIn(true);
     try {
       let user = null;
+      let authUserId: string | null = null;
+
+      // STEP 1: Authenticate the user credentials FIRST to establish a session and unlock RLS
       if (isSupabaseConfigured && supabase) {
-        // Query for the sanitized email using strict match filter
-        let { data, error } = await supabase
-          .from("ambassadors")
-          .select("*")
-          .eq("email", sanitizedEmail);
-
-        if (error || !data || data.length === 0) {
-          const fallbackRes = await supabase
-            .from("Ambassadors")
-            .select("*")
-            .eq("email", sanitizedEmail);
-          if (!fallbackRes.error && fallbackRes.data) {
-            data = fallbackRes.data;
-          }
-        }
-
-        if (data && data.length > 0) {
-          const matched = data.find(u => {
-            const statusVal = (u.badge_status || u.status || "pending").toString().toLowerCase().trim();
-            // Allow all statuses (such as 'pending', 'approved', 'active') provided they are not set to 'disapproved'
-            return statusVal !== "disapproved" && statusVal !== "rejected" && statusVal !== "suspended";
+        console.log("[AMBASSADOR SECTION LOGIN] Authenticating against Supabase Auth engine...");
+        try {
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: sanitizedEmail,
+            password: loginPassword
           });
 
-          if (matched) {
-            const rawStatus = (matched.badge_status || matched.status || "pending").toString().toLowerCase().trim();
-            const mappedStatus = (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
-                                 (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
-            user = {
-              id: matched.user_id || matched.id || "",
-              user_id: matched.user_id || undefined,
-              db_id: matched.id || undefined,
-              name: matched.professional_name || matched.name || "",
-              city: matched.base_city || matched.city || "",
-              field: matched.focus_interest || matched.field || "",
-              email: matched.email || "",
-              phone: matched.phone_number || matched.phone || "",
-              password: matched.password,
-              status: mappedStatus,
-              badge_status: mappedStatus,
-              avu_balance: typeof matched.avu_balance === "number" ? matched.avu_balance : 0,
-              created_at: matched.created_at || new Date().toISOString()
-            };
+          if (authError) {
+            // Check if this is a server/network/retryable issue
+            const isServerIssue = 
+              authError.status === 500 || 
+              authError.status === 502 || 
+              authError.status === 503 || 
+              authError.status === 504 || 
+              authError.name === "AuthRetryableFetchError" || 
+              authError.message === "{}" ||
+              authError.message?.includes("{}") ||
+              !authError.message;
+
+            if (isServerIssue) {
+              console.warn("[AMBASSADOR SECTION LOGIN] Bypassing Supabase Auth server-side/network issue during Auth phase:", authError);
+            } else {
+              setLoginError("Authentication failed: " + authError.message);
+              setIsLoggingIn(false);
+              return;
+            }
           }
+
+          if (authData?.user) {
+            authUserId = authData.user.id;
+            console.log("[AMBASSADOR SECTION LOGIN] Session unlocked! User UUID:", authUserId);
+          }
+        } catch (authException) {
+          console.warn("[AMBASSADOR SECTION LOGIN] Supabase auth exception during login:", authException);
         }
       }
 
-      if (!user) {
-        // Auto-seed/register Ramon's profiles on-the-fly to prevent "This email is not registered"
-        if (sanitizedEmail === "ramonbisola1@gmail.com" || sanitizedEmail === "ramon@example.com") {
+      // STEP 2: Fetch the database profile row now that the session is authenticated
+      let dbProfile = null;
+      if (isSupabaseConfigured && supabase) {
+        console.log("[AMBASSADOR SECTION LOGIN] Fetching public profile data row...");
+        const fetchProfile = async () => {
+          const client = supabaseAdmin || supabase;
+          let query = client.from("ambassadors").select("*");
+          if (authUserId) {
+            query = query.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+          } else {
+            query = query.eq("email", sanitizedEmail);
+          }
+          let res = await query;
+          
+          if (res.error || !res.data || res.data.length === 0) {
+            let fallbackQuery = client.from("Ambassadors").select("*");
+            if (authUserId) {
+              fallbackQuery = fallbackQuery.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+            } else {
+              fallbackQuery = fallbackQuery.eq("email", sanitizedEmail);
+            }
+            const fallbackRes = await fallbackQuery;
+            if (!fallbackRes.error && fallbackRes.data) {
+              res = fallbackRes as any;
+            }
+          }
+          return res;
+        };
+
+        const response = await fetchProfile();
+        if (response.data && response.data.length > 0) {
+          dbProfile = response.data[0];
+        }
+
+        // AUTO-RESTORE SAFETY NET:
+        // If Auth passed successfully (authUserId exists) but the row is missing from the database,
+        // we can safely create their database row in real-time!
+        if (authUserId && !dbProfile) {
+          console.log("[AMBASSADOR SECTION LOGIN] Auth passed but row is missing. Restoring from Auth metadata...");
           try {
-            if (isSupabaseConfigured && supabase) {
-              try {
-                await supabase.auth.signUp({ email: sanitizedEmail, password: loginPassword || "password123" });
-              } catch (_) {}
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            if (authUser) {
+              const meta = authUser.user_metadata || {};
+              const metaName = meta.name || meta.professional_name || "Growth Ambassador";
+              const metaCity = meta.city || meta.base_city || "Lagos, Nigeria";
+              const metaField = meta.field || meta.focus_interest || "Enriching African youths initiative";
+              const metaPhone = meta.phone || meta.phone_number || "+234 801 234 5678";
+
+              dbProfile = await db.createAmbassador({
+                name: metaName,
+                city: metaCity,
+                field: metaField,
+                email: sanitizedEmail,
+                phone: metaPhone,
+                password: loginPassword,
+                user_id: authUserId
+              });
+              console.log("[AMBASSADOR SECTION LOGIN] Successfully auto-restored missing database row:", dbProfile);
             }
-            await db.createAmbassador({
-              name: "Ramon Bisola",
-              city: "Lagos, Nigeria",
-              field: "Enriching African youths initiative",
-              email: sanitizedEmail,
-              phone: "+234 801 234 5678",
-              password: loginPassword || "password123"
-            });
-            const fresh = await db.findAmbassadorByEmail(sanitizedEmail);
-            if (fresh) {
-              await db.updateStatus(fresh.id, "approved");
-              user = fresh;
-              user.status = "approved";
-              user.badge_status = "approved";
-            }
-          } catch (seedErr) {
-            console.error("Failed to auto-register test email:", seedErr);
+          } catch (restoreErr) {
+            console.error("[AMBASSADOR SECTION LOGIN] Failed to auto-restore profile row:", restoreErr);
           }
         }
       }
 
-      if (!user) {
+      // Local storage or local DB fallback
+      if (!dbProfile) {
+        dbProfile = await db.findAmbassadorByEmail(sanitizedEmail);
+      }
+
+      // Auto-seed for Ramon / test accounts
+      if (!dbProfile && (sanitizedEmail === "ramonbisola1@gmail.com" || sanitizedEmail === "ramon@example.com")) {
+        try {
+          if (isSupabaseConfigured && supabase) {
+            try {
+              await supabase.auth.signUp({ email: sanitizedEmail, password: loginPassword || "password123" });
+            } catch (_) {}
+          }
+          await db.createAmbassador({
+            name: "Ramon Bisola",
+            city: "Lagos, Nigeria",
+            field: "Enriching African youths initiative",
+            email: sanitizedEmail,
+            phone: "+234 801 234 5678",
+            password: loginPassword || "password123"
+          });
+          const fresh = await db.findAmbassadorByEmail(sanitizedEmail);
+          if (fresh) {
+            await db.updateStatus(fresh.id, "approved");
+            dbProfile = fresh;
+            dbProfile.status = "approved";
+            dbProfile.badge_status = "approved";
+          }
+        } catch (seedErr) {
+          console.error("Failed to auto-register test email:", seedErr);
+        }
+      }
+
+      if (!dbProfile) {
         setLoginError("This email is not registered in our Ambassador database or the account has been disapproved. Please register first.");
         setIsLoggingIn(false);
         return;
       }
-      
+
+      const rawStatus = (dbProfile.badge_status || dbProfile.status || "pending").toString().toLowerCase().trim();
+      const mappedStatus = (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
+                           (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
+
+      user = {
+        id: dbProfile.user_id || dbProfile.id || "",
+        user_id: dbProfile.user_id || undefined,
+        db_id: dbProfile.id || undefined,
+        name: dbProfile.professional_name || dbProfile.name || "",
+        city: dbProfile.base_city || dbProfile.city || "",
+        field: dbProfile.focus_interest || dbProfile.field || "",
+        email: dbProfile.email || "",
+        phone: dbProfile.phone_number || dbProfile.phone || "",
+        password: dbProfile.password,
+        status: mappedStatus,
+        badge_status: mappedStatus,
+        avu_balance: typeof dbProfile.avu_balance === "number" ? dbProfile.avu_balance : 0,
+        created_at: dbProfile.created_at || new Date().toISOString()
+      };
+
       if (user.password && user.password !== loginPassword) {
         setLoginError("Incorrect password. Please verify your credentials and try again.");
         setIsLoggingIn(false);
@@ -140,35 +222,10 @@ export const AmbassadorSection: React.FC = () => {
         return;
       }
 
-      // If Supabase is configured, sign in via Supabase Auth as well
-      if (isSupabaseConfigured && supabase) {
-        try {
-          const { error: authError } = await supabase.auth.signInWithPassword({
-            email: sanitizedEmail,
-            password: loginPassword
-          });
-          if (authError) {
-            const isServerIssue = 
-              authError.status === 500 || 
-              authError.status === 502 || 
-              authError.status === 503 || 
-              authError.status === 504 || 
-              authError.name === "AuthRetryableFetchError" || 
-              authError.message === "{}" ||
-              authError.message?.includes("{}") ||
-              !authError.message;
-
-            if (isServerIssue) {
-              console.warn("[AMBASSADOR SECTION LOGIN] Bypassing Supabase Auth server-side/network issue (status 500 or retryable fetch error) and allowing access using database validated credentials:", authError);
-            } else {
-              setLoginError("Authentication failed: " + authError.message);
-              setIsLoggingIn(false);
-              return;
-            }
-          }
-        } catch (authException) {
-          console.warn("Supabase auth exception during login:", authException);
-        }
+      if (user.status === "disapproved") {
+        setLoginError("Your ambassador account application has been disapproved by the executive board.");
+        setIsLoggingIn(false);
+        return;
       }
 
       // Store active session email in localStorage
@@ -300,9 +357,8 @@ export const AmbassadorSection: React.FC = () => {
         
         try {
           // STEP 2: Create the user account using Supabase Auth with metadata options
-          const res = await supabase.auth.signUp({
+          const signUpPayload = {
             email: cleanEmail,
-            password,
             options: {
               data: {
                 name,
@@ -311,12 +367,19 @@ export const AmbassadorSection: React.FC = () => {
                 phone
               }
             }
+          };
+          const res = await supabase.auth.signUp({
+            email: cleanEmail,
+            password,
+            options: signUpPayload.options
           });
           authData = res.data;
           authError = res.error;
-        } catch (signUpEx) {
+          logDbOperation("Ambassador Registration Auth SignUp", signUpPayload, authError);
+        } catch (signUpEx: any) {
           console.warn("Supabase auth signUp threw exception:", signUpEx);
           authError = signUpEx;
+          logDbOperation("Ambassador Registration Auth SignUp Exception", { email: cleanEmail }, signUpEx);
         }
 
         let userId = "";
@@ -373,6 +436,7 @@ export const AmbassadorSection: React.FC = () => {
               rowData,
               () => supabase.from("ambassadors").insert([rowData]).select().single() as any
             );
+            logDbOperation("Ambassador Direct Insert (lowercase)", rowData, insertError);
 
             if (insertError) {
               console.warn("[AMBASSADOR SIGNUP] Direct table insert into 'ambassadors' failed, trying capitalized fallback:", insertError);
@@ -381,6 +445,7 @@ export const AmbassadorSection: React.FC = () => {
                 rowData,
                 () => supabase.from("Ambassadors").insert([rowData]).select().single() as any
               );
+              logDbOperation("Ambassador Direct Insert (capitalized)", rowData, fallbackRes.error);
               if (fallbackRes.error) {
                 console.error("[AMBASSADOR SIGNUP] Fallback table insert failed as well:", fallbackRes.error);
               } else if (fallbackRes.data) {

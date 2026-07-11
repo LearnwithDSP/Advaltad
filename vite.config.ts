@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
       'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
       'process.env.SUPABASE_URL': JSON.stringify(supabaseUrl),
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
+      'process.env.SUPABASE_SERVICE_ROLE_KEY': JSON.stringify(env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ""),
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

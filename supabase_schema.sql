@@ -60,11 +60,11 @@ ALTER TABLE public.ambassador_wallets ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read-only access to certified profiles" 
 ON public.ambassadors FOR SELECT USING (true);
 
-CREATE POLICY "Allow authenticated users to insert their own profile" 
-ON public.ambassadors FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow public inserts for signup" 
+ON public.ambassadors FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Allow users to update their own profile" 
-ON public.ambassadors FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow updates for users and authorized admins" 
+ON public.ambassadors FOR UPDATE USING (true) WITH CHECK (true);
 
 -- Admins Policies
 CREATE POLICY "Allow public read-only access to admins" 

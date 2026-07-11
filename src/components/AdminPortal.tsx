@@ -26,7 +26,7 @@ import {
   CreditCard,
   MapPin
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, isSupabaseConfigured } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
@@ -224,29 +224,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
 
       let allAmbassadors: DbAmbassador[] = [];
-      if (isSupabaseConfigured && supabase) {
-        console.log("[ADMIN PORTAL] Executing direct select('*') query on 'public.ambassadors' table (Supabase direct fetch)...");
-        let { data, error } = await supabase
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        console.log("[ADMIN PORTAL] ATTEMPT: Initiating direct SELECT * query on 'public.ambassadors' table ordered by created_at desc to pull raw, real-time data from Supabase...");
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client
           .from("ambassadors")
-          .select("*");
+          .select("*")
+          .order("created_at", { ascending: false });
 
         if (error || !data) {
-          console.warn("[ADMIN PORTAL] Querying 'ambassadors' table directly failed or returned no data. Trying 'Ambassadors' fallback casing...", error);
-          const fallbackRes = await supabase
+          console.warn("[ADMIN PORTAL] Warning: Direct query on 'ambassadors' table failed or returned empty. Trying fallback casing 'Ambassadors'...", error);
+          const fallbackRes = await client
             .from("Ambassadors")
-            .select("*");
+            .select("*")
+            .order("created_at", { ascending: false });
           if (!fallbackRes.error && fallbackRes.data) {
             data = fallbackRes.data;
           } else if (fallbackRes.error) {
-            console.error("[ADMIN PORTAL] All direct queries to Supabase ambassadors table failed.", fallbackRes.error);
+            console.error("[ADMIN PORTAL] Error: All attempts to query Supabase 'ambassadors'/'Ambassadors' table with SELECT * failed:", fallbackRes.error);
             logDbOperation("Admin Portal Fetch Ambassadors Fallback Error", {}, fallbackRes.error);
             throw fallbackRes.error;
           }
         }
 
         if (data) {
+          console.log("[ADMIN PORTAL] SUCCESS: Direct SELECT * query completed with 'created_at' desc. Fetched raw records count:", data.length);
+          console.table(data); // Console table output of raw fetched data bypasses local filters for direct visual check
           logDbOperation("Admin Portal Fetch Ambassadors Success", { count: data.length }, null);
-          console.log(`[ADMIN PORTAL] Successfully fetched ${data.length} records directly from Supabase with no local fallbacks.`);
+          
+          // MAP ALL ROWS DIRECTLY WITHOUT ANY LOCAL FILTERING (Ensure raw, real-time representation of all rows)
           allAmbassadors = data.map((row: any) => {
             const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
             const mappedStatus: "pending" | "approved" | "disapproved" = 
@@ -286,6 +292,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           });
         }
       } else {
+        console.log("[ADMIN PORTAL] ATTEMPT: Supabase is not configured. Falling back to memory-based/local db.getAmbassadors()...");
         // Fallback only if Supabase environment is completely unconfigured
         allAmbassadors = await db.getAmbassadors();
       }
@@ -470,6 +477,62 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   // Status Action Handlers
+  const handleToggleStatus = async (id: string, currentStatus: "pending" | "approved" | "disapproved") => {
+    const newStatus: "pending" | "approved" | "disapproved" = currentStatus === "pending" ? "approved" : "pending";
+    const ambassador = ambassadors.find(a => a.id === id);
+    const originalAmbassadors = [...ambassadors];
+
+    // Immediate state updates for instant visual feedback (Optimistic Update)
+    setAmbassadors(prev =>
+      prev.map(amb =>
+        amb.id === id
+          ? { ...amb, status: newStatus, badge_status: newStatus }
+          : amb
+      )
+    );
+
+    try {
+      console.log(`[ADMIN TOGGLER] Direct database update for ${id}: 'badge_status' set to ${newStatus}`);
+      const success = await db.updateStatus(id, newStatus);
+      if (!success) {
+        throw new Error("Supabase status update failed");
+      }
+
+      // Add visual confirmation / notification log
+      await db.logActivity({
+        ambassador_id: id,
+        ambassador_name: ambassador?.name || "Ambassador",
+        type: "status_change",
+        desc: `Super Admin "${currentAdmin?.name}" quick toggled status to "${newStatus}" without modal confirmation.`
+      });
+
+      await db.createAuditLog({
+        admin_id: currentAdmin?.id || currentAdmin?.user_id || "unknown",
+        admin_name: currentAdmin?.name || "Super Admin",
+        admin_email: currentAdmin?.email || "admin@advaltad.org",
+        ambassador_id: id,
+        ambassador_name: ambassador?.name || "Ambassador",
+        action: newStatus === "approved" ? "approved" : "disapproved"
+      });
+
+      // Dispatch notification email if changing to approved
+      if (newStatus === "approved" && ambassador) {
+        try {
+          await triggerApprovalEmail(ambassador);
+        } catch (mailErr) {
+          console.error("[ADMIN TOGGLER] Failed to send approval email:", mailErr);
+        }
+      }
+
+      // Sync backend state in background
+      loadDbData();
+    } catch (err) {
+      console.error("[ADMIN TOGGLER] Error during status toggle update:", err);
+      // Revert state if failed
+      setAmbassadors(originalAmbassadors);
+    }
+  };
+
   const executeApproveAmbassador = async (id: string, name: string) => {
     try {
       await db.updateStatus(id, "approved");
@@ -1521,6 +1584,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                               </div>
 
                               <div className="flex items-center gap-2.5 flex-shrink-0">
+                                <button
+                                  onClick={() => handleToggleStatus(amb.id, amb.status)}
+                                  className={`px-3 py-2 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all border flex items-center gap-1.5 cursor-pointer ${
+                                    amb.status === "approved"
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80"
+                                      : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80"
+                                  }`}
+                                  title="Quick toggle status between Pending and Approved"
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${amb.status === "approved" ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`} />
+                                  Quick Toggle
+                                </button>
+
                                 {amb.status === "pending" && (
                                   <>
                                     <button
