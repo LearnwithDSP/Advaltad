@@ -23,162 +23,133 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
     const sanitizedEmail = sanitizeEmailInput(email);
 
-    // Unified logging wrapper for the email input immediately after submission
-    console.log("[AMBASSADOR LOGIN] Unified Input Logger:");
-    console.log("  - Raw Email Input:", email);
-    console.log("  - Processed Email String (Sanitized):", sanitizedEmail);
-    console.log("  - Final Query Object Sent to Supabase:", { email: sanitizedEmail });
+    console.log("[AMBASSADOR LOGIN] Initiating login validation pipeline:");
+    console.log("  - Email Target:", sanitizedEmail);
 
     if (!sanitizedEmail || !password) return;
 
     setErrorMsg("");
     setIsLoggingIn(true);
-    try {
-      let user = null;
-      if (isSupabaseConfigured && supabase) {
-        // Query for the sanitized email using strict match filter
-        let { data, error } = await supabase
-          .from("ambassadors")
-          .select("*")
-          .eq("email", sanitizedEmail);
 
+    try {
+      let authUserId: string | null = null;
+
+      // STEP 1: Authenticate the user credentials FIRST to establish a session and unlock RLS
+      if (isSupabaseConfigured && supabase) {
+        console.log("[AMBASSADOR LOGIN] Authenticating against Supabase Auth engine...");
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: sanitizedEmail,
+          password
+        });
+
+        if (authError) {
+          // Gracefully catch common credential authentication errors
+          console.error("[AMBASSADOR LOGIN] Auth Engine rejection:", authError);
+          setErrorMsg("Authentication failed: " + authError.message);
+          setIsLoggingIn(false);
+          return;
+        }
+
+        if (authData?.user) {
+          authUserId = authData.user.id;
+          console.log("[AMBASSADOR LOGIN] Session unlocked! User UUID:", authUserId);
+        }
+      }
+
+      // STEP 2: Cross-reference the database table now that the session is authenticated
+      let dbProfile = null;
+      if (isSupabaseConfigured && supabase) {
+        console.log("[AMBASSADOR LOGIN] Fetching public profile data row...");
+        
+        // Match by authenticated user_id OR email to eliminate field discrepancies
+        let query = supabase.from("ambassadors").select("*");
+        if (authUserId) {
+          query = query.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+        } else {
+          query = query.eq("email", sanitizedEmail);
+        }
+
+        let { data, error } = await query;
+
+        // Capitalized table name fallback matching original setup
         if (error || !data || data.length === 0) {
-          const fallbackRes = await supabase
-            .from("Ambassadors")
-            .select("*")
-            .eq("email", sanitizedEmail);
+          let fallbackQuery = supabase.from("Ambassadors").select("*");
+          if (authUserId) {
+            fallbackQuery = fallbackQuery.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+          } else {
+            fallbackQuery = fallbackQuery.eq("email", sanitizedEmail);
+          }
+          const fallbackRes = await fallbackQuery;
           if (!fallbackRes.error && fallbackRes.data) {
             data = fallbackRes.data;
           }
         }
 
         if (data && data.length > 0) {
-          const matched = data.find(u => {
-            const statusVal = (u.badge_status || u.status || "pending").toString().toLowerCase().trim();
-            // Allow all statuses (such as 'pending', 'approved', 'active') provided they are not set to 'disapproved'
-            return statusVal !== "disapproved" && statusVal !== "rejected" && statusVal !== "suspended";
-          });
-
-          if (matched) {
-            const rawStatus = (matched.badge_status || matched.status || "pending").toString().toLowerCase().trim();
-            const mappedStatus = (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
-                                 (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
-            user = {
-              id: matched.user_id || matched.id || "",
-              user_id: matched.user_id || undefined,
-              db_id: matched.id || undefined,
-              name: matched.professional_name || matched.name || "",
-              city: matched.base_city || matched.city || "",
-              field: matched.focus_interest || matched.field || "",
-              email: matched.email || "",
-              phone: matched.phone_number || matched.phone || "",
-              password: matched.password,
-              status: mappedStatus,
-              badge_status: mappedStatus,
-              avu_balance: typeof matched.avu_balance === "number" ? matched.avu_balance : 0,
-              created_at: matched.created_at || new Date().toISOString()
-            };
-          }
+          dbProfile = data[0];
         }
       }
 
-      if (!user) {
-        const potentialUser = await db.findAmbassadorByEmail(sanitizedEmail);
-        if (potentialUser && potentialUser.status !== "disapproved") {
-          user = potentialUser;
-        }
+      // Local storage fallback adapter if Supabase connection isn't complete
+      if (!dbProfile) {
+        dbProfile = await db.findAmbassadorByEmail(sanitizedEmail);
       }
 
-      if (!user) {
-        // Auto-seed/register Ramon's profiles on-the-fly to prevent "This email is not registered"
-        if (sanitizedEmail === "ramonbisola1@gmail.com" || sanitizedEmail === "ramon@example.com") {
-          try {
-            if (isSupabaseConfigured && supabase) {
-              try {
-                await supabase.auth.signUp({ email: sanitizedEmail, password: password || "password123" });
-              } catch (_) {}
-            }
-            await db.createAmbassador({
-              name: "Ramon Bisola",
-              city: "Lagos, Nigeria",
-              field: "Enriching African youths initiative",
-              email: sanitizedEmail,
-              phone: "+234 801 234 5678",
-              password: password || "password123"
-            });
-            const fresh = await db.findAmbassadorByEmail(sanitizedEmail);
-            if (fresh) {
-              await db.updateStatus(fresh.id, "approved");
-              user = fresh;
-              user.status = "approved";
-              user.badge_status = "approved";
-            }
-          } catch (seedErr) {
-            console.error("Failed to auto-register test email:", seedErr);
-          }
-        }
-      }
-
-      if (!user) {
-        setErrorMsg("This email is not registered in our Ambassador database or the account has been disapproved. Please register first.");
-        setIsLoggingIn(false);
-        return;
-      }
-      
-      // Check password (simple comparison for prototyping; fits local/Supabase database)
-      if (user.password && user.password !== password) {
-        setErrorMsg("Incorrect password. Please verify your credentials and try again.");
-        setIsLoggingIn(false);
-        return;
-      }
-
-      if (user.status === "pending" || user.badge_status === "pending") {
-        setErrorMsg("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
-        setIsLoggingIn(false);
-        return;
-      }
-
-      // If Supabase is configured, sign in via Supabase Auth as well
-      if (isSupabaseConfigured && supabase) {
+      // Auto-seed handler for test profile accounts matching original workflow
+      if (!dbProfile && (sanitizedEmail === "ramonbisola1@gmail.com" || sanitizedEmail === "ramon@example.com")) {
         try {
-          const { error: authError } = await supabase.auth.signInWithPassword({
+          await db.createAmbassador({
+            name: "Ramon Bisola",
+            city: "Lagos, Nigeria",
+            field: "Enriching African youths initiative",
             email: sanitizedEmail,
-            password
+            phone: "+234 801 234 5678",
+            password: password || "password123"
           });
-          if (authError) {
-            const isServerIssue = 
-              authError.status === 500 || 
-              authError.status === 502 || 
-              authError.status === 503 || 
-              authError.status === 504 || 
-              authError.name === "AuthRetryableFetchError" || 
-              authError.message === "{}" ||
-              authError.message?.includes("{}") ||
-              !authError.message;
-
-            const isEmailNotConfirmed = 
-              authError.message?.toLowerCase().includes("confirm") || 
-              authError.message?.toLowerCase().includes("not confirmed") ||
-              authError.message?.toLowerCase().includes("verification") ||
-              (authError.status === 400 && authError.message?.toLowerCase().includes("email"));
-
-            if (isServerIssue || isEmailNotConfirmed) {
-              console.warn("[AMBASSADOR LOGIN] Bypassing Supabase Auth issue (email not confirmed or server issue) and allowing access using database validated credentials:", authError);
-            } else {
-              setErrorMsg("Authentication failed: " + authError.message);
-              setIsLoggingIn(false);
-              return;
-            }
+          dbProfile = await db.findAmbassadorByEmail(sanitizedEmail);
+          if (dbProfile) {
+            await db.updateStatus(dbProfile.id, "approved");
+            dbProfile.status = "approved";
+            dbProfile.badge_status = "approved";
           }
-        } catch (authException) {
-          console.warn("Supabase auth exception during login:", authException);
+        } catch (seedErr) {
+          console.error("Failed to auto-register test email:", seedErr);
         }
       }
 
-      // Store active session email in localStorage
+      // STEP 3: Validate database row availability
+      if (!dbProfile) {
+        console.warn("[AMBASSADOR LOGIN] Auth passed but row is completely missing from database table.");
+        setErrorMsg("This email is not registered in our Ambassador database. Please enroll first.");
+        if (supabase) await supabase.auth.signOut(); // Clean session state
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // STEP 4: Validate application status limits
+      const rawStatus = (dbProfile.badge_status || dbProfile.status || "pending").toString().toLowerCase().trim();
+      
+      if (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") {
+        setErrorMsg("Your ambassador account application has been disapproved by the executive board.");
+        if (supabase) await supabase.auth.signOut();
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (rawStatus === "pending") {
+        setErrorMsg("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
+        if (supabase) await supabase.auth.signOut();
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // STEP 5: Success completion
+      console.log("[AMBASSADOR LOGIN] Verification complete. Access granted.");
       localStorage.setItem("advaltad_session_email", sanitizedEmail);
       onLoginSuccess(sanitizedEmail);
+
     } catch (err: any) {
+      console.error("[AMBASSADOR LOGIN] Core process crash exception:", err);
       setErrorMsg(err?.message || "An error occurred during authentication. Please try again.");
     } finally {
       setIsLoggingIn(false);
@@ -186,13 +157,11 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
   };
 
   const loadApprovedDemo = async () => {
-    // Make sure Ramon is in DB, then log him in
     try {
       const email = "ramonbisola1@gmail.com";
       const password = "password123";
 
       if (isSupabaseConfigured && supabase) {
-        // Try signing up if they don't exist in Auth yet, then sign in
         try {
           await supabase.auth.signUp({ email, password });
         } catch (_) {}
@@ -211,37 +180,13 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
           phone: "+234 801 234 5678",
           password: password
         });
-        // Auto approve Ramon
         const ramon = await db.findAmbassadorByEmail(email);
         if (ramon) {
           await db.updateStatus(ramon.id, "approved");
         }
       } else {
-        // Ensure Ramon is approved for approved demo
         await db.updateStatus(existing.id, "approved");
       }
-
-      // Also ensure "ramon@example.com" is seeded
-      try {
-        const altEmail = "ramon@example.com";
-        const altExisting = await db.findAmbassadorByEmail(altEmail);
-        if (!altExisting) {
-          await db.createAmbassador({
-            name: "Ramon Bisola",
-            city: "Lagos, Nigeria",
-            field: "Enriching African youths initiative",
-            email: altEmail,
-            phone: "+234 801 234 5678",
-            password: password
-          });
-          const createdAlt = await db.findAmbassadorByEmail(altEmail);
-          if (createdAlt) {
-            await db.updateStatus(createdAlt.id, "approved");
-          }
-        } else {
-          await db.updateStatus(altExisting.id, "approved");
-        }
-      } catch (_) {}
 
       localStorage.setItem("advaltad_session_email", email);
       onLoginSuccess(email);
@@ -252,12 +197,10 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
   };
 
   const loadPendingDemo = async () => {
-    // Create or locate a pending demo user
     const pendingEmail = "pending_demo@advaltad.org";
     const password = "password123";
     try {
       if (isSupabaseConfigured && supabase) {
-        // Try signing up if they don't exist in Auth yet, then sign in
         try {
           await supabase.auth.signUp({ email: pendingEmail, password });
         } catch (_) {}
@@ -275,7 +218,6 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
           password: password
         });
       } else {
-        // Ensure status is pending for pending demo
         await db.updateStatus(existing.id, "pending");
       }
       localStorage.setItem("advaltad_session_email", pendingEmail);
