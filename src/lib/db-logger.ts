@@ -86,3 +86,34 @@ export async function traceGenericOperation<T>(
     throw error;
   }
 }
+
+/**
+ * Custom formatted DB operation logger
+ */
+export function logDbOperation(operationName: string, payload: any, error: any): void {
+  const timestamp = new Date().toISOString();
+  if (error) {
+    console.error(
+      `%c[DB LOGGER ERROR] [${timestamp}] ${operationName.toUpperCase()} FAILED`,
+      'color: #ef4444; font-weight: bold; font-size: 12px; border: 1px solid #ef4444; padding: 2px 6px; border-radius: 4px;',
+      {
+        operationName,
+        timestamp,
+        payload,
+        error: error?.message || error,
+        rawError: error
+      }
+    );
+  } else {
+    console.log(
+      `%c[DB LOGGER SUCCESS] [${timestamp}] ${operationName.toUpperCase()} COMPLETED`,
+      'color: #10b981; font-weight: bold; font-size: 12px; border: 1px solid #10b981; padding: 2px 6px; border-radius: 4px;',
+      {
+        operationName,
+        timestamp,
+        payload
+      }
+    );
+  }
+}
+

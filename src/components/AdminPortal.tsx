@@ -30,6 +30,7 @@ import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAu
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
+import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -216,8 +217,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       try {
         walletsData = await db.getWallets();
         setWallets(walletsData);
+        logDbOperation("Admin Portal Fetch Wallets Success", { count: walletsData.length }, null);
       } catch (wErr) {
         console.error("[ADMIN PORTAL] Failed to pre-load wallets:", wErr);
+        logDbOperation("Admin Portal Fetch Wallets Error", {}, wErr);
       }
 
       let allAmbassadors: DbAmbassador[] = [];
@@ -236,11 +239,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             data = fallbackRes.data;
           } else if (fallbackRes.error) {
             console.error("[ADMIN PORTAL] All direct queries to Supabase ambassadors table failed.", fallbackRes.error);
+            logDbOperation("Admin Portal Fetch Ambassadors Fallback Error", {}, fallbackRes.error);
             throw fallbackRes.error;
           }
         }
 
         if (data) {
+          logDbOperation("Admin Portal Fetch Ambassadors Success", { count: data.length }, null);
           console.log(`[ADMIN PORTAL] Successfully fetched ${data.length} records directly from Supabase with no local fallbacks.`);
           allAmbassadors = data.map((row: any) => {
             const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
@@ -287,6 +292,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       if (!allAmbassadors || allAmbassadors.length === 0) {
         console.error("Error: Ambassadors array returned empty from 'public.ambassadors' table query.");
+        logDbOperation("Admin Portal Fetch Ambassadors Array Empty Warning", {}, new Error("Ambassadors array is empty"));
       }
       const allActivities = await db.getActivities();
       setAmbassadors(allAmbassadors || []);
@@ -295,17 +301,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       try {
         const logs = await db.getAuditLogs();
         setAuditLogs(logs);
+        logDbOperation("Admin Portal Fetch Audit Logs Success", { count: logs.length }, null);
       } catch (logErr) {
         console.error("Failed to load audit logs inside admin portal:", logErr);
+        logDbOperation("Admin Portal Fetch Audit Logs Error", {}, logErr);
       }
       try {
         const emails = await getSentEmails();
         setSentEmails(emails);
+        logDbOperation("Admin Portal Fetch Sent Emails Success", { count: emails.length }, null);
       } catch (emErr) {
         console.error("Failed to load sent emails inside admin portal:", emErr);
+        logDbOperation("Admin Portal Fetch Sent Emails Error", {}, emErr);
       }
     } catch (err: any) {
       console.error("Failed to load DB details inside admin portal:", err);
+      logDbOperation("Admin Portal Fetch Core DB Data Error", {}, err);
       setDbError(err?.message || "Failed to load database details.");
     } finally {
       setIsLoadingDb(false);
@@ -324,7 +335,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setIsSubmitting(true);
 
     try {
-      const existing = await db.findAdminByEmail(signupEmail);
+      const existing = await traceGenericOperation("Check Existing Admin on Signup", { email: signupEmail }, () => db.findAdminByEmail(signupEmail));
       if (existing) {
         setAuthError("An admin account with this email already exists.");
         setIsSubmitting(false);
@@ -333,7 +344,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       let userId = "";
       if (isSupabaseConfigured && supabase) {
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await traceDbOperation("Admin Supabase Auth Signup", { email: signupEmail }, supabase.auth.signUp({
           email: signupEmail,
           password: signupPassword,
           options: {
@@ -342,7 +353,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               role: "admin"
             }
           }
-        });
+        }));
 
         if (signUpError) {
           setAuthError(signUpError.message);
@@ -355,13 +366,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         }
       }
 
-      await db.createAdmin({
+      await traceGenericOperation("Create Admin Record", { name: signupName, email: signupEmail, role: "admin" }, () => db.createAdmin({
         name: signupName,
         email: signupEmail,
         password: signupPassword,
         user_id: userId || undefined,
         role: "admin"
-      });
+      }));
 
       setAuthSuccess("Admin account created successfully! Please sign in.");
       setLoginEmail(signupEmail);
@@ -394,21 +405,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       let adminRecord: DbAdmin | null = null;
 
       if (isSupabaseConfigured && supabase) {
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error: signInError } = await traceDbOperation("Admin Supabase Auth Signin", { email: loginEmail }, supabase.auth.signInWithPassword({
           email: loginEmail,
           password: loginPassword
-        });
+        }));
 
         if (signInError) {
+          logDbOperation("Admin Supabase Auth Signin Error", { email: loginEmail }, signInError);
           setAuthError(signInError.message);
           setIsSubmitting(false);
           return;
         }
 
         if (signInData.user) {
-          adminRecord = await db.findAdminByEmail(loginEmail);
+          adminRecord = await traceGenericOperation("Fetch Admin Profile on Login", { email: loginEmail }, () => db.findAdminByEmail(loginEmail));
           if (!adminRecord) {
-            setAuthError("Your account is not registered as an administrator in the database registry.");
+            const noAdminErr = new Error("Your account is not registered as an administrator in the database registry.");
+            logDbOperation("Fetch Admin Profile on Login Missing Record", { email: loginEmail }, noAdminErr);
+            setAuthError(noAdminErr.message);
             setIsSubmitting(false);
             await supabase.auth.signOut();
             return;
@@ -416,9 +430,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           loggedInEmail = adminRecord.email;
         }
       } else {
-        const admin = await db.findAdminByEmail(loginEmail);
+        const admin = await traceGenericOperation("Fetch Admin Profile on Local Login", { email: loginEmail }, () => db.findAdminByEmail(loginEmail));
         if (!admin || admin.password !== loginPassword) {
-          setAuthError("Invalid administrator credentials.");
+          const invalidCredsErr = new Error("Invalid administrator credentials.");
+          logDbOperation("Fetch Admin Profile on Local Login Invalid Credentials", { email: loginEmail }, invalidCredsErr);
+          setAuthError(invalidCredsErr.message);
           setIsSubmitting(false);
           return;
         }
@@ -426,6 +442,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
 
       if (adminRecord) {
+        logDbOperation("Admin Portal Login Success", { email: loggedInEmail, name: adminRecord.name, role: adminRecord.role }, null);
         localStorage.setItem("advaltad_admin_session_email", loggedInEmail);
         setCurrentAdmin(adminRecord);
         setIsAuthenticated(true);
@@ -435,6 +452,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         loadDbData();
       }
     } catch (err: any) {
+      logDbOperation("Admin Portal Login Uncaught Error", { email: loginEmail }, err);
       setAuthError(err.message || "An unexpected error occurred during admin authentication.");
       setIsSubmitting(false);
     }
@@ -1144,12 +1162,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             <div className="p-3 border-t border-slate-800">
               <div className="flex items-center gap-2.5 p-1 rounded-xl bg-slate-850/50 overflow-hidden text-left">
                 <div className="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center border border-slate-700 flex-shrink-0 uppercase">
-                  {currentAdmin.name.charAt(0)}
+                  {(currentAdmin?.name || "A").charAt(0)}
                 </div>
                 {!sidebarCollapsed && (
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold text-white truncate leading-none">{currentAdmin.name}</p>
-                    <p className="text-[9px] text-slate-500 truncate mt-0.5">{currentAdmin.email}</p>
+                    <p className="text-[11px] font-bold text-white truncate leading-none">{currentAdmin?.name || "Super Admin"}</p>
+                    <p className="text-[9px] text-slate-500 truncate mt-0.5">{currentAdmin?.email || ""}</p>
                   </div>
                 )}
               </div>

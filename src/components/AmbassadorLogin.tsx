@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Icon } from "./Icon";
 import { db, isSupabaseConfigured, supabase } from "../lib/supabase";
-import { traceDbOperation, traceGenericOperation } from "../lib/db-logger";
+import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
 
 interface AmbassadorLoginProps {
   onLoginSuccess: (email: string) => void;
@@ -46,6 +46,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         if (authError) {
           // Gracefully catch common credential authentication errors
           console.error("[AMBASSADOR LOGIN] Auth Engine rejection:", authError);
+          logDbOperation("Ambassador Supabase Auth Signin Error", { email: sanitizedEmail }, authError);
           setErrorMsg("Authentication failed: " + authError.message);
           setIsLoggingIn(false);
           return;
@@ -54,6 +55,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         if (authData?.user) {
           authUserId = authData.user.id;
           console.log("[AMBASSADOR LOGIN] Session unlocked! User UUID:", authUserId);
+          logDbOperation("Ambassador Supabase Auth Signin Success", { email: sanitizedEmail, userId: authUserId }, null);
         }
       }
 
@@ -96,6 +98,9 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
         if (response.data && response.data.length > 0) {
           dbProfile = response.data[0];
+          logDbOperation("Fetch Ambassador Profile Success", { email: sanitizedEmail, profile: dbProfile }, null);
+        } else {
+          logDbOperation("Fetch Ambassador Profile Empty Result", { email: sanitizedEmail }, new Error("Profile table query returned zero rows"));
         }
 
         // AUTO-RESTORE SAFETY NET:
@@ -128,9 +133,11 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
                 })
               );
               console.log("[AMBASSADOR LOGIN] Successfully auto-restored missing database row:", dbProfile);
+              logDbOperation("Ambassador Auto-Restore Missing Row Success", { email: sanitizedEmail, profile: dbProfile }, null);
             }
           } catch (restoreErr) {
             console.error("[AMBASSADOR LOGIN] Failed to auto-restore profile row:", restoreErr);
+            logDbOperation("Ambassador Auto-Restore Missing Row Error", { email: sanitizedEmail }, restoreErr);
           }
         }
       }
@@ -142,6 +149,9 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
           { email: sanitizedEmail },
           () => db.findAmbassadorByEmail(sanitizedEmail)
         );
+        if (dbProfile) {
+          logDbOperation("Fallback Find Ambassador Success", { email: sanitizedEmail, profile: dbProfile }, null);
+        }
       }
 
       // Auto-seed handler for test profile accounts matching original workflow
@@ -169,16 +179,20 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
             }
           ).then(res => {
             dbProfile = res;
+            logDbOperation("Ambassador Auto-Seed Test Row Success", { email: sanitizedEmail, profile: dbProfile }, null);
           });
         } catch (seedErr) {
           console.error("Failed to auto-register test email:", seedErr);
+          logDbOperation("Ambassador Auto-Seed Test Row Error", { email: sanitizedEmail }, seedErr);
         }
       }
 
       // STEP 3: Validate database row availability
       if (!dbProfile) {
         console.warn("[AMBASSADOR LOGIN] Auth passed but row is completely missing from database table.");
-        setErrorMsg("This email is not registered in our Ambassador database. Please enroll first.");
+        const missingDbRowErr = new Error("This email is not registered in our Ambassador database. Please enroll first.");
+        logDbOperation("Ambassador Database Row Missing", { email: sanitizedEmail }, missingDbRowErr);
+        setErrorMsg(missingDbRowErr.message);
         if (supabase) await supabase.auth.signOut(); // Clean session state
         setIsLoggingIn(false);
         return;
@@ -188,14 +202,18 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       const rawStatus = (dbProfile.badge_status || dbProfile.status || "pending").toString().toLowerCase().trim();
       
       if (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") {
-        setErrorMsg("Your ambassador account application has been disapproved by the executive board.");
+        const disapprovedErr = new Error("Your ambassador account application has been disapproved by the executive board.");
+        logDbOperation("Ambassador Account Disapproved", { email: sanitizedEmail, status: rawStatus }, disapprovedErr);
+        setErrorMsg(disapprovedErr.message);
         if (supabase) await supabase.auth.signOut();
         setIsLoggingIn(false);
         return;
       }
 
       if (rawStatus === "pending") {
-        setErrorMsg("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
+        const pendingErr = new Error("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
+        logDbOperation("Ambassador Account Pending Approval", { email: sanitizedEmail, status: rawStatus }, pendingErr);
+        setErrorMsg(pendingErr.message);
         if (supabase) await supabase.auth.signOut();
         setIsLoggingIn(false);
         return;
@@ -203,11 +221,13 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
 
       // STEP 5: Success completion
       console.log("[AMBASSADOR LOGIN] Verification complete. Access granted.");
+      logDbOperation("Ambassador Login Fully Verified", { email: sanitizedEmail, status: rawStatus }, null);
       localStorage.setItem("advaltad_session_email", sanitizedEmail);
       onLoginSuccess(sanitizedEmail);
 
     } catch (err: any) {
       console.error("[AMBASSADOR LOGIN] Core process crash exception:", err);
+      logDbOperation("Ambassador Login Core Process Crash", { email: sanitizedEmail }, err);
       setErrorMsg(err?.message || "An error occurred during authentication. Please try again.");
     } finally {
       setIsLoggingIn(false);

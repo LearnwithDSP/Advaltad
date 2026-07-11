@@ -549,7 +549,16 @@ export const db = {
           data = fallback.data;
           error = fallback.error;
         }
-        if (!error && data) return data;
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.full_name || data.name || "",
+            email: data.email,
+            user_id: data.user_id,
+            role: data.role,
+            created_at: data.created_at
+          };
+        }
       } catch (err) {
         console.warn("findAdminByEmail error:", err);
       }
@@ -621,13 +630,28 @@ export const db = {
     };
     if (isSupabaseConfigured && supabase) {
       try {
-        let { data, error } = await supabase.from("admins").insert([admin]).select().single();
+        const payload = {
+          user_id: admin.user_id,
+          full_name: admin.name,
+          email: admin.email,
+          role: admin.role || "admin"
+        };
+        let { data, error } = await supabase.from("admins").insert([payload]).select().single();
         if (error) {
-          const fallback = await supabase.from("Admins").insert([admin]).select().single();
+          const fallback = await supabase.from("Admins").insert([payload]).select().single();
           data = fallback.data;
           error = fallback.error;
         }
-        if (!error && data) return data;
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.full_name || data.name || "",
+            email: data.email,
+            user_id: data.user_id,
+            role: data.role,
+            created_at: data.created_at
+          };
+        }
       } catch (err) {
         console.warn("createAdmin error:", err);
       }
