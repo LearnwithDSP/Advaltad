@@ -257,7 +257,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             const ambEmail = row.email || "";
             
             // Find matched wallet balance
-            const wallet = walletsData.find(w => w.ambassador_id === ambId || w.email.toLowerCase() === ambEmail.toLowerCase());
+            const wallet = walletsData.find(w => w.ambassador_id === ambId || (w.email || "").toLowerCase() === (ambEmail || "").toLowerCase());
             const walletBal = wallet ? wallet.balance : 1250;
 
             return {
@@ -1782,7 +1782,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           </div>
                         ) : (
                           ambassadors.map((amb) => {
-                            const wallet = wallets.find(w => w.ambassador_id === amb.id || w.email.toLowerCase() === amb.email.toLowerCase());
+                            const wallet = wallets.find(w => w.ambassador_id === amb.id || (w.email || "").toLowerCase() === (amb.email || "").toLowerCase());
                             const balance = wallet ? wallet.balance : amb.avu_balance;
                             const walletId = wallet ? wallet.id : "No Active Wallet Instance";
 
@@ -1901,10 +1901,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             {auditLogs.filter(log => {
                               const query = historySearchQuery.toLowerCase();
                               return (
-                                log.admin_name.toLowerCase().includes(query) ||
-                                log.admin_email.toLowerCase().includes(query) ||
-                                log.ambassador_name.toLowerCase().includes(query) ||
-                                log.ambassador_id.toLowerCase().includes(query)
+                                (log.admin_name || "").toLowerCase().includes(query) ||
+                                (log.admin_email || "").toLowerCase().includes(query) ||
+                                (log.ambassador_name || "").toLowerCase().includes(query) ||
+                                (log.ambassador_id || "").toLowerCase().includes(query)
                               );
                             }).length === 0 ? (
                               <div className="p-16 text-center text-slate-400 text-xs text-left">
@@ -1916,10 +1916,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 .filter(log => {
                                   const query = historySearchQuery.toLowerCase();
                                   return (
-                                    log.admin_name.toLowerCase().includes(query) ||
-                                    log.admin_email.toLowerCase().includes(query) ||
-                                    log.ambassador_name.toLowerCase().includes(query) ||
-                                    log.ambassador_id.toLowerCase().includes(query)
+                                    (log.admin_name || "").toLowerCase().includes(query) ||
+                                    (log.admin_email || "").toLowerCase().includes(query) ||
+                                    (log.ambassador_name || "").toLowerCase().includes(query) ||
+                                    (log.ambassador_id || "").toLowerCase().includes(query)
                                   );
                                 })
                                 .map((log) => (
@@ -1992,9 +1992,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             {sentEmails.filter(email => {
                               const query = historySearchQuery.toLowerCase();
                               return (
-                                email.recipientEmail.toLowerCase().includes(query) ||
-                                email.recipientName.toLowerCase().includes(query) ||
-                                email.subject.toLowerCase().includes(query)
+                                (email.recipientEmail || "").toLowerCase().includes(query) ||
+                                (email.recipientName || "").toLowerCase().includes(query) ||
+                                (email.subject || "").toLowerCase().includes(query)
                               );
                             }).length === 0 ? (
                               <div className="p-16 text-center text-slate-400 text-xs text-left">
@@ -2006,9 +2006,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 .filter(email => {
                                   const query = historySearchQuery.toLowerCase();
                                   return (
-                                    email.recipientEmail.toLowerCase().includes(query) ||
-                                    email.recipientName.toLowerCase().includes(query) ||
-                                    email.subject.toLowerCase().includes(query)
+                                    (email.recipientEmail || "").toLowerCase().includes(query) ||
+                                    (email.recipientName || "").toLowerCase().includes(query) ||
+                                    (email.subject || "").toLowerCase().includes(query)
                                   );
                                 })
                                 .map((email) => (

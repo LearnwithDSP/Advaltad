@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Icon } from "./Icon";
 import { db, isSupabaseConfigured, supabase } from "../lib/supabase";
+import { traceDbOperation, traceGenericOperation } from "../lib/db-logger";
 
 interface AmbassadorLoginProps {
   onLoginSuccess: (email: string) => void;
@@ -62,56 +63,113 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         console.log("[AMBASSADOR LOGIN] Fetching public profile data row...");
         
         // Match by authenticated user_id OR email to eliminate field discrepancies
-        let query = supabase.from("ambassadors").select("*");
-        if (authUserId) {
-          query = query.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
-        } else {
-          query = query.eq("email", sanitizedEmail);
-        }
-
-        let { data, error } = await query;
-
-        // Capitalized table name fallback matching original setup
-        if (error || !data || data.length === 0) {
-          let fallbackQuery = supabase.from("Ambassadors").select("*");
+        const fetchProfile = async () => {
+          let query = supabase.from("ambassadors").select("*");
           if (authUserId) {
-            fallbackQuery = fallbackQuery.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+            query = query.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
           } else {
-            fallbackQuery = fallbackQuery.eq("email", sanitizedEmail);
+            query = query.eq("email", sanitizedEmail);
           }
-          const fallbackRes = await fallbackQuery;
-          if (!fallbackRes.error && fallbackRes.data) {
-            data = fallbackRes.data;
+          let res = await query;
+          
+          // Capitalized table name fallback matching original setup
+          if (res.error || !res.data || res.data.length === 0) {
+            let fallbackQuery = supabase.from("Ambassadors").select("*");
+            if (authUserId) {
+              fallbackQuery = fallbackQuery.or(`user_id.eq.${authUserId},email.ilike.${sanitizedEmail}`);
+            } else {
+              fallbackQuery = fallbackQuery.eq("email", sanitizedEmail);
+            }
+            const fallbackRes = await fallbackQuery;
+            if (!fallbackRes.error && fallbackRes.data) {
+              res = fallbackRes as any;
+            }
           }
+          return res;
+        };
+
+        const response = await traceDbOperation(
+          "Fetch Ambassador Profile on Login",
+          { authUserId, email: sanitizedEmail },
+          fetchProfile
+        );
+
+        if (response.data && response.data.length > 0) {
+          dbProfile = response.data[0];
         }
 
-        if (data && data.length > 0) {
-          dbProfile = data[0];
+        // AUTO-RESTORE SAFETY NET:
+        // If Auth passed successfully (authUserId exists) but the row is missing from the database,
+        // it means the user was successfully signed up in Auth but the table insert failed (RLS/delay).
+        // Since they are now authenticated, we can safely create their database row in real-time!
+        if (authUserId && !dbProfile) {
+          console.log("[AMBASSADOR LOGIN] Auth passed but row is missing in table. Restoring from Auth metadata...");
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const meta = user.user_metadata || {};
+              const metaName = meta.name || meta.professional_name || "Growth Ambassador";
+              const metaCity = meta.city || meta.base_city || "Lagos, Nigeria";
+              const metaField = meta.field || meta.focus_interest || "Enriching African youths initiative";
+              const metaPhone = meta.phone || meta.phone_number || "+234 801 234 5678";
+
+              // Create the missing database row
+              dbProfile = await traceGenericOperation(
+                "Auto-Restore Missing Ambassador Row",
+                { name: metaName, email: sanitizedEmail, user_id: authUserId },
+                () => db.createAmbassador({
+                  name: metaName,
+                  city: metaCity,
+                  field: metaField,
+                  email: sanitizedEmail,
+                  phone: metaPhone,
+                  password: password,
+                  user_id: authUserId
+                })
+              );
+              console.log("[AMBASSADOR LOGIN] Successfully auto-restored missing database row:", dbProfile);
+            }
+          } catch (restoreErr) {
+            console.error("[AMBASSADOR LOGIN] Failed to auto-restore profile row:", restoreErr);
+          }
         }
       }
 
       // Local storage fallback adapter if Supabase connection isn't complete
       if (!dbProfile) {
-        dbProfile = await db.findAmbassadorByEmail(sanitizedEmail);
+        dbProfile = await traceGenericOperation(
+          "Fallback Find Ambassador by Email",
+          { email: sanitizedEmail },
+          () => db.findAmbassadorByEmail(sanitizedEmail)
+        );
       }
 
       // Auto-seed handler for test profile accounts matching original workflow
       if (!dbProfile && (sanitizedEmail === "ramonbisola1@gmail.com" || sanitizedEmail === "ramon@example.com")) {
         try {
-          await db.createAmbassador({
-            name: "Ramon Bisola",
-            city: "Lagos, Nigeria",
-            field: "Enriching African youths initiative",
-            email: sanitizedEmail,
-            phone: "+234 801 234 5678",
-            password: password || "password123"
+          await traceGenericOperation(
+            "Auto-Seed Test Ambassador Row",
+            { email: sanitizedEmail },
+            async () => {
+              await db.createAmbassador({
+                name: "Ramon Bisola",
+                city: "Lagos, Nigeria",
+                field: "Enriching African youths initiative",
+                email: sanitizedEmail,
+                phone: "+234 801 234 5678",
+                password: password || "password123"
+              });
+              const seedProf = await db.findAmbassadorByEmail(sanitizedEmail);
+              if (seedProf) {
+                await db.updateStatus(seedProf.id, "approved");
+                seedProf.status = "approved";
+                seedProf.badge_status = "approved";
+              }
+              return seedProf;
+            }
+          ).then(res => {
+            dbProfile = res;
           });
-          dbProfile = await db.findAmbassadorByEmail(sanitizedEmail);
-          if (dbProfile) {
-            await db.updateStatus(dbProfile.id, "approved");
-            dbProfile.status = "approved";
-            dbProfile.badge_status = "approved";
-          }
         } catch (seedErr) {
           console.error("Failed to auto-register test email:", seedErr);
         }

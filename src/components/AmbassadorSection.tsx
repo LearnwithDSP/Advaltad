@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, supabase, isSupabaseConfigured } from "../lib/supabase";
+import { traceDbOperation, traceGenericOperation } from "../lib/db-logger";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 
 export const AmbassadorSection: React.FC = () => {
@@ -367,19 +368,19 @@ export const AmbassadorSection: React.FC = () => {
 
           try {
             console.log("[AMBASSADOR SIGNUP] Performing secure database row insert:", rowData);
-            let { data: insertedData, error: insertError } = await supabase
-              .from("ambassadors")
-              .insert([rowData])
-              .select()
-              .single();
+            let { data: insertedData, error: insertError } = await traceDbOperation(
+              "Ambassador Direct Insert (lowercase table name)",
+              rowData,
+              () => supabase.from("ambassadors").insert([rowData]).select().single() as any
+            );
 
             if (insertError) {
               console.warn("[AMBASSADOR SIGNUP] Direct table insert into 'ambassadors' failed, trying capitalized fallback:", insertError);
-              const fallbackRes = await supabase
-                .from("Ambassadors")
-                .insert([rowData])
-                .select()
-                .single();
+              const fallbackRes = await traceDbOperation(
+                "Ambassador Capitalized Fallback Insert",
+                rowData,
+                () => supabase.from("Ambassadors").insert([rowData]).select().single() as any
+              );
               if (fallbackRes.error) {
                 console.error("[AMBASSADOR SIGNUP] Fallback table insert failed as well:", fallbackRes.error);
               } else if (fallbackRes.data) {
@@ -423,15 +424,19 @@ export const AmbassadorSection: React.FC = () => {
         } else {
           // If Supabase server issue / fallback auth is down
           try {
-            await db.createAmbassador({
-              name,
-              city,
-              field,
-              email: cleanEmail,
-              phone,
-              password,
-              user_id: userId
-            });
+            await traceGenericOperation(
+              "Fallback Create Ambassador (No Session)",
+              { name, city, field, email: cleanEmail, phone, user_id: userId },
+              () => db.createAmbassador({
+                name,
+                city,
+                field,
+                email: cleanEmail,
+                phone,
+                password,
+                user_id: userId
+              })
+            );
           } catch (dbError) {
             console.warn("[AMBASSADOR SIGNUP] Database/RLS fallback table insert failed:", dbError);
           }

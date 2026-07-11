@@ -32,7 +32,7 @@ export const FinancialOverviewChart: React.FC<FinancialOverviewChartProps> = ({
     const wallet = wallets.find(
       (w) =>
         w.ambassador_id === amb.id ||
-        w.email.toLowerCase() === amb.email.toLowerCase()
+        (w.email || "").toLowerCase() === (amb.email || "").toLowerCase()
     );
     return {
       name: amb.name,
