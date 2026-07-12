@@ -442,6 +442,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [hasFunded, setHasFunded] = useState<boolean>(false);
   const [isFundWalletModalOpen, setIsFundWalletModalOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
+  const [dbAmbassadors, setDbAmbassadors] = useState<DbAmbassador[]>([]);
 
   // Toast notifications state
   const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
@@ -533,10 +535,42 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     isCurrentUser: true,
   };
 
+  // Map dbAmbassadors to LeaderEntries
+  const dbLeaders = dbAmbassadors
+    .filter(a => a.id !== profile?.id && a.email?.toLowerCase() !== profile?.email?.toLowerCase())
+    .map((a, idx) => {
+      const colors = [
+        "from-purple-500 to-indigo-600",
+        "from-blue-500 to-teal-500",
+        "from-emerald-500 to-emerald-700",
+        "from-orange-500 to-red-500",
+        "from-pink-500 to-rose-500",
+        "from-yellow-500 to-amber-600"
+      ];
+      const avatarBg = colors[idx % colors.length];
+      const initials = a.name ? a.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() : "AM";
+      return {
+        id: a.id || a.ambassador_id || `AV-DB-${idx}`,
+        name: a.name,
+        city: a.city || "Lagos, Nigeria",
+        field: a.field || "Growth Ambassador",
+        avu_balance: a.avu_balance || 0,
+        totalDeposits: 0,
+        projects: 2,
+        avatarBg,
+        initials,
+        isCurrentUser: false,
+      };
+    });
+
   // Compile full leader list
   const allLeadersCombined = [
     currentUserEntry,
-    ...baseMockLeaders.filter(l => l.id !== (profile?.id || "AV-ME"))
+    ...dbLeaders,
+    ...baseMockLeaders.filter(l => 
+      l.id !== (profile?.id || "AV-ME") && 
+      !dbLeaders.some(dl => dl.name.toLowerCase() === l.name.toLowerCase())
+    )
   ];
 
   // Point scoring formula:
@@ -661,6 +695,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         } catch (p2pErr) {
           console.warn("Failed to load P2P transactions:", p2pErr);
         }
+      }
+
+      // Fetch all registered ambassadors
+      try {
+        const allAmbs = await db.getAmbassadors();
+        setDbAmbassadors(allAmbs || []);
+      } catch (ambErr) {
+        console.warn("Failed to load registered ambassadors list:", ambErr);
       }
     } catch (e) {
       console.error("Error loading ambassador data", e);
@@ -853,7 +895,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [transferReason, setTransferReason] = useState("");
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [p2pType, setP2pType] = useState<"send" | "request" | "analytics">("send");
-  const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
 
   // Dynamic Donation Link builder
   const [donationLinkText, setDonationLinkText] = useState("https://advaltad.org/campaign/ramon-youth-labs");
@@ -2552,6 +2593,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             
                             <div className="space-y-1">
                               <p className="font-extrabold text-sm text-slate-800">{leader2.name}</p>
+                              <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader2.avu_balance || 0).toLocaleString()} AVU</p>
                               <p className="text-[10px] text-gray-400 font-medium">{leader2.city} • {leader2.field}</p>
                               <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-700 bg-slate-100 border border-slate-200 rounded-md">
                                 {leader2.rankTitle}
@@ -2595,6 +2637,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                                 {leader1.name}
                                 {leader1.isCurrentUser && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
                               </p>
+                              <p className="text-xs text-emerald-650 font-black font-mono">{(leader1.avu_balance || 0).toLocaleString()} AVU</p>
                               <p className="text-[10px] text-gray-400 font-medium">{leader1.city} • {leader1.field}</p>
                               <span className="inline-block px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-805 bg-amber-100/80 border border-amber-200 rounded-md">
                                 {leader1.rankTitle}
@@ -2634,6 +2677,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                                 {leader3.name}
                                 {leader3.isCurrentUser && <span className="text-[9px] bg-emerald-100 text-emerald-850 px-1.5 py-0.5 rounded font-black uppercase">You</span>}
                               </p>
+                              <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader3.avu_balance || 0).toLocaleString()} AVU</p>
                               <p className="text-[10px] text-gray-400 font-medium">{leader3.city} • {leader3.field}</p>
                               <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 rounded-md">
                                 {leader3.rankTitle}
@@ -2772,6 +2816,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                                     </h5>
                                     <p className="text-[10px] text-gray-400 truncate font-sans">
                                       {leader.city} • <span className="font-semibold text-slate-500">{leader.field}</span>
+                                    </p>
+                                    <p className="text-[10px] text-emerald-650 font-extrabold font-mono flex items-center gap-1 mt-0.5">
+                                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                      {(leader.avu_balance || 0).toLocaleString()} AVU
                                     </p>
                                   </div>
                                 </div>
