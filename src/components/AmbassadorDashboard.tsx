@@ -120,7 +120,6 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
   const email = profile?.email || "ambassador@domain.com";
   const currentAmbassadorId = profile?.id || "00000000-0000-0000-0000-000000000000";
 
-  // Early return is safe here because all hooks are called unconditionally above!
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,11 +161,9 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
         ]
       };
 
-      // 1. Process Paystack inline checkout using the exported helper
       const paymentResult = await initializePayment(amt, email, metadata);
       const earnedAvu = paymentResult.avuEarned;
 
-      // 2. Initial Transaction Registration to Supabase directly and local DB
       try {
         if (supabase && isSupabaseConfigured) {
           await supabase.from("deposits").insert([{
@@ -194,7 +191,6 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
         console.error("Database registration failed or bypassed:", err);
       }
 
-      // 3. Process database update to update avu_balance and wallet balances
       const result = await db.processFundingSuccess(
         currentAmbassadorId,
         email,
@@ -217,7 +213,6 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
     } catch (paystackError: any) {
       console.warn("Paystack Inline failed or closed, launching simulated fallback:", paystackError);
 
-      // Try simulation fallback as a resilient testing option for iframe environments
       const simulatedConfirm = confirm(
         `[PAYSTACK GATEWAY DIALOGUE]\n\n` +
         `The Paystack checkout window was closed or bypassed.\n` +
@@ -416,7 +411,6 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
 export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<"overview" | "certificate" | "p2p" | "payments" | "projects" | "profile" | "leaderboard">("overview");
   
-  // Ambassador Database Profile state
   const [profile, setProfile] = useState<DbAmbassador | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
@@ -424,7 +418,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     onLogout();
   };
 
-  // Form states for profile edit
   const [editName, setEditName] = useState("");
   const [editCity, setEditCity] = useState("");
   const [editField, setEditField] = useState("");
@@ -433,7 +426,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
-  // Ambassador Personal State
   const [ambassadorName, setAmbassadorName] = useState("Ramon Bisola");
   const [ambassadorRegion, setAmbassadorRegion] = useState("Lagos, Nigeria");
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
@@ -445,7 +437,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
   const [dbAmbassadors, setDbAmbassadors] = useState<DbAmbassador[]>([]);
 
-  // Toast notifications state
   const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
 
   const showToast = (type: "success" | "error" | "info", title: string, message: string) => {
@@ -456,15 +447,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }, 6000);
   };
 
-  // Paystack wallet funding form states
   const [totalDepositsNaira, setTotalDepositsNaira] = useState(0);
 
-  // Leaderboard filters
   const [leaderSearch, setLeaderSearch] = useState("");
   const [leaderRegionFilter, setLeaderRegionFilter] = useState("All");
   const [leaderDivisionFilter, setLeaderDivisionFilter] = useState("All");
 
-  // Leaderboard Entry TypeScript contract
   interface LeaderEntry {
     id: string;
     name: string;
@@ -482,7 +470,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     badgeColor: string;
   }
 
-  // Preset list of high-performing mock ambassadors across Africa
   const baseMockLeaders = [
     { id: "AV-001", name: "Nia Tolani", city: "Nairobi, Kenya", field: "Mobile clinics hygiene", avu_balance: 1450, totalDeposits: 170000, projects: 4, avatarBg: "from-purple-500 to-indigo-600", initials: "NT", isCurrentUser: false },
     { id: "AV-002", name: "Kofi Mensah", city: "Accra, Ghana", field: "Youth Technology Labs", avu_balance: 1320, totalDeposits: 140000, projects: 3, avatarBg: "from-blue-500 to-teal-500", initials: "KM", isCurrentUser: false },
@@ -494,7 +481,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     { id: "AV-008", name: "Ezenwa Cole", city: "Lekki, Nigeria", field: "NextGen Scholarships", avu_balance: 750, totalDeposits: 10000, projects: 1, avatarBg: "from-indigo-400 to-purple-600", initials: "EC", isCurrentUser: false },
   ];
 
-  // Helper to get region group for filters
   const getBroadRegion = (city: string) => {
     const c = city.toLowerCase();
     if (c.includes("lagos") || c.includes("accra") || c.includes("dakar") || c.includes("nigeria") || c.includes("ghana") || c.includes("senegal") || c.includes("lekki") || c.includes("surulere")) {
@@ -506,7 +492,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     return "Other";
   };
 
-  // Helper to get division group for filters
   const getBroadDivision = (field: string) => {
     const f = field.toLowerCase();
     if (f.includes("tech") || f.includes("software") || f.includes("initiative")) {
@@ -521,7 +506,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     return "Education & Other";
   };
 
-  // Dynamically calculate current logged in user's entry and scores
   const currentUserEntry = {
     id: profile?.id || "AV-ME",
     name: profile?.name || ambassadorName,
@@ -529,13 +513,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     field: profile?.field || ambassadorField,
     avu_balance: avuBalance,
     totalDeposits: totalDepositsNaira,
-    projects: 3, // 3 supervised deployments
+    projects: 3,
     avatarBg: "from-emerald-600 to-teal-700",
     initials: (profile?.name || ambassadorName).split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() || "RB",
     isCurrentUser: true,
   };
 
-  // Map dbAmbassadors to LeaderEntries
   const dbLeaders = dbAmbassadors
     .filter(a => a.id !== profile?.id && a.email?.toLowerCase() !== profile?.email?.toLowerCase())
     .map((a, idx) => {
@@ -563,7 +546,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       };
     });
 
-  // Compile full leader list
   const allLeadersCombined = [
     currentUserEntry,
     ...dbLeaders,
@@ -573,8 +555,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     )
   ];
 
-  // Point scoring formula:
-  // Points = (avu_balance * 10) + Math.floor(totalDeposits / 100) + (projects_count * 500)
   const getImpactPoints = (leader: any) => {
     const avuContribution = (leader.avu_balance || 0) * 10;
     const depositContribution = Math.floor((leader.totalDeposits || 0) / 100);
@@ -582,11 +562,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     return avuContribution + depositContribution + projectContribution;
   };
 
-  // Map to detailed leader object with calculated scores and rank badges
   const processedLeaders: LeaderEntry[] = allLeadersCombined.map(l => {
     const points = getImpactPoints(l);
     
-    // Assign Rank Titles based on Points
     let level = 1;
     let rankTitle = "Active Fellow";
     let badgeColor = "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900";
@@ -615,9 +593,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       rankTitle,
       badgeColor
     };
-  }).sort((a, b) => b.points - a.points); // Sort high to low
+  }).sort((a, b) => b.points - a.points);
 
-  // Dynamically inject Paystack inline script
   useEffect(() => {
     if (typeof window !== "undefined") {
       if (document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]')) {
@@ -630,15 +607,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }
   }, []);
 
-
-
   const fetchAmbassadorData = async () => {
     const sessionEmail = localStorage.getItem("advaltad_session_email") || "ramon@example.com";
     setIsLoadingProfile(true);
     try {
       let user = await db.findAmbassadorByEmail(sessionEmail);
       if (!user) {
-        // Create auto-fallback if none exists yet (e.g. initial demo setup)
         user = await db.createAmbassador({
           name: "Ramon Bisola",
           city: "Lagos, Nigeria",
@@ -647,7 +621,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           phone: "+234 801 234 5678",
           password: "password123"
         });
-        // Auto approve Ramon's default login
         if (sessionEmail === "ramon@example.com") {
           await db.updateStatus(user.id, "approved");
           user.status = "approved";
@@ -665,14 +638,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       setEditPhone(user.phone || "");
       setEditPassword(user.password || "");
 
-      // Format clean date based on registration or default
       if (user.created_at) {
         const d = new Date(user.created_at);
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
         setCommissionDate(d.toLocaleDateString('en-US', options));
       }
 
-      // Check funding status from DB/localStorage deposits table
       try {
         const allDeposits = await db.getDeposits();
         const matchedSuccessDeposits = allDeposits.filter(d => 
@@ -687,7 +658,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setTotalDepositsNaira(0);
       }
 
-      // Fetch P2P Transactions History
       if (user) {
         try {
           const list = await db.getP2PTransactions(user.id);
@@ -697,7 +667,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         }
       }
 
-      // Fetch all registered ambassadors
       try {
         const allAmbs = await db.getAmbassadors();
         setDbAmbassadors(allAmbs || []);
@@ -768,7 +737,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   useEffect(() => {
     if (!profile || !isSupabaseConfigured || !supabase) return;
 
-    // 1. Subscribe to updates in public.ambassadors table
     const ambassadorChannel = supabase
       .channel(`public:ambassadors:id=${profile.id}`)
       .on(
@@ -784,7 +752,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           const newRecord = payload.new || {};
           
           if (newRecord) {
-            // Immediately update the local UI states to reflect change in avu_balance or status
             if (newRecord.avu_balance !== undefined) {
               setAvuBalance(newRecord.avu_balance);
             }
@@ -800,13 +767,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             });
           }
 
-          // Fetch full data in background to synchronize other dashboard statistics
           fetchAmbassadorData();
         }
       )
       .subscribe();
 
-    // 2. Subscribe to inserts/updates in public.deposits table for transactions
     const depositsChannel = supabase
       .channel(`public:deposits:ambassador_id=${profile.id}`)
       .on(
@@ -824,7 +789,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       )
       .subscribe();
 
-    // 3. Subscribe to changes in public.ambassador_wallet table for balance updates
     const walletChannel = supabase
       .channel(`public:ambassador_wallet:ambassador_id=${profile.id}`)
       .on(
@@ -849,10 +813,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     };
   }, [profile]);
 
-  
-
-  
-  // Certificate Interactive Form State
   const [certFormOpen, setCertFormOpen] = useState(false);
   const [tempName, setTempName] = useState(ambassadorName);
   const [tempRegion, setTempRegion] = useState(ambassadorRegion);
@@ -860,7 +820,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [tempDate, setTempDate] = useState(commissionDate);
   const [downloadingCert, setDownloadingCert] = useState(false);
 
-  // Notification state
   const [notifications, setNotifications] = useState<NotificationItem[]>([
     {
       id: "n-1",
@@ -889,25 +848,21 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   ]);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
 
-  // Peer to Peer Value Transfer State
   const [transferTargetId, setTransferTargetId] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [p2pType, setP2pType] = useState<"send" | "request" | "analytics">("send");
 
-  // Dynamic Donation Link builder
   const [donationLinkText, setDonationLinkText] = useState("https://advaltad.org/campaign/ramon-youth-labs");
   const [campaignTitle, setCampaignTitle] = useState("Support Ramon's TechHub");
   const [campaignGenerated, setCampaignGenerated] = useState(false);
 
-  // Direct Terminal Donation form inside gateway
   const [termAmount, setTermAmount] = useState("");
   const [termDonorName, setTermDonorName] = useState("");
   const [termDonorEmail, setTermDonorEmail] = useState("");
   const [termStatus, setTermStatus] = useState<"idle" | "submitting" | "completed">("idle");
 
-  // Project supervising states
   const [projects, setProjects] = useState<ProjectItem[]>([
     {
       id: "p-1",
@@ -941,7 +896,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }
   ]);
 
-  // Peer list for P2P resource library
   const [exchangeItems, setExchangeItems] = useState<ExchangeListing[]>([
     { id: "e-1", title: "Eco-Adobe Brick Compressor blueprints", provider: "Grace (Mombasa)", avuCost: 150, category: "hardware", icon: "Home" },
     { id: "e-2", title: "NextGen Tech Curriculum (React/Figma Spec)", provider: "Advaltad HQ", avuCost: 0, category: "educational", icon: "GraduationCap" },
@@ -952,7 +906,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [activeItemDetails, setActiveItemDetails] = useState<ExchangeListing | null>(null);
   const [itemExchangeSuccess, setItemExchangeSuccess] = useState(false);
 
-  // Simulate updating the Certificate fields
   const handleCertSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAmbassadorName(tempName);
@@ -961,7 +914,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setCommissionDate(tempDate);
     setCertFormOpen(false);
 
-    // Keep database in sync if logged in
     if (profile?.id) {
       try {
         await db.updateProfile(profile.id, {
@@ -975,7 +927,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           type: "profile_update",
           desc: `Updated fellowship certificate credentials: name to "${tempName}", division to "${tempField}"`
         });
-        // Update edit states too
         setEditName(tempName);
         setEditCity(tempRegion);
         setEditField(tempField);
@@ -984,7 +935,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       }
     }
 
-    // Add a positive system notification
     const newNotif: NotificationItem = {
       id: "n-cert-" + Date.now(),
       title: "Fellowship Certificate updated",
@@ -1017,22 +967,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         desc: `Updated public registry profile: city to "${editCity}", phone contact, and focus division to "${editField}"`
       });
       
-      // Update local states
       setAmbassadorName(editName);
       setAmbassadorRegion(editCity);
       setAmbassadorField(editField);
       
-      // Also update certificate temp states so they stay matched
       setTempName(editName);
       setTempRegion(editCity);
       setTempField(editField);
 
-      // Reload database profile record
       await fetchAmbassadorData();
       
       setUpdateSuccess(true);
       
-      // Add system notification
       const newNotif: NotificationItem = {
         id: "n-profile-" + Date.now(),
         title: "Profile details updated",
@@ -1097,7 +1043,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         };
         setNotifications(prev => [newNotif, ...prev]);
 
-        // Refresh transactions list
         try {
           const list = await db.getP2PTransactions(profile.id);
           setP2pTxHistory(list);
@@ -1121,8 +1066,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       setIsProcessing(false);
     }
   };
-
-
 
   const handleDirectDonationGateway = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1177,7 +1120,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   return (
     <div className="min-h-screen bg-slate-50 pt-20 pb-16 font-sans select-none text-slate-900">
       
-      {/* Upper sub-header bar for profile info and notifications */}
       <div className="bg-white border-b border-gray-200 py-4 shadow-sm relative z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           
@@ -1205,7 +1147,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           </div>
 
           <div className="flex items-center gap-4">
-            {/* AVU Balance Quick badge */}
             <div className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 flex items-center gap-2">
               <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs font-black">
                 P
@@ -1216,7 +1157,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               </div>
             </div>
 
-            {/* Notification bell hub */}
             <div className="relative">
               <button
                 id="notif-bell-hub"
@@ -1292,7 +1232,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               </AnimatePresence>
             </div>
 
-            {/* Logout actions */}
             <button
               id="dashboard-logout"
               onClick={onLogout}
@@ -1408,7 +1347,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </div>
               </div>
 
-              {/* Standalone Sign Out section */}
               <div className="pt-6 border-t border-slate-100 flex justify-end">
                 <button
                   onClick={handleSignOut}
@@ -1423,7 +1361,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         ) : (
           <div className="grid lg:grid-cols-12 gap-8 items-start">
           
-          {/* Navigation vertical toolbar tabs */}
           <div className="lg:col-span-3 space-y-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-3">
               <button
@@ -1521,37 +1458,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             </button>
           </div>
 
-          {/* Quick stats panel left card */}
-            <div className="p-5 rounded-3xl bg-slate-900 text-white border border-gray-850 space-y-4 pt-6">
-              <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">Campaign Impact</span>
-              
-              <div className="space-y-1">
-                <p className="text-2xl font-black font-mono tracking-tight">{hasFunded ? `₦${totalDepositsNaira.toLocaleString()}` : "₦0"}</p>
-                <p className="text-[10px] text-gray-400">Total Funds Directed Globally</p>
-              </div>
-
-              {/* Minimal bar progress visual */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-gray-400">
-                  <span>Target Goal</span>
-                  <span className="font-bold text-emerald-400">{hasFunded ? "91% reached" : "0% reached"}</span>
-                </div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: hasFunded ? "91.6%" : "0%" }}></div>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-gray-400 leading-normal font-sans">
-                Every regional donation tracked automatically triggers software licenses or bricks on-field directly. Under 51(c)(3) standards.
-              </p>
-            </div>
           </div>
 
-          {/* Active Workscreen panels */}
           <div className="lg:col-span-9">
             <AnimatePresence mode="wait">
               
-              {/* TAB 1: OVERVIEW DASHBOARD */}
               {activeTab === "overview" && (
                 <motion.div
                   key="v-overview"
@@ -1561,7 +1472,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   exit={{ opacity: 0, y: 10 }}
                   className="space-y-8"
                 >
-                  {/* Top quick bento cards */}
                   <motion.div variants={containerVariants} className="grid sm:grid-cols-3 gap-6">
                     
                     <motion.div
@@ -1602,10 +1512,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                   </motion.div>
 
-                  {/* Regional telemetry & visual campaign track */}
                   <motion.div variants={containerVariants} className="grid md:grid-cols-12 gap-6 items-start">
                     
-                    {/* Active Campaign Status Feed */}
                     <motion.div
                       variants={itemVariants}
                       className="p-6 sm:p-8 rounded-3xl bg-white border border-gray-100 shadow-sm md:col-span-8 space-y-6"
@@ -1620,9 +1528,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </span>
                       </div>
 
-                      {/* Map-based representation of Africa project pipeline details */}
                       <div className="relative h-60 bg-gradient-to-br from-emerald-900 to-slate-900 rounded-2xl overflow-hidden flex items-center justify-center text-white">
-                        {/* Map Background visual overlay */}
                         <div className="absolute inset-0 pointer-events-none opacity-10">
                           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:1rem_1rem]" />
                         </div>
@@ -1654,7 +1560,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       </div>
                     </motion.div>
 
-                    {/* Left panel: Quick activity logs feed */}
                     <motion.div
                       variants={itemVariants}
                       className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm md:col-span-4 space-y-4"
@@ -1695,12 +1600,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                   </motion.div>
 
-                  {/* Gamified Leaderboard Spotlight & Progress Meter */}
                   <motion.div
                     variants={itemVariants}
                     className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-900 to-emerald-950 text-white shadow-xl border border-emerald-500/20 space-y-6 relative overflow-hidden"
                   >
-                    {/* Visual glowing overlay circles */}
                     <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
                     <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-teal-500/5 rounded-full blur-2xl pointer-events-none" />
 
@@ -1725,9 +1628,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       </button>
                     </div>
 
-                    {/* Miniature top ranks visual row */}
                     <div className="grid sm:grid-cols-3 gap-4 relative z-10">
-                      {/* Top 1 */}
                       <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-600 flex items-center justify-center font-bold text-slate-950 text-sm shadow-md shrink-0">
                           👑 1st
@@ -1739,7 +1640,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </div>
                       </div>
 
-                      {/* Top 2 */}
                       <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-300 to-gray-500 flex items-center justify-center font-bold text-slate-950 text-sm shadow-md shrink-0">
                           🥈 2nd
@@ -1751,7 +1651,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </div>
                       </div>
 
-                      {/* User Current Live Standing */}
                       <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center gap-3 relative">
                         <div className="absolute top-2 right-2 flex h-2 w-2">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1775,7 +1674,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       </div>
                     </div>
 
-                    {/* Progress tracking gauge */}
                     <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3 relative z-10 font-sans">
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                         <div className="space-y-0.5">
@@ -1790,7 +1688,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </span>
                       </div>
 
-                      {/* Progress bar */}
                       <div className="space-y-1">
                         <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
                           <div 
@@ -1833,7 +1730,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     </div>
 
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {/* Benefit 1 */}
                       <div className="p-5 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-100 hover:border-emerald-100/50 transition-all duration-300 group space-y-3">
                         <div className="p-2.5 rounded-xl bg-white text-emerald-600 w-10 h-10 flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           <Icon name="Globe" size={18} />
@@ -1846,7 +1742,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </p>
                       </div>
 
-                      {/* Benefit 2 */}
                       <div className="p-5 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-100 hover:border-emerald-100/50 transition-all duration-300 group space-y-3">
                         <div className="p-2.5 rounded-xl bg-white text-emerald-600 w-10 h-10 flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           <Icon name="HeartHandshake" size={18} />
@@ -1859,7 +1754,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </p>
                       </div>
 
-                      {/* Benefit 3 */}
                       <div className="p-5 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-100 hover:border-emerald-100/50 transition-all duration-300 group space-y-3">
                         <div className="p-2.5 rounded-xl bg-white text-emerald-600 w-10 h-10 flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           <Icon name="Coins" size={18} />
@@ -1872,7 +1766,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </p>
                       </div>
 
-                      {/* Benefit 4 */}
                       <div className="p-5 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-100 hover:border-emerald-100/50 transition-all duration-300 group space-y-3">
                         <div className="p-2.5 rounded-xl bg-white text-emerald-600 w-10 h-10 flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           <Icon name="HandHelping" size={18} />
@@ -1885,7 +1778,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </p>
                       </div>
 
-                      {/* Benefit 5 */}
                       <div className="p-5 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-100 hover:border-emerald-100/50 transition-all duration-300 group space-y-3">
                         <div className="p-2.5 rounded-xl bg-white text-emerald-600 w-10 h-10 flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           <Icon name="Home" size={18} />
@@ -1898,7 +1790,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         </p>
                       </div>
 
-                      {/* Benefit 6 */}
                       <div className="p-5 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-100 hover:border-emerald-100/50 transition-all duration-300 group space-y-3">
                         <div className="p-2.5 rounded-xl bg-white text-emerald-600 w-10 h-10 flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           <Icon name="Heart" size={18} />
@@ -1912,7 +1803,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       </div>
                     </div>
 
-                    {/* Footer Call to Action */}
                     <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left mt-2 shadow-sm">
                       <div className="space-y-0.5">
                         <p className="font-bold text-[10px] uppercase tracking-wider text-emerald-200">Advaltad Fellowship Motto</p>
@@ -1930,7 +1820,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               )}
 
-              {/* TAB 2: FELLOWSHIP CERTIFICATE */}
+              {/* TAB 2: FELLOWSHIP CERTIFICATE - RETOUCHED VERTICAL LAYOUT TO MATCH THE ATTACHED IMAGE SPECIFICATION EXACTLY */}
               {activeTab === "certificate" && (
                 <motion.div
                   key="v-cert"
@@ -1961,19 +1851,20 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     </button>
                   </div>
 
-                  {/* High Quality Styled Graphic Digital Certificate Frame */}
-                  <div id="credentials-badge-vector" className="relative p-6 sm:p-12 rounded-3xl bg-white border-8 border-emerald-900 shadow-xl overflow-hidden text-center max-w-4xl mx-auto">
-                    
-                    {/* Leafy organic watermark backgrounds */}
-                    <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]">
-                      <div className="absolute inset-[-50px] bg-[radial-gradient(ellipse_at_center,rgba(16,185,129,0.5)_0,transparent_75%)]" />
-                    </div>
-
-                    <div className="relative z-10 border-2 border-emerald-900/10 p-6 sm:p-10 rounded-2xl space-y-8 font-serif">
+                  {/* VERTICAL HIGH-FIDELITY LAYOUT MATCHING ADVALTAD FELLOWSHIP THEME */}
+                  <div id="credentials-badge-vector" className="relative p-1 bg-white shadow-xl max-w-xl mx-auto border border-gray-200 rounded-md">
+                    {/* Dark Emerald Border Accent Wrapper */}
+                    <div className="border-[14px] border-[#0A3622] p-8 sm:p-12 text-center flex flex-col justify-between items-center min-h-[780px] relative bg-white">
                       
-                      {/* Top credentials header logo */}
-                      <div className="flex flex-col items-center space-y-2">
-                        <div className="w-12 h-12 rounded-full overflow-hidden bg-white border border-emerald-950/20 flex items-center justify-center shadow-md">
+                      {/* Top Geometric Corner Layout Marks */}
+                      <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-[#0A3622]/20" />
+                      <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-[#0A3622]/20" />
+                      <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-[#0A3622]/20" />
+                      <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-[#0A3622]/20" />
+
+                      {/* Header Segment */}
+                      <div className="w-full flex flex-col items-center space-y-5 pt-4">
+                        <div className="w-24 h-24 rounded-full overflow-hidden bg-white border border-gray-100 flex items-center justify-center shadow-sm">
                           <img
                             src={logoUrl}
                             alt="Advaltad Foundation Logo"
@@ -1981,56 +1872,82 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             referrerPolicy="no-referrer"
                           />
                         </div>
-                        <span className="text-xs font-sans uppercase font-black tracking-widest text-emerald-800">
-                          Advaltad: Adding Value to Africa's Development
-                        </span>
-                        <span className="text-[9px] font-sans font-bold text-slate-400 uppercase tracking-widest">
-                          Global Fellowship Commission
-                        </span>
+                        <div className="space-y-1">
+                          <h1 className="text-xl sm:text-2xl font-serif font-black tracking-wide text-[#0A3622] uppercase">
+                            ADVALTAD
+                          </h1>
+                          <p className="text-[10px] sm:text-xs font-sans font-extrabold tracking-[0.2em] text-[#1E293B] uppercase">
+                            Adding Value to Africa's Development
+                          </p>
+                        </div>
+                        <div className="w-20 h-[2px] bg-amber-500 my-1" />
                       </div>
 
-                      {/* Declaration */}
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase tracking-widest text-slate-400 font-sans italic">This is to certify that</p>
-                        <h4 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none pt-2 font-sans py-1">
-                          {ambassadorName}
-                        </h4>
-                        <p className="text-xs text-slate-500 italic font-sans max-w-lg mx-auto leading-relaxed pt-2">
-                          has been formally designated as a certified global Fellow and Sovereign Representative, fully authorized to supervise direct field asset operations for:
+                      {/* Title Segment */}
+                      <div className="w-full my-6">
+                        <h2 className="text-2xl sm:text-3xl font-serif font-normal tracking-wide text-gray-800 uppercase">
+                          Certificate
+                        </h2>
+                        <p className="text-[10px] sm:text-xs font-sans font-medium tracking-[0.15em] text-gray-400 uppercase mt-1">
+                          Of Growth Ambassador Fellowship
                         </p>
                       </div>
 
-                      {/* Field Tag */}
-                      <div className="max-w-max mx-auto px-6 py-2 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-800 font-sans font-extrabold text-sm tracking-tight uppercase shadow-sm">
-                        {ambassadorField}
-                      </div>
-
-                      {/* Sub-text details */}
-                      <p className="text-xs text-slate-400 font-sans max-w-md mx-auto leading-relaxed">
-                        Granted full operations representation in <span className="font-semibold text-slate-700">{ambassadorRegion}</span>, committing to direct audited allocations and peer-to-peer developer hubs transparency.
-                      </p>
-
-                      {/* Directors Signatures with dynamic verification checksum */}
-                      <div className="grid grid-cols-2 gap-8 pt-8 border-t border-gray-100 font-sans">
-                        <div className="flex flex-col items-center">
-                          <span className="font-serif italic text-emerald-800 text-sm">Oluwaseun Adewole</span>
-                          <span className="w-24 h-px bg-slate-350 my-1"></span>
-                          <span className="text-[9px] text-gray-400 uppercase tracking-wider font-bold">Executive Director</span>
+                      {/* Content Declaration Section */}
+                      <div className="w-full space-y-6 px-2 sm:px-6">
+                        <p className="text-xs sm:text-sm font-serif italic text-gray-500">
+                          This is to certify that
+                        </p>
+                        
+                        <div className="py-2">
+                          <h3 className="text-2xl sm:text-3xl font-serif font-black text-[#0A3622] tracking-tight border-b border-gray-200 pb-3 max-w-md mx-auto">
+                            {ambassadorName}
+                          </h3>
                         </div>
 
-                        <div className="flex flex-col items-center">
-                          <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded bg-slate-50 border border-emerald-100">
-                            {commissionDate.toUpperCase()}
+                        <p className="text-xs sm:text-sm font-serif text-gray-600 max-w-md mx-auto leading-relaxed">
+                          has been formally designated as a certified global Fellow and Sovereign Representative, fully authorized to supervise direct field asset operations for:
+                        </p>
+
+                        {/* Focus Division Box */}
+                        <div className="max-w-md mx-auto bg-slate-50 border border-slate-100 py-3 px-6 rounded-lg my-4">
+                          <span className="text-xs sm:text-sm font-sans font-extrabold text-[#0A3622] tracking-wide uppercase">
+                            {ambassadorField}
                           </span>
-                          <span className="w-24 h-px bg-slate-350 my-1"></span>
-                          <span className="text-[9px] text-gray-400 uppercase tracking-wider font-bold">Commission Date</span>
+                        </div>
+
+                        <p className="text-[11px] sm:text-xs font-sans text-gray-400 max-w-xs mx-auto leading-normal">
+                          Granted full operations representation in <span className="font-semibold text-gray-700">{ambassadorRegion}</span>, committing to direct audited allocations and peer-to-peer developer hubs transparency.
+                        </p>
+                      </div>
+
+                      {/* Signatures Footer Block */}
+                      <div className="w-full grid grid-cols-2 gap-8 pt-12 mt-4 border-t border-slate-100 font-sans">
+                        <div className="flex flex-col items-center justify-end space-y-2">
+                          <span className="font-serif italic text-sm text-gray-800 tracking-wide">
+                            Oluwaseun Adewole
+                          </span>
+                          <div className="w-32 h-[1px] bg-gray-300" />
+                          <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                            Executive Director
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col items-center justify-end space-y-2">
+                          <span className="font-mono font-bold text-xs text-[#0A3622] bg-emerald-50/60 px-3 py-1 rounded border border-emerald-100/50">
+                            {commissionDate}
+                          </span>
+                          <div className="w-32 h-[1px] bg-gray-300" />
+                          <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                            Commission Date
+                          </span>
                         </div>
                       </div>
 
-                      {/* Badge unique sha checksum identifier */}
-                      <div className="text-[9px] font-mono text-gray-400/80 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-gray-100/60 font-sans">
-                        <span>CERTIFICATE CHECKSUM: ADVALTAD_COMMIT_VERIFIED_SHA256_F{Math.floor(Math.random() * 888 + 111)}X</span>
-                        <span>STATUS: SECURE DEPLOYED PORTAL DEVISE</span>
+                      {/* Security Key Footnote */}
+                      <div className="w-full pt-8 text-[8px] font-mono text-gray-400/70 flex justify-between items-center border-t border-slate-50 mt-4">
+                        <span>CHECKSUM: ADVALTAD_SHA256_F{Math.floor(Math.random() * 888 + 111)}X</span>
+                        <span>STATUS: SECURE LEDGER VERIFIED</span>
                       </div>
 
                     </div>
@@ -2059,7 +1976,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               )}
 
-              {/* TAB 3: P2P VALUE EXCHANGE */}
               {activeTab === "p2p" && (
                 <motion.div
                   key="v-p2p"
@@ -2075,7 +1991,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                   <div className="grid md:grid-cols-12 gap-8 items-start">
                     
-                    {/* Left Column: Peer lists */}
                     <div className="md:col-span-8 space-y-6">
                       <div className="flex bg-gray-150 p-1 bg-gray-100 mt-2 rounded-xl mb-4 max-w-md">
                         <button
@@ -2229,7 +2144,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             exit={{ opacity: 0, y: -10 }}
                             className="space-y-6"
                           >
-                            {/* Analytics KPI mini row */}
                             <div className="grid grid-cols-3 gap-3">
                               <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-2xl">
                                 <span className="text-[10px] font-bold text-emerald-850 uppercase tracking-wider block">Network Traffic</span>
@@ -2248,7 +2162,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                               </div>
                             </div>
 
-                            {/* Recharts Area Chart */}
                             <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm space-y-4">
                               <div>
                                 <h4 className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
@@ -2285,128 +2198,37 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                                 </ResponsiveContainer>
                               </div>
                             </div>
-
-                            {/* Recharts Bar Chart */}
-                            <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm space-y-4">
-                              <div>
-                                <h4 className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
-                                  <Icon name="Building2" size={14} className="text-emerald-600" />
-                                  Regional Inflow / Outflow Balance
-                                </h4>
-                                <p className="text-[10px] text-gray-500 mt-0.5">An analysis of community points balance across five active ambassador support hubs.</p>
-                              </div>
-
-                              <div className="h-[210px] w-full mt-2 font-sans text-xs">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <BarChart data={hubFlowData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                                    <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} tickLine={false} />
-                                    <YAxis stroke="#9CA3AF" fontSize={10} tickLine={false} />
-                                    <Tooltip 
-                                      contentStyle={{ backgroundColor: "#0f172a", borderRadius: "12px", border: "none", color: "#f8fafc", fontSize: "11px" }}
-                                      labelStyle={{ fontWeight: "bold", fontSize: "11px", color: "#2dd4bf" }}
-                                    />
-                                    <Legend iconType="circle" wrapperStyle={{ paddingTop: "8px", fontSize: "10px" }} />
-                                    <Bar dataKey="Received" name="Received Inflow" fill="#10b981" radius={[3, 3, 0, 0]} />
-                                    <Bar dataKey="Dispatched" name="Dispatched Outflow" fill="#0d9488" radius={[3, 3, 0, 0]} />
-                                  </BarChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </div>
-
-                            {/* Active Corridor Flow Channels */}
-                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-3">
-                              <h5 className="font-bold text-[10px] text-slate-400 uppercase tracking-widest">Global Corridor Active Flow Channels</h5>
-                              <div className="space-y-1.5 text-xs">
-                                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    <span className="font-bold text-slate-800 text-[11px]">Lagos Hub</span>
-                                    <span className="text-gray-400 text-[10px]">➜</span>
-                                    <span className="font-bold text-slate-650 text-[11px]">Accra Support</span>
-                                  </div>
-                                  <span className="font-bold text-emerald-600 font-mono text-[11px]">+400 AVU</span>
-                                </div>
-
-                                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    <span className="font-bold text-slate-800 text-[11px]">Mombasa Corridor</span>
-                                    <span className="text-gray-400 text-[10px]">➜</span>
-                                    <span className="font-bold text-slate-655 text-[11px]">Kigali Center</span>
-                                  </div>
-                                  <span className="font-bold text-emerald-600 font-mono text-[11px]">+250 AVU</span>
-                                </div>
-                              </div>
-                            </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
 
-                    {/* Right column: Ledger stats */}
-                    <div className="md:col-span-4 p-5 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6">
-                      <div>
-                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400 mb-3">Ledger Statement</h4>
+                    <div className="md:col-span-4 space-y-6">
+                      <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm space-y-4">
+                        <h4 className="font-bold text-xs text-gray-900 uppercase tracking-wider">Your Exchange Ledger</h4>
                         
-                        <div className="space-y-3.5 text-xs text-slate-500">
-                          <div className="pb-3 border-b border-gray-100 flex justify-between">
-                            <span>Initial AVU Commission</span>
-                            <span className="text-slate-900 font-bold">+1,500 AVU</span>
-                          </div>
-                          <div className="pb-3 border-b border-gray-100 flex justify-between">
-                            <span>Curriculum Package Access</span>
-                            <span className="text-slate-900 font-bold">0 AVU (HQ Free)</span>
-                          </div>
-                          <div className="pb-3 border-b border-gray-100 flex justify-between">
-                            <span>Shelter Blueprints swap</span>
-                            <span className="text-amber-800 font-bold">-250 AVU</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                          <span>Live Exchange Log</span>
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        </h4>
-                        
-                        {p2pTxHistory.length === 0 ? (
-                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] text-gray-400 text-center">
-                            No peer transfers logged in your active session yet.
-                          </div>
-                        ) : (
-                          <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
-                            {p2pTxHistory.map((tx) => {
-                              const isSender = profile?.id && (
-                                tx.sender_id.toLowerCase() === profile.id.toLowerCase() || 
-                                (profile.user_id && tx.sender_id.toLowerCase() === profile.user_id.toLowerCase()) ||
-                                tx.sender_email.toLowerCase() === profile.email.toLowerCase()
-                              );
+                        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto pr-1">
+                          {p2pTxHistory.length === 0 ? (
+                            <p className="text-[11px] text-gray-400 py-3 font-sans">No records discovered on the local ledger block yet.</p>
+                          ) : (
+                            p2pTxHistory.map((tx, idx) => {
+                              const isSender = tx.sender_id === profile?.id;
                               return (
-                                <div key={tx.id} className="p-3 rounded-xl bg-slate-50 border border-slate-105 space-y-1 text-left">
-                                  <div className="flex justify-between items-start">
-                                    <span className="font-bold text-slate-800 text-[11px] truncate max-w-[110px]" title={isSender ? tx.recipient_name : tx.sender_name}>
-                                      {isSender ? `To: ${tx.recipient_name}` : `From: ${tx.sender_name}`}
-                                    </span>
-                                    <span className={`font-mono font-black text-[11px] whitespace-nowrap ${isSender ? "text-amber-800" : "text-emerald-700"}`}>
-                                      {isSender ? `-${tx.points} AVU` : `+${tx.points} AVU`}
-                                    </span>
+                                <div key={tx.id || idx} className="py-2.5 flex justify-between items-start gap-2 text-[11px]">
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-gray-800 line-clamp-1">{tx.reason || "Peer transfer support"}</p>
+                                    <p className="text-[10px] text-gray-400">
+                                      {isSender ? `To: ${tx.recipient_name || tx.recipient_id}` : `From: ${tx.sender_name || tx.sender_id}`}
+                                    </p>
                                   </div>
-                                  <p className="text-[10px] text-gray-500 line-clamp-1">{tx.reason}</p>
-                                  <div className="flex justify-between items-center text-[9px] text-gray-400 font-mono">
-                                    <span>{tx.id}</span>
-                                    <span>{new Date(tx.created_at).toLocaleDateString()}</span>
-                                  </div>
+                                  <span className={`font-mono font-black ${isSender ? "text-rose-600" : "text-emerald-600"}`}>
+                                    {isSender ? `-${tx.amount}` : `+${tx.amount}`}
+                                  </span>
                                 </div>
                               );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="pt-2">
-                        <p className="text-[10px] text-gray-400">Advaltad Value Units carry no static fiat conversions. They signify mutual intellectual assets shared across communities natively.</p>
+                            })
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -2414,574 +2236,387 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               )}
 
-              {/* TAB 4: PAYMENT GATEWAY CAMPAIGN LINK */}
               {activeTab === "payments" && (
                 <motion.div
                   key="v-payments"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="space-y-8"
-                  style={{ fontFamily: "'Roboto', sans-serif" }}
+                  className="space-y-6 bg-white border border-gray-100 p-6 sm:p-8 rounded-3xl shadow-sm"
                 >
-                  <div className="pb-4 border-b border-gray-200">
-                    <h3 className="text-xl font-bold text-gray-900">Wallet Funding Terminal</h3>
-                    <p className="text-xs text-gray-500 font-sans">Sponsor programs to fund your wallet and accumulate Advaltad Value Units (AVU) securely.</p>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Direct Financial Gateway Interface</h3>
+                    <p className="text-xs text-gray-500 font-sans">Initialize formal donations tracking links or process manual regional ledger cash handovers securely.</p>
                   </div>
 
-                  <div className="max-w-2xl bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6 mx-auto text-center">
-                    <div className="mx-auto w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 mb-4">
-                      <Icon name="Wallet" size={32} />
-                    </div>
-                    <div className="space-y-2">
-                      <h4 className="text-xl font-extrabold text-slate-900">Secure Wallet Funding Terminal</h4>
-                      <p className="text-sm text-slate-500 max-w-md mx-auto">
-                        Fund your ambassador growth wallet via our secure Paystack checkout gateway to instantly accumulate Advaltad Value Units (AVU) and earn performance commissions.
-                      </p>
-                    </div>
-                    <div className="pt-4">
-                      <button
-                        onClick={() => setIsFundWalletModalOpen(true)}
-                        className="px-8 py-3.5 rounded-xl bg-slate-950 hover:bg-slate-900 text-white font-bold text-sm uppercase tracking-wider transition-all flex items-center gap-2 mx-auto cursor-pointer shadow-md hover:shadow-lg active:scale-98"
-                      >
-                        <Icon name="Lock" size={16} className="text-emerald-400" />
-                        <span>Launch Funding Terminal</span>
-                      </button>
-                    </div>
-                    <div className="pt-6 border-t border-slate-100 flex justify-center gap-8 text-left text-xs text-slate-500 font-sans">
-                      <div>
-                        <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Processing</p>
-                        <p className="font-medium text-slate-700">100% Secure via Paystack</p>
+                  <div className="grid md:grid-cols-2 gap-8 pt-4 items-start">
+                    <div className="space-y-4">
+                      <h4 className="font-black text-xs uppercase tracking-wider text-gray-400">Option A: Campaign Hyperlink Architect</h4>
+                      <p className="text-xs text-gray-500">Construct dedicated links mapping sponsors straight to your regional technical youth segment.</p>
+                      
+                      <div className="space-y-3 font-sans text-xs">
+                        <div>
+                          <label className="block font-bold text-gray-500 mb-1">Campaign Title Context</label>
+                          <input
+                            type="text"
+                            value={campaignTitle}
+                            onChange={(e) => { setCampaignTitle(e.target.value); setCampaignGenerated(false); }}
+                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-gray-500 mb-1">Target Links Text Output</label>
+                          <input
+                            disabled
+                            type="text"
+                            value={donationLinkText}
+                            className="w-full px-4 py-2.5 bg-gray-100 text-gray-500 border border-gray-100 rounded-xl font-mono"
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            const slug = campaignTitle.toLowerCase().replace(/[^a-z0-w]+/g, "-");
+                            setDonationLinkText(`https://advaltad.org/campaign/${slug || "regional-labs"}`);
+                            setCampaignGenerated(true);
+                          }}
+                          className="w-full py-2.5 rounded-xl bg-gray-950 text-white font-bold"
+                        >
+                          Generate Synchronized URL Link
+                        </button>
+
+                        {campaignGenerated && (
+                          <p className="text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
+                            ✓ Ready. Copy this token links and forward to external partners. Tracking handles assigned automatically.
+                          </p>
+                        )}
                       </div>
-                      <div className="border-l border-slate-200" />
-                      <div>
-                        <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Conversion Rate</p>
-                        <p className="font-medium text-slate-700">₦1,000 = <span className="font-bold text-emerald-600">1.002 AVU</span></p>
-                      </div>
+                    </div>
+
+                    <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                      <h4 className="font-black text-xs uppercase tracking-wider text-gray-400">Option B: Physical Check / Manual Wire Logger</h4>
+                      <p className="text-xs text-gray-500">Did a local corporate donor hand over physical support? Log details instantly here into the administrative queue for balance vetting.</p>
+
+                      <form onSubmit={handleDirectDonationGateway} className="space-y-3 font-sans text-xs">
+                        <div>
+                          <label className="block font-bold text-gray-600 mb-1">Donor Corporate Entity / Name</label>
+                          <input
+                            required
+                            type="text"
+                            placeholder="e.g. Chevron Nigeria West Africa Hub"
+                            value={termDonorName}
+                            onChange={(e) => setTermDonorName(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-bold text-gray-600 mb-1">Audit Email Contact</label>
+                            <input
+                              required
+                              type="email"
+                              placeholder="finance@donor.com"
+                              value={termDonorEmail}
+                              onChange={(e) => setTermDonorEmail(e.target.value)}
+                              className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-gray-600 mb-1">Handed Over Value ($)</label>
+                            <input
+                              required
+                              type="number"
+                              placeholder="USD Amount"
+                              value={termAmount}
+                              onChange={(e) => setTermAmount(e.target.value)}
+                              className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={termStatus === "submitting"}
+                          className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                        >
+                          {termStatus === "submitting" ? "Securing Ledger Allocations..." : termStatus === "completed" ? "✓ Dispatched to Supervisor Queue" : "Certify Manual Support Handover"}
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </motion.div>
               )}
-              {/* TAB 5: MANAGED LOCAL PROJECTS */}
+
               {activeTab === "projects" && (
                 <motion.div
                   key="v-projects"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="space-y-8"
+                  className="space-y-6"
                 >
-                  <div className="pb-4 border-b border-gray-200">
-                    <h3 className="text-xl font-bold text-gray-900">Your Supervised Project Portfolio</h3>
-                    <p className="text-xs text-gray-500 font-sans">Active operations and construction portfolios directly associated with your ambassador commission credentials.</p>
+                  <div className="pb-4 border-b border-gray-200 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">Supervised Local Deployments</h3>
+                      <p className="text-xs text-gray-500 font-sans">Track development percentages and field supply timelines logged under your direct fellowship jurisdiction.</p>
+                    </div>
                   </div>
 
-                  <div className="space-y-6">
-                    {projects.map((project) => (
-                      <div
-                        key={project.id}
-                        className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:border-emerald-500/20 transition-all"
-                      >
-                        <div className="space-y-3 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md uppercase">
-                              {project.category}
-                            </span>
-                            <span className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
-                              <Icon name="MapPin" size={10} /> {project.location}
-                            </span>
+                  <div className="grid sm:grid-cols-3 gap-6">
+                    {projects.map((proj) => (
+                      <div key={proj.id} className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase font-mono tracking-wider">{proj.category}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase font-sans tracking-wide ${
+                              proj.status === "completed" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+                              proj.status === "active" ? "bg-blue-50 text-blue-700 border border-blue-100 animate-pulse" :
+                              "bg-slate-100 text-slate-600"
+                            }`}>{proj.status}</span>
                           </div>
-
-                          <h4 className="text-base font-extrabold text-slate-900 leading-snug">{project.name}</h4>
-
-                          {/* Minimalist progress bar */}
-                          <div className="space-y-1.5 max-w-md">
-                            <div className="flex justify-between text-[11px] text-gray-400">
-                              <span>Milestone deployment</span>
-                              <span className="font-bold text-slate-700">{project.progress}% completed</span>
-                            </div>
-                            <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${project.progress}%` }}></div>
-                            </div>
-                          </div>
+                          <h4 className="font-bold text-sm text-gray-900 leading-snug line-clamp-2">{proj.name}</h4>
+                          <p className="text-[11px] text-gray-400 font-sans flex items-center gap-1">
+                            <Icon name="Compass" size={10} /> {proj.location}
+                          </p>
                         </div>
 
-                        {/* Quantitative metric column */}
-                        <div className="flex flex-col sm:items-end justify-center self-start sm:self-auto space-y-1.5 border-t sm:border-0 pt-4 sm:pt-0 shrink-0">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{project.metricLabel}</span>
-                          <span className="text-lg font-black text-emerald-800 font-mono">{project.metricVal}</span>
-                          
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-sans font-bold bg-gray-50 text-gray-500 border border-gray-100 uppercase">
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              project.status === "active"
-                                ? "bg-emerald-500"
-                                : project.status === "completed"
-                                  ? "bg-blue-500"
-                                  : "bg-amber-500"
-                            }`} />
-                            {project.status}
+                        <div className="space-y-1.5 font-sans">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-gray-400">{proj.metricLabel}: <b className="text-gray-700">{proj.metricVal}</b></span>
+                            <span className="font-bold text-gray-800">{proj.progress}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${proj.status === "completed" ? "bg-emerald-600" : "bg-emerald-500"}`} style={{ width: `${proj.progress}%` }} />
                           </div>
                         </div>
-
                       </div>
                     ))}
                   </div>
                 </motion.div>
               )}
 
-              {/* TAB 6: PROFILE DETAILS & CITY UPDATER */}
               {activeTab === "profile" && (
                 <motion.div
                   key="v-profile"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="space-y-8"
+                  className="max-w-2xl bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6"
                 >
-                  <AmbassadorProfile
-                    profile={profile!}
-                    onProfileUpdated={fetchAmbassadorData}
-                  />
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Public Registry Credentials</h3>
+                    <p className="text-xs text-gray-500 font-sans">Update your certified identity strings and password blocks stored inside the local database tables.</p>
+                  </div>
+
+                  {updateSuccess && (
+                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-sans font-medium text-emerald-800 flex items-center gap-2">
+                      <Icon name="Check" size={16} />
+                      <span>Registry tables synchronized successfully. fellowship credential vectors updated on the block!</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleUpdateProfile} className="space-y-4 text-xs font-sans">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-bold text-gray-500 uppercase mb-1">Ambassador Full Name</label>
+                        <input
+                          required
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-gray-500 uppercase mb-1">Base Operation City / Country</label>
+                        <input
+                          required
+                          type="text"
+                          value={editCity}
+                          onChange={(e) => setEditCity(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-gray-500 uppercase mb-1">Fellowship Core Focus Segment / Division</label>
+                      <input
+                        required
+                        type="text"
+                        value={editField}
+                        onChange={(e) => setEditField(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-bold text-gray-500 uppercase mb-1">Phone Contact Matrix</label>
+                        <input
+                          type="text"
+                          placeholder="+234..."
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-gray-500 uppercase mb-1">Portal Access Key (Password)</label>
+                        <input
+                          required
+                          type="password"
+                          value={editPassword}
+                          onChange={(e) => setEditPassword(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isUpdatingProfile}
+                      className="w-full py-3 rounded-xl bg-gray-950 text-white font-bold text-xs uppercase tracking-wider"
+                    >
+                      {isUpdatingProfile ? "Synchronizing database Record..." : "Commit Identity Updates"}
+                    </button>
+                  </form>
                 </motion.div>
               )}
 
-              {/* TAB 7: GAMIFIED LEADERBOARD */}
               {activeTab === "leaderboard" && (
                 <motion.div
                   key="v-leaderboard"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="space-y-8"
+                  className="space-y-6"
                 >
-                  {/* Title Header Row */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-gray-200">
-                    <div className="space-y-1">
-                      <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                        <Icon name="Trophy" size={24} className="text-amber-500 shrink-0" />
-                        Ambassador Contribution Leaderboard
-                      </h3>
-                      <p className="text-xs text-gray-500 font-sans">
-                        Recognizing regional community leads based on active co-funding, program supervision, and peer operations.
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 text-xs font-mono bg-amber-50 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200 font-bold self-start sm:self-auto">
-                      <Icon name="Sparkles" size={14} className="text-amber-500 animate-pulse" />
-                      <span>Ledger Verified Scores</span>
-                    </div>
-                  </div>
-
-                  {/* Top 3 Physical Podium Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end pt-4">
-                    {/* 2nd Place (Silver) */}
-                    <div className="order-2 md:order-1 flex flex-col items-center">
-                      {(() => {
-                        const leader2 = processedLeaders[1];
-                        return (
-                          <div className="w-full text-center space-y-3">
-                            <div className="relative inline-block">
-                              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-200 to-slate-400 p-0.5 shadow-lg">
-                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-slate-350">
-                                  {leader2.initials || "KM"}
-                                </div>
-                              </div>
-                              <span className="absolute -top-2 -right-1 bg-slate-300 text-slate-900 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
-                                2
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <p className="font-extrabold text-sm text-slate-800">{leader2.name}</p>
-                              <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader2.avu_balance || 0).toLocaleString()} AVU</p>
-                              <p className="text-[10px] text-gray-400 font-medium">{leader2.city} • {leader2.field}</p>
-                              <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-700 bg-slate-100 border border-slate-200 rounded-md">
-                                {leader2.rankTitle}
-                              </span>
-                              <p className="text-xs font-black font-mono text-slate-650 pt-1">{leader2.points.toLocaleString()} PTS</p>
-                            </div>
-
-                            {/* Podium Pedestal block */}
-                            <div className="h-16 w-full bg-gradient-to-t from-slate-150 to-slate-100 rounded-t-2xl border-t border-x border-slate-200/60 shadow-[0_-4px_12px_rgba(0,0,0,0.02)] flex items-center justify-center font-mono font-black text-slate-400 text-lg">
-                              SILVER
-                            </div>
-                          </div>
-                        );
-                      })()}
+                  <div className="pb-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900 tracking-tight">Growth Ambassador Arena Ranking</h3>
+                      <p className="text-xs text-gray-500 font-sans">Live tracking of impact points based on AVU balance contribution, funding loops, and field grids.</p>
                     </div>
 
-                    {/* 1st Place (Gold) - Elevated center block */}
-                    <div className="order-1 md:order-2 flex flex-col items-center">
-                      {(() => {
-                        const leader1 = processedLeaders[0];
-                        return (
-                          <div className="w-full text-center space-y-3 relative">
-                            {/* Confetti element simulation */}
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-8 text-xl animate-bounce">
-                              👑
-                            </div>
-                            
-                            <div className="relative inline-block">
-                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-yellow-600 p-1 shadow-xl ring-4 ring-amber-400/20">
-                                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white font-bold text-xl border-2 border-amber-400">
-                                  {leader1.initials || "NT"}
-                                </div>
-                              </div>
-                              <span className="absolute -top-2 -right-1 bg-amber-400 text-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow-md">
-                                1
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1 pb-2">
-                              <p className="font-black text-base text-gray-950 flex items-center justify-center gap-1">
-                                {leader1.name}
-                                {leader1.isCurrentUser && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
-                              </p>
-                              <p className="text-xs text-emerald-650 font-black font-mono">{(leader1.avu_balance || 0).toLocaleString()} AVU</p>
-                              <p className="text-[10px] text-gray-400 font-medium">{leader1.city} • {leader1.field}</p>
-                              <span className="inline-block px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-805 bg-amber-100/80 border border-amber-200 rounded-md">
-                                {leader1.rankTitle}
-                              </span>
-                              <p className="text-sm font-extrabold font-mono text-amber-600 pt-1">{leader1.points.toLocaleString()} PTS</p>
-                            </div>
-
-                            {/* Podium Pedestal block */}
-                            <div className="h-24 w-full bg-gradient-to-t from-amber-100/60 to-amber-50/40 rounded-t-2xl border-t border-x border-amber-200/60 shadow-[0_-6px_20px_rgba(245,158,11,0.05)] flex flex-col items-center justify-center font-mono font-black text-amber-500 text-xl">
-                              <span>GOLD</span>
-                              <span className="text-[9px] text-amber-400/80 uppercase tracking-widest mt-0.5">Arena Leader</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {/* 3rd Place (Bronze) */}
-                    <div className="order-3 md:order-3 flex flex-col items-center">
-                      {(() => {
-                        const leader3 = processedLeaders[2];
-                        return (
-                          <div className="w-full text-center space-y-3">
-                            <div className="relative inline-block">
-                              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-600 to-orange-800 p-0.5 shadow-lg">
-                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-amber-700">
-                                  {leader3.initials || "MD"}
-                                </div>
-                              </div>
-                              <span className="absolute -top-2 -right-1 bg-orange-700 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
-                                3
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <p className="font-extrabold text-sm text-slate-800 flex items-center justify-center gap-1">
-                                {leader3.name}
-                                {leader3.isCurrentUser && <span className="text-[9px] bg-emerald-100 text-emerald-850 px-1.5 py-0.5 rounded font-black uppercase">You</span>}
-                              </p>
-                              <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader3.avu_balance || 0).toLocaleString()} AVU</p>
-                              <p className="text-[10px] text-gray-400 font-medium">{leader3.city} • {leader3.field}</p>
-                              <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 rounded-md">
-                                {leader3.rankTitle}
-                              </span>
-                              <p className="text-xs font-black font-mono text-amber-800 pt-1">{leader3.points.toLocaleString()} PTS</p>
-                            </div>
-
-                            {/* Podium Pedestal block */}
-                            <div className="h-12 w-full bg-gradient-to-t from-orange-50 to-orange-50/20 rounded-t-2xl border-t border-x border-orange-200/40 shadow-[0_-4px_12px_rgba(0,0,0,0.01)] flex items-center justify-center font-mono font-black text-orange-600/70 text-lg">
-                              BRONZE
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Main Grid: Leaders table (Left 8 cols) & Quest list (Right 4 cols) */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
-                    
-                    {/* LEADER TABLE (8 COLS) */}
-                    <div className="lg:col-span-8 space-y-6">
-                      
-                      {/* Interactive Search & Filters Panel */}
-                      <div className="p-4 rounded-2xl bg-white border border-gray-100 shadow-sm space-y-4">
-                        <div className="relative">
-                          <span className="absolute left-3.5 top-3 text-gray-400">
-                            <Icon name="Search" size={14} />
-                          </span>
-                          <input
-                            type="text"
-                            placeholder="Search ambassadors by name..."
-                            value={leaderSearch}
-                            onChange={(e) => setLeaderSearch(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-emerald-600 text-xs font-medium focus:outline-none"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 text-[10px]">
-                          {/* Region Filter */}
-                          <div className="space-y-1">
-                            <label className="block font-bold text-gray-400 uppercase tracking-widest">Region Group</label>
-                            <select
-                              value={leaderRegionFilter}
-                              onChange={(e) => setLeaderRegionFilter(e.target.value)}
-                              className="w-full p-2 rounded-lg bg-gray-50 border border-gray-100 text-xs font-bold text-slate-700 cursor-pointer"
-                            >
-                              <option value="All">All Regions</option>
-                              <option value="West Africa">West Africa</option>
-                              <option value="East Africa">East Africa</option>
-                            </select>
-                          </div>
-
-                          {/* Division Filter */}
-                          <div className="space-y-1">
-                            <label className="block font-bold text-gray-400 uppercase tracking-widest">Field Division</label>
-                            <select
-                              value={leaderDivisionFilter}
-                              onChange={(e) => setLeaderDivisionFilter(e.target.value)}
-                              className="w-full p-2 rounded-lg bg-gray-50 border border-gray-100 text-xs font-bold text-slate-700 cursor-pointer"
-                            >
-                              <option value="All">All Divisions</option>
-                              <option value="Technology">Technology</option>
-                              <option value="Sustainability">Sustainability</option>
-                              <option value="Healthcare">Healthcare</option>
-                              <option value="Education & Other">Education & Other</option>
-                            </select>
-                          </div>
-                        </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative font-sans text-xs">
+                        <input
+                          type="text"
+                          placeholder="Search ambassadors..."
+                          value={leaderSearch}
+                          onChange={(e) => setLeaderSearch(e.target.value)}
+                          className="pl-8 pr-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-500 w-44"
+                        />
+                        <span className="absolute left-2.5 top-2.5 text-gray-400">
+                          <Icon name="Compass" size={12} />
+                        </span>
                       </div>
 
-                      {/* Leaders Table Rows */}
-                      <div className="space-y-3">
-                        <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest px-2">Rankings List</h4>
-                        
-                        {(() => {
-                          // Apply client-side search and filters to processedLeaders
-                          const filteredLeaders = processedLeaders.filter(leader => {
-                            const matchSearch = leader.name.toLowerCase().includes(leaderSearch.toLowerCase()) || 
-                                                leader.city.toLowerCase().includes(leaderSearch.toLowerCase());
-                            const matchRegion = leaderRegionFilter === "All" || getBroadRegion(leader.city) === leaderRegionFilter;
-                            const matchDivision = leaderDivisionFilter === "All" || getBroadDivision(leader.field) === leaderDivisionFilter;
-                            return matchSearch && matchRegion && matchDivision;
-                          });
+                      <select
+                        value={leaderRegionFilter}
+                        onChange={(e) => setLeaderRegionFilter(e.target.value)}
+                        className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:outline-none cursor-pointer text-gray-700"
+                      >
+                        <option value="All">All Regions</option>
+                        <option value="West Africa">West Africa</option>
+                        <option value="East Africa">East Africa</option>
+                      </select>
 
-                          if (filteredLeaders.length === 0) {
-                            return (
-                              <div className="p-8 text-center bg-white rounded-3xl border border-gray-100 text-xs text-gray-400 space-y-2">
-                                <Icon name="AlertCircle" size={24} className="mx-auto text-gray-300" />
-                                <p className="font-bold">No matching ambassadors found.</p>
-                                <p className="text-[11px]">Try clearing your search query or adjusting filters.</p>
-                              </div>
-                            );
-                          }
+                      <select
+                        value={leaderDivisionFilter}
+                        onChange={(e) => setLeaderDivisionFilter(e.target.value)}
+                        className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:outline-none cursor-pointer text-gray-700"
+                      >
+                        <option value="All">All Focus Areas</option>
+                        <option value="Technology">Technology</option>
+                        <option value="Sustainability">Sustainability</option>
+                        <option value="Healthcare">Healthcare</option>
+                      </select>
+                    </div>
+                  </div>
 
-                          return filteredLeaders.map((leader, index) => {
-                            const isUser = leader.isCurrentUser;
-                            // Find their absolute index/rank inside sortedProcessedLeaders
-                            const absoluteRank = processedLeaders.findIndex(l => l.id === leader.id) + 1;
-                            
-                            return (
-                              <div
-                                key={leader.id}
-                                className={`p-4 rounded-2xl bg-white border transition-all flex items-center justify-between gap-4 ${
-                                  isUser 
-                                    ? "border-emerald-500 shadow-md ring-2 ring-emerald-500/10 relative" 
-                                    : "border-gray-100 hover:border-gray-200 hover:shadow-sm"
-                                }`}
-                              >
-                                {isUser && (
-                                  <div className="absolute top-0 right-12 -translate-y-1/2 bg-emerald-600 text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow tracking-wider">
-                                    Your Score
-                                  </div>
-                                )}
-
-                                <div className="flex items-center gap-3.5 min-w-0">
-                                  {/* Rank Number Circle */}
-                                  <span className={`w-6 text-center font-mono text-sm font-black shrink-0 ${
-                                    absoluteRank === 1 ? "text-amber-500 text-lg" : absoluteRank === 2 ? "text-slate-400 text-base" : absoluteRank === 3 ? "text-orange-700" : "text-gray-400"
-                                  }`}>
-                                    #{absoluteRank}
-                                  </span>
-
-                                  {/* Initials Circle */}
-                                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${leader.avatarBg || "from-slate-400 to-slate-500"} p-0.5 shrink-0 shadow-sm`}>
-                                    <div className="w-full h-full rounded-lg bg-slate-900 flex items-center justify-center text-white font-bold text-xs">
-                                      {leader.initials || leader.name.split(" ").map((n: string) => n[0]).join("").substring(0,2).toUpperCase()}
+                  <div className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse font-sans text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                            <th className="py-4 px-6 text-center w-16">Rank</th>
+                            <th className="py-4 px-4">Ambassador Fellow</th>
+                            <th className="py-4 px-4">Focus Division & Region</th>
+                            <th className="py-4 px-4 text-right">Wallet AVU</th>
+                            <th className="py-4 px-4 text-right">Supervised Deployments</th>
+                            <th className="py-4 px-6 text-right">Total Impact Points</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 text-slate-700">
+                          {processedLeaders
+                            .filter(l => {
+                              const matchText = l.name.toLowerCase().includes(leaderSearch.toLowerCase()) || l.city.toLowerCase().includes(leaderSearch.toLowerCase());
+                              const matchRegion = leaderRegionFilter === "All" || getBroadRegion(l.city) === leaderRegionFilter;
+                              const matchDivision = leaderDivisionFilter === "All" || getBroadDivision(l.field) === leaderDivisionFilter;
+                              return matchText && matchRegion && matchDivision;
+                            })
+                            .map((leader, index) => {
+                              return (
+                                <tr 
+                                  key={leader.id} 
+                                  className={`hover:bg-slate-50/50 transition-colors ${
+                                    leader.isCurrentUser ? "bg-emerald-50/30 font-medium border-l-4 border-emerald-600" : ""
+                                  }`}
+                                >
+                                  <td className="py-4 px-6 text-center">
+                                    {index === 0 ? (
+                                      <span className="text-lg">🥇</span>
+                                    ) : index === 1 ? (
+                                      <span className="text-lg">🥈</span>
+                                    ) : index === 2 ? (
+                                      <span className="text-lg">🥉</span>
+                                    ) : (
+                                      <span className="font-mono text-slate-400 font-bold">#{index + 1}</span>
+                                    )}
+                                  </td>
+                                  <td className="py-4 px-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${leader.avatarBg} text-white font-black text-[11px] flex items-center justify-center shadow-sm shrink-0`}>
+                                        {leader.initials}
+                                      </div>
+                                      <div>
+                                        <p className="font-bold text-slate-900 flex items-center gap-1.5">
+                                          <span>{leader.name}</span>
+                                          {leader.isCurrentUser && (
+                                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[8px] font-black uppercase tracking-wider">YOU</span>
+                                          )}
+                                        </p>
+                                        <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border mt-0.5 ${leader.badgeColor}`}>
+                                          {leader.rankTitle}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-
-                                  {/* Name & Region */}
-                                  <div className="min-w-0 space-y-0.5">
-                                    <h5 className="font-bold text-xs text-slate-900 flex items-center gap-1.5 truncate">
-                                      {leader.name}
-                                      {isUser && <span className="text-[8px] bg-emerald-50 text-emerald-800 px-1 rounded font-bold uppercase">YOU</span>}
-                                    </h5>
-                                    <p className="text-[10px] text-gray-400 truncate font-sans">
-                                      {leader.city} • <span className="font-semibold text-slate-500">{leader.field}</span>
-                                    </p>
-                                    <p className="text-[10px] text-emerald-650 font-extrabold font-mono flex items-center gap-1 mt-0.5">
-                                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                      {(leader.avu_balance || 0).toLocaleString()} AVU
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {/* Score & Status Badge */}
-                                <div className="text-right shrink-0 space-y-1.5">
-                                  <span className={`inline-block text-[8px] font-bold px-2 py-0.5 border rounded-full ${leader.badgeColor}`}>
-                                    {leader.rankTitle}
-                                  </span>
-                                  <p className="font-mono text-xs font-black text-slate-800 leading-none">
-                                    {leader.points?.toLocaleString()} <span className="text-[9px] text-gray-400 font-bold">PTS</span>
-                                  </p>
-                                </div>
-
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-
+                                  </td>
+                                  <td className="py-4 px-4 text-slate-500">
+                                    <p className="font-semibold text-slate-700 truncate max-w-[180px]">{leader.field}</p>
+                                    <p className="text-[10px] mt-0.5">{leader.city}</p>
+                                  </td>
+                                  <td className="py-4 px-4 text-right font-mono font-bold text-slate-800">
+                                    {leader.avu_balance.toLocaleString()} AVU
+                                  </td>
+                                  <td className="py-4 px-4 text-center text-slate-600 font-medium">
+                                    {leader.projects} active grids
+                                  </td>
+                                  <td className="py-4 px-6 text-right font-mono font-black text-emerald-800 text-sm">
+                                    {leader.points.toLocaleString()} PTS
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
                     </div>
-
-                    {/* MILITARY/QUEST MILESTONE BOARD (4 COLS) */}
-                    <div className="lg:col-span-4 space-y-6">
-                      <div className="p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-5">
-                        <div className="space-y-1">
-                          <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
-                            <Icon name="Target" size={15} className="text-emerald-600 shrink-0" />
-                            Milestone Quest Board
-                          </h4>
-                          <p className="text-[10px] text-gray-400 leading-normal">
-                            Complete official ambassador actions to gain massive verified score boots instantly!
-                          </p>
-                        </div>
-
-                        {/* Quests Container */}
-                        <div className="space-y-3">
-                          {/* Quest 1: Approved status */}
-                          {(() => {
-                            const isApproved = profile?.status === "approved";
-                            return (
-                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
-                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${isApproved ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
-                                  <Icon name={isApproved ? "Check" : "Lock"} size={13} />
-                                </div>
-                                <div className="space-y-1 flex-1 min-w-0">
-                                  <div className="flex items-center justify-between">
-                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Elite Commission</h6>
-                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+1,000 PTS</span>
-                                  </div>
-                                  <p className="text-[9px] text-gray-400 leading-tight">Secure official Approved Fellowship status.</p>
-                                  {isApproved ? (
-                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
-                                  ) : (
-                                    <span className="inline-block text-[8px] font-bold bg-amber-50 text-amber-800 px-1.5 py-0.2 rounded uppercase">PENDING HQ APPROVAL</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {/* Quest 2: Fund Wallet */}
-                          {(() => {
-                            const isFunded = totalDepositsNaira > 0 || hasFunded;
-                            return (
-                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
-                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${isFunded ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
-                                  <Icon name={isFunded ? "Check" : "Plus"} size={13} />
-                                </div>
-                                <div className="space-y-1 flex-1 min-w-0">
-                                  <div className="flex items-center justify-between">
-                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Resource Co-funding</h6>
-                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+1,500 PTS</span>
-                                  </div>
-                                  <p className="text-[9px] text-gray-400 leading-tight font-sans">Complete first wallet funding to fuel development.</p>
-                                  {isFunded ? (
-                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
-                                  ) : (
-                                    <button 
-                                      onClick={() => setActiveTab("payments")}
-                                      className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase mt-1 cursor-pointer transition-colors"
-                                    >
-                                      Fund Now ➜
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {/* Quest 3: Customize profile */}
-                          {(() => {
-                            const isCustomized = (profile?.city && profile.city !== "Lagos, Nigeria") || profile?.phone;
-                            return (
-                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
-                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${isCustomized ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
-                                  <Icon name={isCustomized ? "Check" : "User"} size={13} />
-                                </div>
-                                <div className="space-y-1 flex-1 min-w-0">
-                                  <div className="flex items-center justify-between">
-                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Regional Sync</h6>
-                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+500 PTS</span>
-                                  </div>
-                                  <p className="text-[9px] text-gray-400 leading-tight">Customize base city or phone contact details.</p>
-                                  {isCustomized ? (
-                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
-                                  ) : (
-                                    <button 
-                                      onClick={() => setActiveTab("profile")}
-                                      className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase mt-1 cursor-pointer transition-colors"
-                                    >
-                                      Edit Profile ➜
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {/* Quest 4: AVU peer transfer */}
-                          {(() => {
-                            const hasTransferred = hasFunded && avuBalance < ((totalDepositsNaira / 1000) * 1.002) - 0.001;
-                            return (
-                              <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
-                                <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${hasTransferred ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
-                                  <Icon name={hasTransferred ? "Check" : "Zap"} size={13} />
-                                </div>
-                                <div className="space-y-1 flex-1 min-w-0">
-                                  <div className="flex items-center justify-between">
-                                    <h6 className="font-bold text-[11px] text-slate-850 truncate">Peer-to-Peer Transit</h6>
-                                    <span className="text-[9px] font-bold text-emerald-600 shrink-0">+800 PTS</span>
-                                  </div>
-                                  <p className="text-[9px] text-gray-400 leading-tight">Complete first peer transfer of AVU points.</p>
-                                  {hasTransferred ? (
-                                    <span className="inline-block text-[8px] font-bold bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded uppercase">CLAIMED</span>
-                                  ) : (
-                                    <button 
-                                      onClick={() => setActiveTab("p2p")}
-                                      className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase mt-1 cursor-pointer transition-colors"
-                                    >
-                                      Transfer ➜
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                        </div>
-
-                        <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl text-[10px] text-emerald-850 leading-normal font-sans">
-                          <p className="font-bold mb-1">Rank Thresholds Guide:</p>
-                          <ul className="space-y-1 list-disc list-inside text-[9.5px]">
-                            <li>👑 <span className="font-bold">Sovereign Catalyst:</span> 15,000+ PTS</li>
-                            <li>🏆 <span className="font-bold">Regional Champion:</span> 12,000+ PTS</li>
-                            <li>🏅 <span className="font-bold">Impact Pioneer:</span> 9,000+ PTS</li>
-                            <li>🥈 <span className="font-bold">Growth Vanguard:</span> 6,000+ PTS</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-
                   </div>
                 </motion.div>
               )}
@@ -2993,275 +2628,113 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         )}
       </div>
 
-      {/* Pop up overlay credential updater form */}
+      <AnimatePresence>
+        {isFundWalletModalOpen && (
+          <FundWalletModal
+            isOpen={isFundWalletModalOpen}
+            onClose={() => setIsFundWalletModalOpen(false)}
+            profile={profile}
+            onSuccess={(newBal) => {
+              setAvuBalance(newBal);
+              setHasFunded(true);
+            }}
+            showToast={showToast}
+            fetchAmbassadorData={fetchAmbassadorData}
+          />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {certFormOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setCertFormOpen(false)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 w-full max-w-md bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8"
-            >
-              <button
-                onClick={() => setCertFormOpen(false)}
-                className="absolute top-4 right-4 p-1 text-gray-405 hover:text-slate-600 rounded-lg hover:bg-gray-50"
-              >
-                <Icon name="X" size={18} />
-              </button>
-
-              <div className="pb-4 border-b border-gray-100">
-                <h3 className="text-lg font-bold text-slate-900">Configure Commission Credentials</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Note: Certificates are generated automatically reflecting information submitted in real-time below.</p>
-              </div>
-
-              <form onSubmit={handleCertSubmit} className="space-y-4 pt-6 text-xs font-sans">
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.6 }} exit={{ opacity: 0 }} onClick={() => setCertFormOpen(false)} className="absolute inset-0 bg-black backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative z-10 w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl text-slate-900 font-sans text-xs">
+              <h4 className="text-base font-bold text-gray-900 mb-4 pb-2 border-b">Customize Fellowship Badge</h4>
+              <form onSubmit={handleCertSubmit} className="space-y-4">
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Ambassador Full Name</label>
-                  <input
-                    required
-                    type="text"
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-150 focus:border-emerald-600 rounded-xl text-xs font-medium"
-                  />
+                  <label className="block font-bold text-gray-500 uppercase mb-1">Your Display Name</label>
+                  <input type="text" value={tempName} onChange={(e) => setTempName(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
                 </div>
-
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Country/Territory Range</label>
-                  <input
-                    required
-                    type="text"
-                    value={tempRegion}
-                    onChange={(e) => setTempRegion(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-150 focus:border-emerald-600 rounded-xl text-xs font-medium"
-                  />
+                  <label className="block font-bold text-gray-500 uppercase mb-1">Operation Base City</label>
+                  <input type="text" value={tempRegion} onChange={(e) => setTempRegion(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
                 </div>
-
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Commission Field Focus</label>
-                  <select
-                    value={tempField}
-                    onChange={(e) => setTempField(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-150 focus:border-emerald-600 rounded-xl text-xs font-medium focus:outline-none"
-                  >
-                    <option>Youth Technology Labs</option>
-                    <option>NextGen Scholarships</option>
-                    <option>Eco-sustainable housing</option>
-                    <option>Mobile clinics hygiene</option>
-                  </select>
+                  <label className="block font-bold text-gray-500 uppercase mb-1">Focus Division Branch</label>
+                  <input type="text" value={tempField} onChange={(e) => setTempField(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
                 </div>
-
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Official Commission Date</label>
-                  <input
-                    required
-                    type="text"
-                    value={tempDate}
-                    onChange={(e) => setTempDate(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-150 focus:border-emerald-600 rounded-xl text-xs font-medium"
-                  />
+                  <label className="block font-bold text-gray-500 uppercase mb-1">Commission Date Label</label>
+                  <input type="text" value={tempDate} onChange={(e) => setTempDate(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
                 </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                >
-                  Regenerate Credentials Securely
-                </button>
+                <div className="pt-2 flex justify-end gap-2">
+                  <button type="button" onClick={() => setCertFormOpen(false)} className="px-4 py-2 rounded-xl border font-bold text-gray-500">Cancel</button>
+                  <button type="submit" className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold">Regenerate Credentials Frame</button>
+                </div>
               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Peer details view dialog */}
       <AnimatePresence>
         {activeItemDetails && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setActiveItemDetails(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 w-full max-w-sm bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8"
-            >
-              <button
-                onClick={() => setActiveItemDetails(null)}
-                className="absolute top-4 right-4 p-1 text-gray-400 hover:text-slate-600 rounded-lg hover:bg-gray-50"
-              >
-                <Icon name="X" size={18} />
-              </button>
-
-              <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 border border-emerald-100">
-                  <Icon name={activeItemDetails.icon} size={18} />
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase px-2 py-0.5 rounded bg-emerald-50 max-h-max">
-                    {activeItemDetails.category}
-                  </span>
-                  <p className="text-xs text-slate-400 mt-0.5">Resource validation registry</p>
-                </div>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.6 }} exit={{ opacity: 0 }} onClick={() => setActiveItemDetails(null)} className="absolute inset-0 bg-black backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative z-10 w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl text-slate-900 font-sans text-xs space-y-4">
+              <div className="pb-2 border-b flex justify-between items-center">
+                <h4 className="text-sm font-black text-[#0A3622] uppercase tracking-wider">{activeItemDetails.title}</h4>
+                <button onClick={() => setActiveItemDetails(null)} className="text-gray-400 hover:text-gray-600"><Icon name="X" size={16} /></button>
               </div>
 
-              <div className="space-y-3.5 py-6 text-xs font-sans text-gray-600">
-                <h4 className="font-extrabold text-sm text-gray-950 leading-snug">{activeItemDetails.title}</h4>
-                <p>Provider: <span className="font-semibold text-slate-800">{activeItemDetails.provider}</span></p>
-                
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
-                  <p className="font-bold text-slate-800">Operational terms:</p>
-                  <p className="text-[11px] text-gray-400 leading-normal">
-                    By confirming this exchange, intellectual blueprints are licensed to your region. Exchange points are subtracted immediately.
-                  </p>
+              {itemExchangeSuccess ? (
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium">
+                  ✓ Vault exchange initialized. The structural files have been directed to your email loop!
                 </div>
-
-                <div className="flex justify-between items-center bg-emerald-50/50 p-3 rounded-xl text-emerald-800">
-                  <span>Exchange balance cost:</span>
-                  <span className="font-mono font-black">{activeItemDetails.avuCost} AVU</span>
-                </div>
-
-                {itemExchangeSuccess && (
-                  <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-800 text-center font-bold font-sans">
-                    Package assets unlocked successfully!
-                  </div>
-                )}
-              </div>
-
-              {!itemExchangeSuccess ? (
-                <button
-                  disabled={avuBalance < activeItemDetails.avuCost}
-                  onClick={() => {
-                    setAvuBalance(prev => prev - activeItemDetails.avuCost);
-                    setItemExchangeSuccess(true);
-                    
-                    const newNotif: NotificationItem = {
-                      id: "n-ex-" + Date.now(),
-                      title: "Bundle unlocked!",
-                      desc: `Your account redeemed "${activeItemDetails.title}" -${activeItemDetails.avuCost} AVU.`,
-                      time: "Just now",
-                      unread: true,
-                      type: "p2p"
-                    };
-                    setNotifications([newNotif, ...notifications]);
-
-                    setTimeout(() => {
-                      setActiveItemDetails(null);
-                    }, 2200);
-                  }}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-150 disabled:text-gray-400 text-white font-bold tracking-tight text-xs flex items-center justify-center gap-1.5"
-                >
-                  Confirm exchange swap
-                </button>
               ) : (
-                <button
-                  onClick={() => setActiveItemDetails(null)}
-                  className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold"
-                >
-                  Done
-                </button>
+                <>
+                  <p className="text-slate-600 leading-relaxed">
+                    You are initializing a peer exchange query for the library module compiled by <span className="font-bold text-slate-800">{activeItemDetails.provider}</span>. This will securely move <span className="font-mono font-black text-emerald-700">{activeItemDetails.avuCost} AVU</span> from your growth asset wallet.
+                  </p>
+                  <div className="bg-slate-50 p-3 rounded-xl border text-[11px] text-gray-500">
+                    <b>Fulfillment Rule:</b> Materials downloads are encrypted and logged directly onto the local database cluster for auditable transparency.
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={() => setActiveItemDetails(null)} className="px-4 py-2 border font-bold rounded-xl text-gray-500">Abort</button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        if (avuBalance < activeItemDetails.avuCost) {
+                          alert("Insufficient balance. Please add campaign deposits to accumulate more AVU value vectors.");
+                          return;
+                        }
+                        setAvuBalance(prev => prev - activeItemDetails.avuCost);
+                        setItemExchangeSuccess(true);
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold"
+                    >
+                      Authorize Wallet AVU Release
+                    </button>
+                  </div>
+                </>
               )}
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Fund Wallet Modal */}
-      <FundWalletModal
-        isOpen={isFundWalletModalOpen}
-        onClose={() => setIsFundWalletModalOpen(false)}
-        profile={profile}
-        onSuccess={(newBalance) => {
-          setAvuBalance(newBalance);
-          setHasFunded(true);
-          if (profile) {
-            setProfile({ ...profile, avu_balance: newBalance });
-          }
-        }}
-        showToast={showToast}
-        fetchAmbassadorData={fetchAmbassadorData}
-      />
-
-      {/* Toast Notifications Container */}
-      <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">
-        <AnimatePresence mode="popLayout">
-          {toasts.map(toast => (
-            <motion.div
-              key={toast.id}
-              layout
-              initial={{ opacity: 0, y: -20, x: 50, scale: 0.9, rotate: -1 }}
-              animate={{ opacity: 1, y: 0, x: 0, scale: 1, rotate: 0 }}
-              exit={{ opacity: 0, scale: 0.9, x: 80, transition: { duration: 0.25, ease: "easeInOut" } }}
-              transition={{ type: "spring", stiffness: 320, damping: 24 }}
-              drag="x"
-              dragConstraints={{ left: 0, right: 150 }}
-              dragElastic={{ right: 0.6, left: 0 }}
-              onDragEnd={(e, info) => {
-                if (info.offset.x > 100) {
-                  setToasts(prev => prev.filter(t => t.id !== toast.id));
-                }
-              }}
-              className="pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xl p-4 flex gap-3.5 items-start w-full relative overflow-hidden select-none cursor-grab active:cursor-grabbing hover:shadow-2xl hover:border-slate-200/80 dark:hover:border-slate-700/80 transition-shadow duration-300"
-            >
-              <div className={`p-2.5 rounded-xl shrink-0 ${
-                toast.type === "success" 
-                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" 
-                  : toast.type === "error"
-                  ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
-                  : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-              }`}>
-                <Icon 
-                  name={toast.type === "success" ? "CheckCircle2" : toast.type === "error" ? "AlertCircle" : "Info"} 
-                  size={18} 
-                />
-              </div>
-              <div className="flex-1 space-y-1 pr-4">
-                <h5 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5 leading-none">
-                  {toast.title}
-                  {toast.type === "success" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  )}
-                </h5>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">{toast.message}</p>
-              </div>
-              <button 
-                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all absolute top-3 right-3"
-              >
-                <Icon name="X" size={13} />
-              </button>
-              
-              {/* Animated Progress Timeline Bar */}
-              <motion.div 
-                initial={{ width: "100%" }} 
-                animate={{ width: "0%" }} 
-                transition={{ duration: 6, ease: "linear" }} 
-                className={`absolute bottom-0 left-0 h-[3px] rounded-b-2xl shrink-0 ${
-                  toast.type === "success" 
-                    ? "bg-emerald-500 dark:bg-emerald-400" 
-                    : toast.type === "error"
-                    ? "bg-rose-500 dark:bg-rose-400"
-                    : "bg-blue-500 dark:bg-blue-400"
-                }`}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map(t => (
+          <div key={t.id} className="pointer-events-auto w-80 p-4 rounded-2xl bg-slate-900 text-white shadow-xl border border-slate-800 flex gap-3 text-xs font-sans">
+            <div className={`p-1 rounded-lg shrink-0 h-max ${t.type === "success" ? "text-emerald-400 bg-emerald-500/10" : t.type === "error" ? "text-rose-400 bg-rose-500/10" : "text-blue-400 bg-blue-500/10"}`}>
+              <Icon name={t.type === "success" ? "Check" : t.type === "error" ? "XCircle" : "ShieldAlert"} size={14} />
+            </div>
+            <div className="space-y-0.5">
+              <p className="font-bold text-slate-100">{t.title}</p>
+              <p className="text-slate-400 leading-normal text-[11px]">{t.message}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
     </div>
