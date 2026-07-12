@@ -441,6 +441,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [avuBalance, setAvuBalance] = useState(0);
   const [hasFunded, setHasFunded] = useState<boolean>(false);
   const [isFundWalletModalOpen, setIsFundWalletModalOpen] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Toast notifications state
   const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
@@ -651,6 +652,16 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setHasFunded(false);
         setTotalDepositsNaira(0);
       }
+
+      // Fetch P2P Transactions History
+      if (user) {
+        try {
+          const list = await db.getP2PTransactions(user.id);
+          setP2pTxHistory(list);
+        } catch (p2pErr) {
+          console.warn("Failed to load P2P transactions:", p2pErr);
+        }
+      }
     } catch (e) {
       console.error("Error loading ambassador data", e);
     } finally {
@@ -842,6 +853,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [transferReason, setTransferReason] = useState("");
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [p2pType, setP2pType] = useState<"send" | "request" | "analytics">("send");
+  const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
 
   // Dynamic Donation Link builder
   const [donationLinkText, setDonationLinkText] = useState("https://advaltad.org/campaign/ramon-youth-labs");
@@ -1001,43 +1013,72 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const handleP2PTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseInt(transferAmount);
-    if (!transferTargetId || isNaN(amt) || amt <= 0 || amt > avuBalance) return;
-
-    setAvuBalance(prev => prev - amt);
-    
-    if (profile?.id) {
-      try {
-        await db.updateAvuBalance(profile.id, avuBalance - amt);
-        await db.logActivity({
-          ambassador_id: profile.id,
-          ambassador_name: ambassadorName,
-          type: "avu_transfer",
-          desc: `Initiated peer ledger transfer of ${amt} AVU to Trustee [${transferTargetId}] for: "${transferReason || "Peer technical support"}"`,
-          amount: `${amt} AVU`
-        });
-      } catch (err) {
-        console.error("Failed to update ledger on P2P", err);
-      }
+    if (!transferTargetId || isNaN(amt) || amt <= 0) {
+      showToast("error", "Invalid Transfer", "Please specify a valid recipient email/ID and transfer amount.");
+      return;
     }
-    
-    setTransferSuccess(true);
-    
-    const newNotif: NotificationItem = {
-      id: "n-p2p-" + Date.now(),
-      title: "AVU Transfer Completed",
-      desc: `You sent ${amt} AVU to Ambassador ${transferTargetId} for: "${transferReason || "No details provided"}".`,
-      time: "Just now",
-      unread: true,
-      type: "p2p"
-    };
-    setNotifications([newNotif, ...notifications]);
 
-    setTimeout(() => {
-      setTransferSuccess(false);
-      setTransferAmount("");
-      setTransferTargetId("");
-      setTransferReason("");
-    }, 4000);
+    if (!profile?.id) {
+      showToast("error", "Session Error", "Could not locate your active ambassador session.");
+      return;
+    }
+
+    if (amt > avuBalance) {
+      showToast("error", "Insufficient Balance", `You only have ${avuBalance} AVU points available.`);
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const res = await db.executeP2PTransfer(
+        profile.id,
+        transferTargetId,
+        amt,
+        transferReason || "Peer technical support"
+      );
+
+      if (res.success && res.senderNewBalance !== undefined) {
+        setAvuBalance(res.senderNewBalance);
+        if (profile) {
+          setProfile(prev => prev ? { ...prev, avu_balance: res.senderNewBalance } : null);
+        }
+        
+        showToast("success", "Transfer Completed", res.message);
+        setTransferSuccess(true);
+
+        const newNotif: NotificationItem = {
+          id: "n-p2p-" + Date.now(),
+          title: "AVU Transfer Sent",
+          desc: `You transferred ${amt} AVU to ${res.recipientName || "Fellow Ambassador"}.`,
+          time: "Just now",
+          unread: true,
+          type: "p2p"
+        };
+        setNotifications(prev => [newNotif, ...prev]);
+
+        // Refresh transactions list
+        try {
+          const list = await db.getP2PTransactions(profile.id);
+          setP2pTxHistory(list);
+        } catch (err) {
+          console.warn("Failed to reload P2P transactions history:", err);
+        }
+
+        setTimeout(() => {
+          setTransferSuccess(false);
+          setTransferAmount("");
+          setTransferTargetId("");
+          setTransferReason("");
+        }, 4000);
+      } else {
+        showToast("error", "Transfer Failed", res.message || "An unexpected error occurred.");
+      }
+    } catch (err) {
+      console.error("Failed to complete P2P transfer:", err);
+      showToast("error", "Transfer Error", "An error occurred while processing the value transfer. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
 
@@ -2044,12 +2085,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             <form onSubmit={handleP2PTransfer} className="space-y-4 text-xs font-sans">
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <label className="block font-bold text-gray-500 uppercase tracking-wider mb-1">Recipient Ambassador ID</label>
+                                  <label className="block font-bold text-gray-500 uppercase tracking-wider mb-1">Recipient Email or Ambassador ID</label>
                                   <input
                                     id="p2p-target-id"
                                     type="text"
                                     required
-                                    placeholder="e.g. AV-26-8924"
+                                    placeholder="e.g. peer@advaltad.org or AV-10001"
                                     value={transferTargetId}
                                     onChange={(e) => setTransferTargetId(e.target.value)}
                                     className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm text-gray-900"
@@ -2263,22 +2304,64 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     </div>
 
                     {/* Right column: Ledger stats */}
-                    <div className="md:col-span-4 p-5 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
-                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400">Ledger Statement</h4>
-                      
-                      <div className="space-y-3.5 text-xs text-slate-500">
-                        <div className="pb-3 border-b border-gray-100 flex justify-between">
-                          <span>Initial AVU Commission</span>
-                          <span className="text-slate-900 font-bold">+1,500 AVU</span>
+                    <div className="md:col-span-4 p-5 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6">
+                      <div>
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400 mb-3">Ledger Statement</h4>
+                        
+                        <div className="space-y-3.5 text-xs text-slate-500">
+                          <div className="pb-3 border-b border-gray-100 flex justify-between">
+                            <span>Initial AVU Commission</span>
+                            <span className="text-slate-900 font-bold">+1,500 AVU</span>
+                          </div>
+                          <div className="pb-3 border-b border-gray-100 flex justify-between">
+                            <span>Curriculum Package Access</span>
+                            <span className="text-slate-900 font-bold">0 AVU (HQ Free)</span>
+                          </div>
+                          <div className="pb-3 border-b border-gray-100 flex justify-between">
+                            <span>Shelter Blueprints swap</span>
+                            <span className="text-amber-800 font-bold">-250 AVU</span>
+                          </div>
                         </div>
-                        <div className="pb-3 border-b border-gray-100 flex justify-between">
-                          <span>Curriculum Package Access</span>
-                          <span className="text-slate-900 font-bold">0 AVU (HQ Free)</span>
-                        </div>
-                        <div className="pb-3 border-b border-gray-100 flex justify-between">
-                          <span>Shelter Blueprints swap</span>
-                          <span className="text-amber-800 font-bold">-250 AVU</span>
-                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                          <span>Live Exchange Log</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        </h4>
+                        
+                        {p2pTxHistory.length === 0 ? (
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] text-gray-400 text-center">
+                            No peer transfers logged in your active session yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
+                            {p2pTxHistory.map((tx) => {
+                              const isSender = profile?.id && (
+                                tx.sender_id.toLowerCase() === profile.id.toLowerCase() || 
+                                (profile.user_id && tx.sender_id.toLowerCase() === profile.user_id.toLowerCase()) ||
+                                tx.sender_email.toLowerCase() === profile.email.toLowerCase()
+                              );
+                              return (
+                                <div key={tx.id} className="p-3 rounded-xl bg-slate-50 border border-slate-105 space-y-1 text-left">
+                                  <div className="flex justify-between items-start">
+                                    <span className="font-bold text-slate-800 text-[11px] truncate max-w-[110px]" title={isSender ? tx.recipient_name : tx.sender_name}>
+                                      {isSender ? `To: ${tx.recipient_name}` : `From: ${tx.sender_name}`}
+                                    </span>
+                                    <span className={`font-mono font-black text-[11px] whitespace-nowrap ${isSender ? "text-amber-800" : "text-emerald-700"}`}>
+                                      {isSender ? `-${tx.points} AVU` : `+${tx.points} AVU`}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 line-clamp-1">{tx.reason}</p>
+                                  <div className="flex justify-between items-center text-[9px] text-gray-400 font-mono">
+                                    <span>{tx.id}</span>
+                                    <span>{new Date(tx.created_at).toLocaleDateString()}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
 
                       <div className="pt-2">
