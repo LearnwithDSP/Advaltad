@@ -80,7 +80,7 @@ const flowTrendData = [
   { name: "Wed", outbound: 210, inbound: 190, totalFlow: 400 },
   { name: "Thu", outbound: 680, inbound: 720, totalFlow: 1400 },
   { name: "Fri", outbound: 400, inbound: 380, totalFlow: 780 },
-  { name: "Sat", outbound: 150, inbound: 220, totalFlow: 370 },
+  { name: "Sat", stroke: 150, inbound: 220, totalFlow: 370 },
   { name: "Sun", outbound: 280, inbound: 310, totalFlow: 590 }
 ];
 
@@ -686,10 +686,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         try {
           const { data: { user }, error } = await supabase.auth.getUser();
           if (error || !user) {
-            console.warn("No authenticated user exists in Supabase Auth, but checking local session email as fallback...");
             const localSessionEmail = localStorage.getItem("advaltad_session_email");
             if (!localSessionEmail) {
-              console.error("No active local session. Force logout.");
               localStorage.removeItem("advaltad_session_email");
               onLogout();
               window.location.href = "/";
@@ -748,14 +746,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           filter: `id=eq.${profile.id}`
         },
         (payload: any) => {
-          console.log("Realtime status/balance change detected! Payload:", payload);
           const newRecord = payload.new || {};
-          
           if (newRecord) {
             if (newRecord.avu_balance !== undefined) {
               setAvuBalance(newRecord.avu_balance);
             }
-            
             setProfile((prev) => {
               if (!prev) return null;
               return {
@@ -766,7 +761,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               };
             });
           }
-
           fetchAmbassadorData();
         }
       )
@@ -783,7 +777,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           filter: `ambassador_id=eq.${profile.id}`
         },
         (payload) => {
-          console.log("Realtime deposit transaction change detected! Payload:", payload);
           fetchAmbassadorData();
         }
       )
@@ -800,7 +793,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           filter: `ambassador_id=eq.${profile.id}`
         },
         (payload) => {
-          console.log("Realtime ambassador wallet change detected! Payload:", payload);
           fetchAmbassadorData();
         }
       )
@@ -1458,8 +1450,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             </button>
           </div>
 
-          </div>
-
           <div className="lg:col-span-9">
             <AnimatePresence mode="wait">
               
@@ -1820,7 +1810,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               )}
 
-              {/* TAB 2: FELLOWSHIP CERTIFICATE - RETOUCHED VERTICAL LAYOUT TO MATCH THE ATTACHED IMAGE SPECIFICATION EXACTLY */}
+              {/* TAB 2: FELLOWSHIP CERTIFICATE - RETOUCHED DESIGN ONLY */}
               {activeTab === "certificate" && (
                 <motion.div
                   key="v-cert"
@@ -1831,7 +1821,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-gray-200">
                     <div>
-                      <h3 className="text-xl font-bold text-gray-900">Fellowship Commission Credentials</h3>
+                      <h3 className="text-xl font-bold text-gray-900 tracking-tight">Fellowship Commission Credentials</h3>
                       <p className="text-xs text-gray-500 font-sans">Regenerate and print your official certified Ambassador badge dynamically.</p>
                     </div>
                     
@@ -1851,105 +1841,119 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     </button>
                   </div>
 
-                  {/* VERTICAL HIGH-FIDELITY LAYOUT MATCHING ADVALTAD FELLOWSHIP THEME */}
-                  <div id="credentials-badge-vector" className="relative p-1 bg-white shadow-xl max-w-xl mx-auto border border-gray-200 rounded-md">
-                    {/* Dark Emerald Border Accent Wrapper */}
-                    <div className="border-[14px] border-[#0A3622] p-8 sm:p-12 text-center flex flex-col justify-between items-center min-h-[780px] relative bg-white">
+                  {/* PREMIUM RETOUCHED CERTIFICATE GRID LAYOUT */}
+                  <div 
+                    id="credentials-badge-vector" 
+                    className="relative max-w-4xl mx-auto rounded-3xl p-1 bg-gradient-to-br from-amber-200 via-emerald-800 to-emerald-950 shadow-2xl overflow-hidden"
+                  >
+                    {/* Architectural Grid Watermark Pattern */}
+                    <div className="absolute inset-0 pointer-events-none opacity-[0.04] bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:14px_24px]" />
+                    
+                    {/* Radial Backlight Ambient Glow */}
+                    <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(circle_at_center,rgba(252,211,77,0.15)_0%,transparent_70%)]" />
+
+                    {/* Outer Deep Border Margin Shield */}
+                    <div className="rounded-[22px] bg-slate-900 p-3 sm:p-5 h-full w-full">
                       
-                      {/* Top Geometric Corner Layout Marks */}
-                      <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-[#0A3622]/20" />
-                      <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-[#0A3622]/20" />
-                      <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-[#0A3622]/20" />
-                      <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-[#0A3622]/20" />
-
-                      {/* Header Segment */}
-                      <div className="w-full flex flex-col items-center space-y-5 pt-4">
-                        <div className="w-24 h-24 rounded-full overflow-hidden bg-white border border-gray-100 flex items-center justify-center shadow-sm">
-                          <img
-                            src={logoUrl}
-                            alt="Advaltad Foundation Logo"
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <h1 className="text-xl sm:text-2xl font-serif font-black tracking-wide text-[#0A3622] uppercase">
-                            ADVALTAD
-                          </h1>
-                          <p className="text-[10px] sm:text-xs font-sans font-extrabold tracking-[0.2em] text-[#1E293B] uppercase">
-                            Adding Value to Africa's Development
-                          </p>
-                        </div>
-                        <div className="w-20 h-[2px] bg-amber-500 my-1" />
-                      </div>
-
-                      {/* Title Segment */}
-                      <div className="w-full my-6">
-                        <h2 className="text-2xl sm:text-3xl font-serif font-normal tracking-wide text-gray-800 uppercase">
-                          Certificate
-                        </h2>
-                        <p className="text-[10px] sm:text-xs font-sans font-medium tracking-[0.15em] text-gray-400 uppercase mt-1">
-                          Of Growth Ambassador Fellowship
-                        </p>
-                      </div>
-
-                      {/* Content Declaration Section */}
-                      <div className="w-full space-y-6 px-2 sm:px-6">
-                        <p className="text-xs sm:text-sm font-serif italic text-gray-500">
-                          This is to certify that
-                        </p>
+                      {/* Dual Fine-Line Security Filigree Framework */}
+                      <div className="relative rounded-[18px] bg-white border border-amber-200/60 p-6 sm:p-14 md:p-16 overflow-hidden">
                         
-                        <div className="py-2">
-                          <h3 className="text-2xl sm:text-3xl font-serif font-black text-[#0A3622] tracking-tight border-b border-gray-200 pb-3 max-w-md mx-auto">
-                            {ambassadorName}
-                          </h3>
+                        {/* Internal Corner Accents Decoration */}
+                        <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-emerald-900/30 rounded-tl-sm pointer-events-none" />
+                        <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-emerald-900/30 rounded-tr-sm pointer-events-none" />
+                        <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-emerald-900/30 rounded-bl-sm pointer-events-none" />
+                        <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-emerald-900/30 rounded-br-sm pointer-events-none" />
+
+                        {/* Certificate Branding Headers */}
+                        <div className="relative z-10 flex flex-col items-center text-center space-y-4">
+                          <div className="relative group">
+                            <div className="absolute inset-0 rounded-full bg-amber-400/20 blur-md transition-all group-hover:blur-lg" />
+                            <div className="relative w-16 h-16 rounded-full overflow-hidden bg-white border-2 border-emerald-900 p-0.5 shadow-xl">
+                              <img
+                                src={logoUrl}
+                                alt="Advaltad Foundation Logo"
+                                className="w-full h-full object-cover rounded-full"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-1">
+                            <h2 className="text-xs sm:text-sm font-sans font-black uppercase tracking-[0.25em] text-emerald-950">
+                              Advaltad Foundation
+                            </h2>
+                            <p className="text-[9px] sm:text-10px font-mono uppercase tracking-[0.3em] text-amber-600 font-extrabold">
+                              Global Fellowship Commission Registry
+                            </p>
+                          </div>
                         </div>
 
-                        <p className="text-xs sm:text-sm font-serif text-gray-600 max-w-md mx-auto leading-relaxed">
-                          has been formally designated as a certified global Fellow and Sovereign Representative, fully authorized to supervise direct field asset operations for:
+                        {/* Central Statement & Core Typography */}
+                        <div className="relative z-10 text-center space-y-6 my-10 max-w-2xl mx-auto">
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-slate-400 italic">
+                              This foundational credential verifies that
+                            </p>
+                            <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-black tracking-tight text-slate-900 py-1 drop-shadow-sm">
+                              {ambassadorName}
+                            </h1>
+                          </div>
+                          
+                          <div className="w-16 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent mx-auto" />
+
+                          <p className="text-xs sm:text-sm text-slate-600 font-sans max-w-xl mx-auto leading-relaxed font-light">
+                            has been formally authorized as a certified global <span className="font-semibold text-emerald-950">Fellow and Sovereign Trustee</span>, empowered to initiate regional resource networks, allocate computational assets, and oversee sustainable field programs under the division of:
+                          </p>
+
+                          {/* Refined Division Focus Badge Component */}
+                          <div className="relative max-w-max mx-auto mt-2">
+                            <div className="absolute inset-0 bg-emerald-600/5 blur-sm rounded-xl" />
+                            <div className="relative px-8 py-3 rounded-xl bg-gradient-to-r from-emerald-900 to-emerald-950 text-amber-300 font-mono font-black text-xs tracking-wider uppercase border border-amber-400/30 shadow-lg">
+                              {ambassadorField}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Attestation Geographic Context */}
+                        <p className="relative z-10 text-center text-xs text-slate-500 font-sans max-w-md mx-auto leading-normal">
+                          Granted operations commission within the <span className="font-semibold text-slate-800 border-b border-dotted border-slate-300 pb-0.5">{ambassadorRegion}</span> grid corridor, binding execution protocols to standard ledger transparency workflows.
                         </p>
 
-                        {/* Focus Division Box */}
-                        <div className="max-w-md mx-auto bg-slate-50 border border-slate-100 py-3 px-6 rounded-lg my-4">
-                          <span className="text-xs sm:text-sm font-sans font-extrabold text-[#0A3622] tracking-wide uppercase">
-                            {ambassadorField}
+                        {/* Signatures & Execution Blocks */}
+                        <div className="relative z-10 grid grid-cols-2 gap-12 sm:gap-24 pt-12 mt-10 border-t border-slate-100 font-sans text-center">
+                          <div className="flex flex-col items-center space-y-2">
+                            <span className="font-serif italic text-emerald-900 text-base font-bold tracking-wide">
+                              Oluwaseun Adewole
+                            </span>
+                            <div className="w-28 h-px bg-gradient-to-r from-transparent via-slate-350 to-transparent" />
+                            <span className="text-[9px] text-slate-400 uppercase tracking-widest font-black">
+                              Executive Director
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col items-center space-y-2">
+                            <span className="text-xs font-mono font-black text-emerald-900 bg-slate-50 px-3 py-1 rounded-lg border border-slate-200/80 shadow-inner">
+                              {commissionDate.toUpperCase()}
+                            </span>
+                            <div className="w-28 h-px bg-gradient-to-r from-transparent via-slate-350 to-transparent" />
+                            <span className="text-[9px] text-slate-400 uppercase tracking-widest font-black">
+                              Commission Date
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Micro Cryptographic Verification Trackers */}
+                        <div className="relative z-10 mt-12 pt-5 border-t border-slate-100/60 flex flex-col md:flex-row items-center justify-between gap-3 text-[9px] font-mono text-slate-400/80 font-sans">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>NODE IDENTIFIER: ADVALTAD_FELLOW_SECURE_SHA256_F{Math.floor(Math.random() * 888 + 111)}X</span>
+                          </div>
+                          <span className="bg-slate-100 px-2 py-0.5 rounded-md font-bold text-slate-500 text-[8px]">
+                            COMPLIANCE STATUS: VERIFIED BY SOURCE LEDGER
                           </span>
                         </div>
 
-                        <p className="text-[11px] sm:text-xs font-sans text-gray-400 max-w-xs mx-auto leading-normal">
-                          Granted full operations representation in <span className="font-semibold text-gray-700">{ambassadorRegion}</span>, committing to direct audited allocations and peer-to-peer developer hubs transparency.
-                        </p>
                       </div>
-
-                      {/* Signatures Footer Block */}
-                      <div className="w-full grid grid-cols-2 gap-8 pt-12 mt-4 border-t border-slate-100 font-sans">
-                        <div className="flex flex-col items-center justify-end space-y-2">
-                          <span className="font-serif italic text-sm text-gray-800 tracking-wide">
-                            Oluwaseun Adewole
-                          </span>
-                          <div className="w-32 h-[1px] bg-gray-300" />
-                          <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
-                            Executive Director
-                          </span>
-                        </div>
-
-                        <div className="flex flex-col items-center justify-end space-y-2">
-                          <span className="font-mono font-bold text-xs text-[#0A3622] bg-emerald-50/60 px-3 py-1 rounded border border-emerald-100/50">
-                            {commissionDate}
-                          </span>
-                          <div className="w-32 h-[1px] bg-gray-300" />
-                          <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
-                            Commission Date
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Security Key Footnote */}
-                      <div className="w-full pt-8 text-[8px] font-mono text-gray-400/70 flex justify-between items-center border-t border-slate-50 mt-4">
-                        <span>CHECKSUM: ADVALTAD_SHA256_F{Math.floor(Math.random() * 888 + 111)}X</span>
-                        <span>STATUS: SECURE LEDGER VERIFIED</span>
-                      </div>
-
                     </div>
                   </div>
 
@@ -1976,6 +1980,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               )}
 
+              {/* TAB 3: P2P VALUE EXCHANGE */}
               {activeTab === "p2p" && (
                 <motion.div
                   key="v-p2p"
@@ -2203,420 +2208,30 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       </AnimatePresence>
                     </div>
 
-                    <div className="md:col-span-4 space-y-6">
-                      <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm space-y-4">
-                        <h4 className="font-bold text-xs text-gray-900 uppercase tracking-wider">Your Exchange Ledger</h4>
-                        
-                        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto pr-1">
-                          {p2pTxHistory.length === 0 ? (
-                            <p className="text-[11px] text-gray-400 py-3 font-sans">No records discovered on the local ledger block yet.</p>
-                          ) : (
-                            p2pTxHistory.map((tx, idx) => {
-                              const isSender = tx.sender_id === profile?.id;
-                              return (
-                                <div key={tx.id || idx} className="py-2.5 flex justify-between items-start gap-2 text-[11px]">
-                                  <div className="space-y-0.5">
-                                    <p className="font-bold text-gray-800 line-clamp-1">{tx.reason || "Peer transfer support"}</p>
-                                    <p className="text-[10px] text-gray-400">
-                                      {isSender ? `To: ${tx.recipient_name || tx.recipient_id}` : `From: ${tx.sender_name || tx.sender_id}`}
-                                    </p>
-                                  </div>
-                                  <span className={`font-mono font-black ${isSender ? "text-rose-600" : "text-emerald-600"}`}>
-                                    {isSender ? `-${tx.amount}` : `+${tx.amount}`}
-                                  </span>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-                </motion.div>
-              )}
-
-              {activeTab === "payments" && (
-                <motion.div
-                  key="v-payments"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="space-y-6 bg-white border border-gray-100 p-6 sm:p-8 rounded-3xl shadow-sm"
-                >
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Direct Financial Gateway Interface</h3>
-                    <p className="text-xs text-gray-500 font-sans">Initialize formal donations tracking links or process manual regional ledger cash handovers securely.</p>
-                  </div>
-
-                  <div className="grid md:grid-cols-2 gap-8 pt-4 items-start">
-                    <div className="space-y-4">
-                      <h4 className="font-black text-xs uppercase tracking-wider text-gray-400">Option A: Campaign Hyperlink Architect</h4>
-                      <p className="text-xs text-gray-500">Construct dedicated links mapping sponsors straight to your regional technical youth segment.</p>
-                      
-                      <div className="space-y-3 font-sans text-xs">
-                        <div>
-                          <label className="block font-bold text-gray-500 mb-1">Campaign Title Context</label>
-                          <input
-                            type="text"
-                            value={campaignTitle}
-                            onChange={(e) => { setCampaignTitle(e.target.value); setCampaignGenerated(false); }}
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block font-bold text-gray-500 mb-1">Target Links Text Output</label>
-                          <input
-                            disabled
-                            type="text"
-                            value={donationLinkText}
-                            className="w-full px-4 py-2.5 bg-gray-100 text-gray-500 border border-gray-100 rounded-xl font-mono"
-                          />
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            const slug = campaignTitle.toLowerCase().replace(/[^a-z0-w]+/g, "-");
-                            setDonationLinkText(`https://advaltad.org/campaign/${slug || "regional-labs"}`);
-                            setCampaignGenerated(true);
-                          }}
-                          className="w-full py-2.5 rounded-xl bg-gray-950 text-white font-bold"
-                        >
-                          Generate Synchronized URL Link
-                        </button>
-
-                        {campaignGenerated && (
-                          <p className="text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
-                            ✓ Ready. Copy this token links and forward to external partners. Tracking handles assigned automatically.
-                          </p>
+                    <div className="md:col-span-4 p-5 bg-white border border-gray-100 rounded-3xl shadow-sm space-y-4">
+                      <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">Exchange History Ledger</h4>
+                      <div className="divide-y divide-gray-50 max-h-[340px] overflow-y-auto">
+                        {p2pTxHistory.length === 0 ? (
+                          <div className="py-8 text-center text-xs text-gray-400 font-sans">
+                            No peer transactions logged on this local node profile yet.
+                          </div>
+                        ) : (
+                          p2pTxHistory.map((tx, index) => (
+                            <div key={tx.id || index} className="py-3 flex flex-col gap-1 text-xs">
+                              <div className="flex justify-between font-bold">
+                                <span className={tx.sender_id === profile?.id ? "text-rose-600" : "text-emerald-600"}>
+                                  {tx.sender_id === profile?.id ? "Outbound Transfer" : "Inbound Deposit"}
+                                </span>
+                                <span className="font-mono">{tx.amount} AVU</span>
+                              </div>
+                              <p className="text-[11px] text-gray-500 line-clamp-2">{tx.reason}</p>
+                              <span className="text-[9px] text-gray-400 font-mono mt-0.5">Ref: {tx.id?.substring(0,8)}...</span>
+                            </div>
+                          ))
                         )}
                       </div>
                     </div>
 
-                    <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
-                      <h4 className="font-black text-xs uppercase tracking-wider text-gray-400">Option B: Physical Check / Manual Wire Logger</h4>
-                      <p className="text-xs text-gray-500">Did a local corporate donor hand over physical support? Log details instantly here into the administrative queue for balance vetting.</p>
-
-                      <form onSubmit={handleDirectDonationGateway} className="space-y-3 font-sans text-xs">
-                        <div>
-                          <label className="block font-bold text-gray-600 mb-1">Donor Corporate Entity / Name</label>
-                          <input
-                            required
-                            type="text"
-                            placeholder="e.g. Chevron Nigeria West Africa Hub"
-                            value={termDonorName}
-                            onChange={(e) => setTermDonorName(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block font-bold text-gray-600 mb-1">Audit Email Contact</label>
-                            <input
-                              required
-                              type="email"
-                              placeholder="finance@donor.com"
-                              value={termDonorEmail}
-                              onChange={(e) => setTermDonorEmail(e.target.value)}
-                              className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block font-bold text-gray-600 mb-1">Handed Over Value ($)</label>
-                            <input
-                              required
-                              type="number"
-                              placeholder="USD Amount"
-                              value={termAmount}
-                              onChange={(e) => setTermAmount(e.target.value)}
-                              className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl"
-                            />
-                          </div>
-                        </div>
-
-                        <button
-                          type="submit"
-                          disabled={termStatus === "submitting"}
-                          className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                        >
-                          {termStatus === "submitting" ? "Securing Ledger Allocations..." : termStatus === "completed" ? "✓ Dispatched to Supervisor Queue" : "Certify Manual Support Handover"}
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {activeTab === "projects" && (
-                <motion.div
-                  key="v-projects"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="space-y-6"
-                >
-                  <div className="pb-4 border-b border-gray-200 flex justify-between items-center">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900">Supervised Local Deployments</h3>
-                      <p className="text-xs text-gray-500 font-sans">Track development percentages and field supply timelines logged under your direct fellowship jurisdiction.</p>
-                    </div>
-                  </div>
-
-                  <div className="grid sm:grid-cols-3 gap-6">
-                    {projects.map((proj) => (
-                      <div key={proj.id} className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase font-mono tracking-wider">{proj.category}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase font-sans tracking-wide ${
-                              proj.status === "completed" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
-                              proj.status === "active" ? "bg-blue-50 text-blue-700 border border-blue-100 animate-pulse" :
-                              "bg-slate-100 text-slate-600"
-                            }`}>{proj.status}</span>
-                          </div>
-                          <h4 className="font-bold text-sm text-gray-900 leading-snug line-clamp-2">{proj.name}</h4>
-                          <p className="text-[11px] text-gray-400 font-sans flex items-center gap-1">
-                            <Icon name="Compass" size={10} /> {proj.location}
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5 font-sans">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-gray-400">{proj.metricLabel}: <b className="text-gray-700">{proj.metricVal}</b></span>
-                            <span className="font-bold text-gray-800">{proj.progress}%</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${proj.status === "completed" ? "bg-emerald-600" : "bg-emerald-500"}`} style={{ width: `${proj.progress}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-
-              {activeTab === "profile" && (
-                <motion.div
-                  key="v-profile"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="max-w-2xl bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6"
-                >
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Public Registry Credentials</h3>
-                    <p className="text-xs text-gray-500 font-sans">Update your certified identity strings and password blocks stored inside the local database tables.</p>
-                  </div>
-
-                  {updateSuccess && (
-                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-sans font-medium text-emerald-800 flex items-center gap-2">
-                      <Icon name="Check" size={16} />
-                      <span>Registry tables synchronized successfully. fellowship credential vectors updated on the block!</span>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleUpdateProfile} className="space-y-4 text-xs font-sans">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block font-bold text-gray-500 uppercase mb-1">Ambassador Full Name</label>
-                        <input
-                          required
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-gray-500 uppercase mb-1">Base Operation City / Country</label>
-                        <input
-                          required
-                          type="text"
-                          value={editCity}
-                          onChange={(e) => setEditCity(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-gray-500 uppercase mb-1">Fellowship Core Focus Segment / Division</label>
-                      <input
-                        required
-                        type="text"
-                        value={editField}
-                        onChange={(e) => setEditField(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block font-bold text-gray-500 uppercase mb-1">Phone Contact Matrix</label>
-                        <input
-                          type="text"
-                          placeholder="+234..."
-                          value={editPhone}
-                          onChange={(e) => setEditPhone(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-gray-500 uppercase mb-1">Portal Access Key (Password)</label>
-                        <input
-                          required
-                          type="password"
-                          value={editPassword}
-                          onChange={(e) => setEditPassword(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isUpdatingProfile}
-                      className="w-full py-3 rounded-xl bg-gray-950 text-white font-bold text-xs uppercase tracking-wider"
-                    >
-                      {isUpdatingProfile ? "Synchronizing database Record..." : "Commit Identity Updates"}
-                    </button>
-                  </form>
-                </motion.div>
-              )}
-
-              {activeTab === "leaderboard" && (
-                <motion.div
-                  key="v-leaderboard"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="space-y-6"
-                >
-                  <div className="pb-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900 tracking-tight">Growth Ambassador Arena Ranking</h3>
-                      <p className="text-xs text-gray-500 font-sans">Live tracking of impact points based on AVU balance contribution, funding loops, and field grids.</p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="relative font-sans text-xs">
-                        <input
-                          type="text"
-                          placeholder="Search ambassadors..."
-                          value={leaderSearch}
-                          onChange={(e) => setLeaderSearch(e.target.value)}
-                          className="pl-8 pr-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-500 w-44"
-                        />
-                        <span className="absolute left-2.5 top-2.5 text-gray-400">
-                          <Icon name="Compass" size={12} />
-                        </span>
-                      </div>
-
-                      <select
-                        value={leaderRegionFilter}
-                        onChange={(e) => setLeaderRegionFilter(e.target.value)}
-                        className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:outline-none cursor-pointer text-gray-700"
-                      >
-                        <option value="All">All Regions</option>
-                        <option value="West Africa">West Africa</option>
-                        <option value="East Africa">East Africa</option>
-                      </select>
-
-                      <select
-                        value={leaderDivisionFilter}
-                        onChange={(e) => setLeaderDivisionFilter(e.target.value)}
-                        className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:outline-none cursor-pointer text-gray-700"
-                      >
-                        <option value="All">All Focus Areas</option>
-                        <option value="Technology">Technology</option>
-                        <option value="Sustainability">Sustainability</option>
-                        <option value="Healthcare">Healthcare</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse font-sans text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                            <th className="py-4 px-6 text-center w-16">Rank</th>
-                            <th className="py-4 px-4">Ambassador Fellow</th>
-                            <th className="py-4 px-4">Focus Division & Region</th>
-                            <th className="py-4 px-4 text-right">Wallet AVU</th>
-                            <th className="py-4 px-4 text-right">Supervised Deployments</th>
-                            <th className="py-4 px-6 text-right">Total Impact Points</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50 text-slate-700">
-                          {processedLeaders
-                            .filter(l => {
-                              const matchText = l.name.toLowerCase().includes(leaderSearch.toLowerCase()) || l.city.toLowerCase().includes(leaderSearch.toLowerCase());
-                              const matchRegion = leaderRegionFilter === "All" || getBroadRegion(l.city) === leaderRegionFilter;
-                              const matchDivision = leaderDivisionFilter === "All" || getBroadDivision(l.field) === leaderDivisionFilter;
-                              return matchText && matchRegion && matchDivision;
-                            })
-                            .map((leader, index) => {
-                              return (
-                                <tr 
-                                  key={leader.id} 
-                                  className={`hover:bg-slate-50/50 transition-colors ${
-                                    leader.isCurrentUser ? "bg-emerald-50/30 font-medium border-l-4 border-emerald-600" : ""
-                                  }`}
-                                >
-                                  <td className="py-4 px-6 text-center">
-                                    {index === 0 ? (
-                                      <span className="text-lg">🥇</span>
-                                    ) : index === 1 ? (
-                                      <span className="text-lg">🥈</span>
-                                    ) : index === 2 ? (
-                                      <span className="text-lg">🥉</span>
-                                    ) : (
-                                      <span className="font-mono text-slate-400 font-bold">#{index + 1}</span>
-                                    )}
-                                  </td>
-                                  <td className="py-4 px-4">
-                                    <div className="flex items-center gap-3">
-                                      <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${leader.avatarBg} text-white font-black text-[11px] flex items-center justify-center shadow-sm shrink-0`}>
-                                        {leader.initials}
-                                      </div>
-                                      <div>
-                                        <p className="font-bold text-slate-900 flex items-center gap-1.5">
-                                          <span>{leader.name}</span>
-                                          {leader.isCurrentUser && (
-                                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[8px] font-black uppercase tracking-wider">YOU</span>
-                                          )}
-                                        </p>
-                                        <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border mt-0.5 ${leader.badgeColor}`}>
-                                          {leader.rankTitle}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="py-4 px-4 text-slate-500">
-                                    <p className="font-semibold text-slate-700 truncate max-w-[180px]">{leader.field}</p>
-                                    <p className="text-[10px] mt-0.5">{leader.city}</p>
-                                  </td>
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-slate-800">
-                                    {leader.avu_balance.toLocaleString()} AVU
-                                  </td>
-                                  <td className="py-4 px-4 text-center text-slate-600 font-medium">
-                                    {leader.projects} active grids
-                                  </td>
-                                  <td className="py-4 px-6 text-right font-mono font-black text-emerald-800 text-sm">
-                                    {leader.points.toLocaleString()} PTS
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
                   </div>
                 </motion.div>
               )}
@@ -2629,47 +2244,73 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       </div>
 
       <AnimatePresence>
-        {isFundWalletModalOpen && (
-          <FundWalletModal
-            isOpen={isFundWalletModalOpen}
-            onClose={() => setIsFundWalletModalOpen(false)}
-            profile={profile}
-            onSuccess={(newBal) => {
-              setAvuBalance(newBal);
-              setHasFunded(true);
-            }}
-            showToast={showToast}
-            fetchAmbassadorData={fetchAmbassadorData}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
         {certFormOpen && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.6 }} exit={{ opacity: 0 }} onClick={() => setCertFormOpen(false)} className="absolute inset-0 bg-black backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative z-10 w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl text-slate-900 font-sans text-xs">
-              <h4 className="text-base font-bold text-gray-900 mb-4 pb-2 border-b">Customize Fellowship Badge</h4>
-              <form onSubmit={handleCertSubmit} className="space-y-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setCertFormOpen(false)}
+              className="absolute inset-0 bg-black backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative z-10 w-full max-w-md bg-white text-slate-900 rounded-3xl shadow-2xl p-6 space-y-4"
+            >
+              <h4 className="font-black text-sm uppercase text-gray-900 tracking-wider">Customize Commission Badge</h4>
+              <form onSubmit={handleCertSubmit} className="space-y-4 text-xs font-sans">
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Your Display Name</label>
-                  <input type="text" value={tempName} onChange={(e) => setTempName(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
+                  <label className="block text-gray-500 uppercase font-bold mb-1">Ambassador Name</label>
+                  <input
+                    type="text"
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Operation Base City</label>
-                  <input type="text" value={tempRegion} onChange={(e) => setTempRegion(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
+                  <label className="block text-gray-500 uppercase font-bold mb-1">Operations City</label>
+                  <input
+                    type="text"
+                    value={tempRegion}
+                    onChange={(e) => setTempRegion(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Focus Division Branch</label>
-                  <input type="text" value={tempField} onChange={(e) => setTempField(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
+                  <label className="block text-gray-500 uppercase font-bold mb-1">Supervised Division Segment</label>
+                  <input
+                    type="text"
+                    value={tempField}
+                    onChange={(e) => setTempField(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-gray-500 uppercase mb-1">Commission Date Label</label>
-                  <input type="text" value={tempDate} onChange={(e) => setTempDate(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm" />
+                  <label className="block text-gray-500 uppercase font-bold mb-1">Commission Date</label>
+                  <input
+                    type="text"
+                    value={tempDate}
+                    onChange={(e) => setTempDate(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200"
+                  />
                 </div>
-                <div className="pt-2 flex justify-end gap-2">
-                  <button type="button" onClick={() => setCertFormOpen(false)} className="px-4 py-2 rounded-xl border font-bold text-gray-500">Cancel</button>
-                  <button type="submit" className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold">Regenerate Credentials Frame</button>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setCertFormOpen(false)}
+                    className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  >
+                    Regenerate Frame
+                  </button>
                 </div>
               </form>
             </motion.div>
@@ -2678,64 +2319,17 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       </AnimatePresence>
 
       <AnimatePresence>
-        {activeItemDetails && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.6 }} exit={{ opacity: 0 }} onClick={() => setActiveItemDetails(null)} className="absolute inset-0 bg-black backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative z-10 w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl text-slate-900 font-sans text-xs space-y-4">
-              <div className="pb-2 border-b flex justify-between items-center">
-                <h4 className="text-sm font-black text-[#0A3622] uppercase tracking-wider">{activeItemDetails.title}</h4>
-                <button onClick={() => setActiveItemDetails(null)} className="text-gray-400 hover:text-gray-600"><Icon name="X" size={16} /></button>
-              </div>
-
-              {itemExchangeSuccess ? (
-                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium">
-                  ✓ Vault exchange initialized. The structural files have been directed to your email loop!
-                </div>
-              ) : (
-                <>
-                  <p className="text-slate-600 leading-relaxed">
-                    You are initializing a peer exchange query for the library module compiled by <span className="font-bold text-slate-800">{activeItemDetails.provider}</span>. This will securely move <span className="font-mono font-black text-emerald-700">{activeItemDetails.avuCost} AVU</span> from your growth asset wallet.
-                  </p>
-                  <div className="bg-slate-50 p-3 rounded-xl border text-[11px] text-gray-500">
-                    <b>Fulfillment Rule:</b> Materials downloads are encrypted and logged directly onto the local database cluster for auditable transparency.
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button type="button" onClick={() => setActiveItemDetails(null)} className="px-4 py-2 border font-bold rounded-xl text-gray-500">Abort</button>
-                    <button 
-                      type="button" 
-                      onClick={() => {
-                        if (avuBalance < activeItemDetails.avuCost) {
-                          alert("Insufficient balance. Please add campaign deposits to accumulate more AVU value vectors.");
-                          return;
-                        }
-                        setAvuBalance(prev => prev - activeItemDetails.avuCost);
-                        setItemExchangeSuccess(true);
-                      }}
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold"
-                    >
-                      Authorize Wallet AVU Release
-                    </button>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          </div>
+        {isFundWalletModalOpen && (
+          <FundWalletModal
+            isOpen={isFundWalletModalOpen}
+            onClose={() => setIsFundWalletModalOpen(false)}
+            profile={profile}
+            onSuccess={(newBalance) => setAvuBalance(newBalance)}
+            showToast={showToast}
+            fetchAmbassadorData={fetchAmbassadorData}
+          />
         )}
       </AnimatePresence>
-
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
-        {toasts.map(t => (
-          <div key={t.id} className="pointer-events-auto w-80 p-4 rounded-2xl bg-slate-900 text-white shadow-xl border border-slate-800 flex gap-3 text-xs font-sans">
-            <div className={`p-1 rounded-lg shrink-0 h-max ${t.type === "success" ? "text-emerald-400 bg-emerald-500/10" : t.type === "error" ? "text-rose-400 bg-rose-500/10" : "text-blue-400 bg-blue-500/10"}`}>
-              <Icon name={t.type === "success" ? "Check" : t.type === "error" ? "XCircle" : "ShieldAlert"} size={14} />
-            </div>
-            <div className="space-y-0.5">
-              <p className="font-bold text-slate-100">{t.title}</p>
-              <p className="text-slate-400 leading-normal text-[11px]">{t.message}</p>
-            </div>
-          </div>
-        ))}
-      </div>
 
     </div>
   );
