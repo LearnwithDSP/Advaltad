@@ -715,25 +715,84 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   useEffect(() => {
     if (!profile || !isSupabaseConfigured || !supabase) return;
 
-    const channel = supabase
-      .channel(`public:ambassadors:email=${profile.email}`)
+    // 1. Subscribe to updates in public.ambassadors table
+    const ambassadorChannel = supabase
+      .channel(`public:ambassadors:id=${profile.id}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "ambassadors",
-          filter: `email=eq.${profile.email}`
+          filter: `id=eq.${profile.id}`
         },
-        () => {
-          console.log("Realtime status change detected! Reloading profile...");
+        (payload: any) => {
+          console.log("Realtime status/balance change detected! Payload:", payload);
+          const newRecord = payload.new || {};
+          
+          if (newRecord) {
+            // Immediately update the local UI states to reflect change in avu_balance or status
+            if (newRecord.avu_balance !== undefined) {
+              setAvuBalance(newRecord.avu_balance);
+            }
+            
+            setProfile((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                ...newRecord,
+                avu_balance: newRecord.avu_balance !== undefined ? newRecord.avu_balance : prev.avu_balance,
+                badge_status: newRecord.badge_status !== undefined ? newRecord.badge_status : (newRecord.status || prev.badge_status || prev.status)
+              };
+            });
+          }
+
+          // Fetch full data in background to synchronize other dashboard statistics
+          fetchAmbassadorData();
+        }
+      )
+      .subscribe();
+
+    // 2. Subscribe to inserts/updates in public.deposits table for transactions
+    const depositsChannel = supabase
+      .channel(`public:deposits:ambassador_id=${profile.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "deposits",
+          filter: `ambassador_id=eq.${profile.id}`
+        },
+        (payload) => {
+          console.log("Realtime deposit transaction change detected! Payload:", payload);
+          fetchAmbassadorData();
+        }
+      )
+      .subscribe();
+
+    // 3. Subscribe to changes in public.ambassador_wallet table for balance updates
+    const walletChannel = supabase
+      .channel(`public:ambassador_wallet:ambassador_id=${profile.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ambassador_wallet",
+          filter: `ambassador_id=eq.${profile.id}`
+        },
+        (payload) => {
+          console.log("Realtime ambassador wallet change detected! Payload:", payload);
           fetchAmbassadorData();
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(ambassadorChannel);
+      supabase.removeChannel(depositsChannel);
+      supabase.removeChannel(walletChannel);
     };
   }, [profile]);
 
