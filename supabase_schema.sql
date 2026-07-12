@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.ambassadors (
     email TEXT NOT NULL UNIQUE,
     phone_number TEXT,
     badge_status TEXT NOT NULL DEFAULT 'pending' CHECK (badge_status IN ('pending', 'approved', 'disapproved')),
-    avu_balance INTEGER NOT NULL DEFAULT 1250,
+    avu_balance NUMERIC NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
@@ -44,7 +44,14 @@ CREATE TABLE IF NOT EXISTS public.ambassador_wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ambassador_id UUID REFERENCES public.ambassadors(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
-    balance INTEGER NOT NULL DEFAULT 0,
+    balance NUMERIC NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.ambassador_wallet (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ambassador_id UUID REFERENCES public.ambassadors(id) ON DELETE CASCADE,
+    balance NUMERIC NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
@@ -53,6 +60,7 @@ ALTER TABLE public.ambassadors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blogs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ambassador_wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ambassador_wallet ENABLE ROW LEVEL SECURITY;
 
 -- 6. Create Security Policies
 
@@ -86,6 +94,12 @@ ON public.ambassador_wallets FOR SELECT USING (true);
 
 CREATE POLICY "Allow insert/update access to wallets" 
 ON public.ambassador_wallets FOR ALL USING (true);
+
+CREATE POLICY "Allow select access to single wallet" 
+ON public.ambassador_wallet FOR SELECT USING (true);
+
+CREATE POLICY "Allow insert/update access to single wallet" 
+ON public.ambassador_wallet FOR ALL USING (true);
 
 -- 6. Create the Donations table for live Paystack payments
 CREATE TABLE IF NOT EXISTS public.donations (

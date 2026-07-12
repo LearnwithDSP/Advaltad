@@ -866,5 +866,85 @@ export const db = {
       return true;
     }
     return false;
+  },
+
+  async processFundingSuccess(
+    ambassadorId: string,
+    email: string,
+    amountNaira: number,
+    avuToEarn: number,
+    paystackRef: string
+  ): Promise<{ success: boolean; newBalance: number }> {
+    try {
+      // 1. Update deposit status to success
+      await this.updateDepositStatus(paystackRef, "success");
+
+      // 2. Find the ambassador to get the current avu_balance
+      const ambassador = await this.findAmbassadorByEmail(email);
+      const currentAvuBalance = ambassador?.avu_balance || 0;
+      const newAvuBalance = Number((currentAvuBalance + avuToEarn).toFixed(3));
+
+      // 3. Update ambassador's avu_balance in public.ambassadors
+      await this.updateAvuBalance(ambassadorId, newAvuBalance);
+
+      // 4. Update the wallet balance in public.ambassador_wallets
+      // First, get all wallets to see if a wallet already exists for this ambassador
+      const wallets = await this.getWallets();
+      const existingWallet = wallets.find(
+        w => w.ambassador_id === ambassadorId || (w.email || "").toLowerCase() === email.toLowerCase()
+      );
+
+      if (existingWallet) {
+        const newWalletBalance = Number((existingWallet.balance + avuToEarn).toFixed(3));
+        await this.updateWalletBalance(ambassadorId, newWalletBalance);
+      } else {
+        // Create a new wallet record with the balance set to avuToEarn
+        await this.createWallet({
+          ambassador_id: ambassadorId,
+          email: email,
+          balance: avuToEarn
+        });
+      }
+
+      // 4b. Explicitly update the public.ambassador_wallet table to ensure 100% database sync
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        try {
+          const client = supabaseAdmin || supabase;
+          const { data: walletData, error: walletError } = await client
+            .from("ambassador_wallet")
+            .select("*")
+            .eq("ambassador_id", ambassadorId);
+          
+          if (!walletError && walletData && walletData.length > 0) {
+            const currentWalletBalance = Number(walletData[0].balance || 0);
+            const newWalletBalance = Number((currentWalletBalance + avuToEarn).toFixed(3));
+            await client
+              .from("ambassador_wallet")
+              .update({ balance: newWalletBalance })
+              .eq("ambassador_id", ambassadorId);
+          } else {
+            await client
+              .from("ambassador_wallet")
+              .insert([{ ambassador_id: ambassadorId, balance: avuToEarn }]);
+          }
+        } catch (wErr) {
+          console.warn("Error updating ambassador_wallet table:", wErr);
+        }
+      }
+
+      // 5. Log activity
+      await this.logActivity({
+        ambassador_id: ambassadorId,
+        ambassador_name: ambassador?.name || "Ambassador",
+        type: "avu_transfer",
+        desc: `Funded wallet with ₦${amountNaira.toLocaleString()} Naira. Received ${avuToEarn} AVU tokens (Reference: ${paystackRef}).`,
+        amount: `${avuToEarn} AVU`
+      });
+
+      return { success: true, newBalance: newAvuBalance };
+    } catch (err) {
+      console.error("Error executing processFundingSuccess transaction sequence:", err);
+      return { success: false, newBalance: 0 };
+    }
   }
 };
