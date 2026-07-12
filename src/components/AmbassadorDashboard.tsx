@@ -116,7 +116,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [ambassadorRegion, setAmbassadorRegion] = useState("Lagos, Nigeria");
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
-  const [avuBalance, setAvuBalance] = useState(1250);
+  const [avuBalance, setAvuBalance] = useState(0);
   const [hasFunded, setHasFunded] = useState<boolean>(false);
 
   // Toast notifications state
@@ -685,7 +685,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }
 
     const paystackRef = `ref_${Date.now()}`;
-    const avuToEarn = Math.floor(amt / 1000);
+    const avuToEarn = parseFloat(((amt / 1000) * 1.002).toFixed(4));
 
     // Secure fallback for ambassador id
     const currentAmbassadorId = profile?.id || "00000000-0000-0000-0000-000000000000";
@@ -739,6 +739,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           callback: async function(res: any) {
             try {
               await db.updateDepositStatus(paystackRef, "success");
+              
+              // Update ambassador's AVU balance too!
+              const currentBalance = profile?.avu_balance || 0;
+              const newBal = parseFloat((currentBalance + avuToEarn).toFixed(4));
+              await db.updateAvuBalance(currentAmbassadorId, newBal);
+
               showToast("success", "Payment Verified", `Successfully verified payment of ₦${amt.toLocaleString()} NGN via Paystack. Credited ${avuToEarn} AVU to your balance!`);
               setAmountNaira("");
               setFundingByName("");
@@ -772,7 +778,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }
   };
 
-  const launchSimulationFallback = async (paystackRef: string, amt: number, avuToEarn: string | number) => {
+  const launchSimulationFallback = async (paystackRef: string, amt: number, avuToEarn: number) => {
     const simulatedResponse = confirm(
       `[PAYSTACK SIMULATED GATEWAY]\n\n` +
       `Funding project for: ${fundingByName}\n` +
@@ -785,6 +791,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     if (simulatedResponse) {
       try {
         await db.updateDepositStatus(paystackRef, "success");
+
+        // Update ambassador's AVU balance too!
+        const currentAmbassadorId = profile?.id || "00000000-0000-0000-0000-000000000000";
+        const currentBalance = profile?.avu_balance || 0;
+        const newBal = parseFloat((currentBalance + avuToEarn).toFixed(4));
+        await db.updateAvuBalance(currentAmbassadorId, newBal);
+
         showToast("success", "Payment Verified (Simulation)", `Successfully processed simulated payment of ₦${amt.toLocaleString()} NGN. Logged ${avuToEarn} AVU to your balance!`);
         setAmountNaira("");
         setFundingByName("");
@@ -2646,7 +2659,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                           {/* Quest 4: AVU peer transfer */}
                           {(() => {
-                            const hasTransferred = avuBalance < 1250;
+                            const hasTransferred = hasFunded && avuBalance < ((totalDepositsNaira / 1000) * 1.002) - 0.001;
                             return (
                               <div className="p-3 bg-white rounded-2xl border border-gray-150 flex items-start gap-2.5">
                                 <div className={`p-1 rounded-lg shrink-0 mt-0.5 ${hasTransferred ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>

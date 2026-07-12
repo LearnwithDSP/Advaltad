@@ -426,7 +426,7 @@ export const AmbassadorSection: React.FC = () => {
             phone_number: phone,
             email: cleanEmail,
             badge_status: "pending",
-            avu_balance: 1250
+            avu_balance: 0
           };
 
           try {
@@ -473,7 +473,7 @@ export const AmbassadorSection: React.FC = () => {
               password,
               status: "pending" as const,
               badge_status: "pending" as const,
-              avu_balance: 1250,
+              avu_balance: 0,
               created_at: new Date().toISOString()
             };
             const existingIdx = localDb.findIndex((a: any) => a.email.trim().toLowerCase() === cleanEmail);

@@ -166,7 +166,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     phone_number: phoneVal,
     status: mappedStatus,
     badge_status: mappedStatus,
-    avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 1250,
+    avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 0,
     created_at: row.created_at || new Date().toISOString()
   };
 }
@@ -237,7 +237,7 @@ export const db = {
       id: targetId,
       ...newAmbassador,
       email: cleanEmail,
-      avu_balance: 1250,
+      avu_balance: 0,
       status: "pending",
       created_at: new Date().toISOString()
     };
@@ -252,7 +252,7 @@ export const db = {
           email: cleanEmail,
           phone_number: newAmbassador.phone,
           badge_status: "pending", 
-          avu_balance: 1250
+          avu_balance: 0
         };
         
         const client = supabaseAdmin || supabase;

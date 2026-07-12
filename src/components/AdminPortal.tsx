@@ -269,7 +269,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             
             // Find matched wallet balance
             const wallet = walletsData.find(w => w.ambassador_id === ambId || (w.email || "").toLowerCase() === (ambEmail || "").toLowerCase());
-            const walletBal = wallet ? wallet.balance : 1250;
+            const walletBal = wallet ? wallet.balance : 0;
 
             return {
               id: ambId,
@@ -700,7 +700,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         escapeCSV(amb.email || "N/A"),
         escapeCSV(amb.phone_number || amb.phone || "N/A"),
         escapeCSV(amb.badge_status || amb.status || "pending"),
-        escapeCSV(amb.avu_balance !== undefined ? amb.avu_balance : 1250),
+        escapeCSV(amb.avu_balance !== undefined ? amb.avu_balance : 0),
         escapeCSV(amb.focus_interest || amb.field || "N/A"),
         escapeCSV(amb.base_city || amb.city || "N/A"),
         escapeCSV(amb.created_at)

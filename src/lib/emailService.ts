@@ -38,7 +38,7 @@ export async function triggerApprovalEmail(ambassador: DbAmbassador): Promise<{
       email: ambassador.email,
       city: ambassador.base_city || ambassador.city || "Global Community",
       field: ambassador.focus_interest || ambassador.field || "Social Impact",
-      avu_balance: ambassador.avu_balance || 1250,
+      avu_balance: ambassador.avu_balance !== undefined ? ambassador.avu_balance : 0,
     };
 
     console.log(`[EMAIL SERVICE] Triggering approval email notification for ${payload.email}...`);
