@@ -536,6 +536,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   };
 
   // Map dbAmbassadors to LeaderEntries
+  const approvedOtherAmbassadors = dbAmbassadors.filter(
+    (amb) =>
+      amb.status === "approved" &&
+      amb.id !== profile?.id &&
+      amb.email?.toLowerCase() !== profile?.email?.toLowerCase()
+  );
+
   const dbLeaders = dbAmbassadors
     .filter(a => a.id !== profile?.id && a.email?.toLowerCase() !== profile?.email?.toLowerCase())
     .map((a, idx) => {
@@ -563,15 +570,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       };
     });
 
-  // Compile full leader list
-  const allLeadersCombined = [
-    currentUserEntry,
-    ...dbLeaders,
-    ...baseMockLeaders.filter(l => 
-      l.id !== (profile?.id || "AV-ME") && 
-      !dbLeaders.some(dl => dl.name.toLowerCase() === l.name.toLowerCase())
-    )
-  ];
+  // Compile full leader list - wiped clean of mock leaders and only populates if avu_balance > 0
+  const activeDbLeaders = dbLeaders.filter(l => (l.avu_balance || 0) > 0);
+  const allLeadersCombined = [];
+  if ((currentUserEntry.avu_balance || 0) > 0) {
+    allLeadersCombined.push(currentUserEntry);
+  }
+  allLeadersCombined.push(...activeDbLeaders);
 
   // Point scoring formula:
   // Points = (avu_balance * 10) + Math.floor(totalDeposits / 100) + (projects_count * 500)
@@ -768,16 +773,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   useEffect(() => {
     if (!profile || !isSupabaseConfigured || !supabase) return;
 
-    // 1. Subscribe to updates in public.ambassadors table
+    const rowId = profile.db_id || profile.id;
+
+    // 1. Subscribe to updates in public.ambassadors table using the exact primary key UUID
     const ambassadorChannel = supabase
-      .channel(`public:ambassadors:id=${profile.id}`)
+      .channel(`public:ambassadors:id=${rowId}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "ambassadors",
-          filter: `id=eq.${profile.id}`
+          filter: `id=eq.${rowId}`
         },
         (payload: any) => {
           console.log("Realtime status/balance change detected! Payload:", payload);
@@ -807,6 +814,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       .subscribe();
 
     // 2. Subscribe to inserts/updates in public.deposits table for transactions
+    // Since deposits may use profile.id (user_id) or rowId, let's listen to both if they are different
     const depositsChannel = supabase
       .channel(`public:deposits:ambassador_id=${profile.id}`)
       .on(
@@ -824,16 +832,16 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       )
       .subscribe();
 
-    // 3. Subscribe to changes in public.ambassador_wallet table for balance updates
+    // 3. Subscribe to changes in public.ambassador_wallet table for balance updates (uses ambassadors row ID)
     const walletChannel = supabase
-      .channel(`public:ambassador_wallet:ambassador_id=${profile.id}`)
+      .channel(`public:ambassador_wallet:ambassador_id=${rowId}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "ambassador_wallet",
-          filter: `ambassador_id=eq.${profile.id}`
+          filter: `ambassador_id=eq.${rowId}`
         },
         (payload) => {
           console.log("Realtime ambassador wallet change detected! Payload:", payload);
@@ -1186,17 +1194,22 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               {ambassadorName.charAt(0)}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg font-bold tracking-tight text-gray-900">{ambassadorName}</h2>
-                {profile?.status === "pending" ? (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-bold uppercase tracking-wider animate-pulse">
-                    Awaiting Approval
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-mono font-bold tracking-wider shadow-sm">
+                    {profile?.ambassador_id || profile?.user_id || profile?.id || "AV-PENDING"}
                   </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase tracking-wider">
-                    Fellow ambassador
-                  </span>
-                )}
+                  {profile?.status === "pending" ? (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                      Awaiting Approval
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase tracking-wider">
+                      Fellow ambassador
+                    </span>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-gray-500 font-sans mt-0.5">
                 {ambassadorRegion} • Lead Scholar in <span className="font-semibold text-emerald-700">{ambassadorField}</span>
@@ -2126,16 +2139,32 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             <form onSubmit={handleP2PTransfer} className="space-y-4 text-xs font-sans">
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <label className="block font-bold text-gray-500 uppercase tracking-wider mb-1">Recipient Email or Ambassador ID</label>
-                                  <input
-                                    id="p2p-target-id"
-                                    type="text"
-                                    required
-                                    placeholder="e.g. peer@advaltad.org or AV-10001"
-                                    value={transferTargetId}
-                                    onChange={(e) => setTransferTargetId(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm text-gray-900"
-                                  />
+                                  <label className="block font-bold text-gray-500 uppercase tracking-wider mb-1">Recipient Ambassador</label>
+                                  <div className="relative">
+                                    <select
+                                      id="p2p-target-id"
+                                      required
+                                      value={transferTargetId}
+                                      onChange={(e) => setTransferTargetId(e.target.value)}
+                                      className="w-full px-4 py-3 pr-10 rounded-xl bg-gray-50 border border-gray-100 text-sm text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all cursor-pointer font-medium"
+                                    >
+                                      <option value="" disabled>Select a fellow ambassador...</option>
+                                      {approvedOtherAmbassadors.length === 0 && (
+                                        <option disabled value="">No other approved ambassadors found</option>
+                                      )}
+                                      {approvedOtherAmbassadors.map((amb) => {
+                                        const ambId = amb.ambassador_id || amb.user_id || amb.id;
+                                        return (
+                                          <option key={amb.id} value={ambId}>
+                                            {amb.name} ({ambId})
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                                      <Icon name="ChevronDown" size={16} />
+                                    </div>
+                                  </div>
                                 </div>
 
                                 <div>
@@ -2573,127 +2602,195 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </div>
 
                   {/* Top 3 Physical Podium Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end pt-4">
-                    {/* 2nd Place (Silver) */}
-                    <div className="order-2 md:order-1 flex flex-col items-center">
-                      {(() => {
-                        const leader2 = processedLeaders[1];
-                        return (
-                          <div className="w-full text-center space-y-3">
-                            <div className="relative inline-block">
-                              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-200 to-slate-400 p-0.5 shadow-lg">
-                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-slate-350">
-                                  {leader2.initials || "KM"}
+                  {processedLeaders.length === 0 ? (
+                    <div className="p-8 text-center bg-gray-50 rounded-3xl border border-dashed border-gray-200 text-sm text-gray-500 space-y-3">
+                      <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto text-2xl">
+                        🏆
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-extrabold text-slate-800">The Leaderboard Arena is Currently Empty</p>
+                        <p className="text-xs text-gray-400 max-w-md mx-auto">
+                          Be the first to secure a spot! The Top Leaders Ranking List populates automatically as Ambassadors begin to fund their wallets and buy AVU tokens.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end pt-4">
+                      {/* 2nd Place (Silver) */}
+                      <div className="order-2 md:order-1 flex flex-col items-center">
+                        {(() => {
+                          const leader2 = processedLeaders[1];
+                          if (!leader2) {
+                            return (
+                              <div className="w-full text-center space-y-3 opacity-40">
+                                <div className="relative inline-block">
+                                  <div className="w-16 h-16 rounded-full bg-slate-100 p-0.5 border border-dashed border-slate-300 flex items-center justify-center text-slate-400 font-bold text-sm">
+                                    TBD
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="font-bold text-xs text-slate-400">Position Open</p>
+                                  <p className="text-[10px] text-slate-350 font-medium font-mono">0 AVU</p>
+                                </div>
+                                <div className="h-16 w-full bg-gradient-to-t from-slate-150/40 to-slate-100/20 rounded-t-2xl border-t border-x border-slate-200/40 flex items-center justify-center font-mono font-black text-slate-300 text-lg">
+                                  SILVER
                                 </div>
                               </div>
-                              <span className="absolute -top-2 -right-1 bg-slate-300 text-slate-900 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
-                                2
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <p className="font-extrabold text-sm text-slate-800">{leader2.name}</p>
-                              <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader2.avu_balance || 0).toLocaleString()} AVU</p>
-                              <p className="text-[10px] text-gray-400 font-medium">{leader2.city} • {leader2.field}</p>
-                              <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-700 bg-slate-100 border border-slate-200 rounded-md">
-                                {leader2.rankTitle}
-                              </span>
-                              <p className="text-xs font-black font-mono text-slate-650 pt-1">{leader2.points.toLocaleString()} PTS</p>
-                            </div>
+                            );
+                          }
+                          return (
+                            <div className="w-full text-center space-y-3">
+                              <div className="relative inline-block">
+                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-200 to-slate-400 p-0.5 shadow-lg">
+                                  <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-slate-350">
+                                    {leader2.initials || "KM"}
+                                  </div>
+                                </div>
+                                <span className="absolute -top-2 -right-1 bg-slate-300 text-slate-900 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
+                                  2
+                                </span>
+                              </div>
+                              
+                              <div className="space-y-1">
+                                <p className="font-extrabold text-sm text-slate-800">{leader2.name}</p>
+                                <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader2.avu_balance || 0).toLocaleString()} AVU</p>
+                                <p className="text-[10px] text-gray-400 font-medium">{leader2.city} • {leader2.field}</p>
+                                <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-700 bg-slate-100 border border-slate-200 rounded-md">
+                                  {leader2.rankTitle}
+                                </span>
+                                <p className="text-xs font-black font-mono text-slate-650 pt-1">{leader2.points.toLocaleString()} PTS</p>
+                              </div>
 
-                            {/* Podium Pedestal block */}
-                            <div className="h-16 w-full bg-gradient-to-t from-slate-150 to-slate-100 rounded-t-2xl border-t border-x border-slate-200/60 shadow-[0_-4px_12px_rgba(0,0,0,0.02)] flex items-center justify-center font-mono font-black text-slate-400 text-lg">
-                              SILVER
+                              {/* Podium Pedestal block */}
+                              <div className="h-16 w-full bg-gradient-to-t from-slate-150 to-slate-100 rounded-t-2xl border-t border-x border-slate-200/60 shadow-[0_-4px_12px_rgba(0,0,0,0.02)] flex items-center justify-center font-mono font-black text-slate-400 text-lg">
+                                SILVER
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
+                          );
+                        })()}
+                      </div>
 
-                    {/* 1st Place (Gold) - Elevated center block */}
-                    <div className="order-1 md:order-2 flex flex-col items-center">
-                      {(() => {
-                        const leader1 = processedLeaders[0];
-                        return (
-                          <div className="w-full text-center space-y-3 relative">
-                            {/* Confetti element simulation */}
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-8 text-xl animate-bounce">
-                              👑
-                            </div>
-                            
-                            <div className="relative inline-block">
-                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-yellow-600 p-1 shadow-xl ring-4 ring-amber-400/20">
-                                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white font-bold text-xl border-2 border-amber-400">
-                                  {leader1.initials || "NT"}
+                      {/* 1st Place (Gold) - Elevated center block */}
+                      <div className="order-1 md:order-2 flex flex-col items-center">
+                        {(() => {
+                          const leader1 = processedLeaders[0];
+                          if (!leader1) {
+                            return (
+                              <div className="w-full text-center space-y-3 relative opacity-50">
+                                <div className="relative inline-block">
+                                  <div className="w-20 h-20 rounded-full bg-slate-100 p-0.5 border border-dashed border-slate-350 flex items-center justify-center text-slate-400 font-bold text-sm">
+                                    TBD
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="font-bold text-xs text-slate-400 font-sans">Leader Spot Open</p>
+                                  <p className="text-[10px] text-slate-350 font-medium font-mono">0 AVU</p>
+                                </div>
+                                <div className="h-24 w-full bg-gradient-to-t from-amber-100/30 to-amber-50/10 rounded-t-2xl border-t border-x border-amber-200/40 flex items-center justify-center font-mono font-black text-amber-400 text-xl">
+                                  GOLD
                                 </div>
                               </div>
-                              <span className="absolute -top-2 -right-1 bg-amber-400 text-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow-md">
-                                1
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1 pb-2">
-                              <p className="font-black text-base text-gray-950 flex items-center justify-center gap-1">
-                                {leader1.name}
-                                {leader1.isCurrentUser && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
-                              </p>
-                              <p className="text-xs text-emerald-650 font-black font-mono">{(leader1.avu_balance || 0).toLocaleString()} AVU</p>
-                              <p className="text-[10px] text-gray-400 font-medium">{leader1.city} • {leader1.field}</p>
-                              <span className="inline-block px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-805 bg-amber-100/80 border border-amber-200 rounded-md">
-                                {leader1.rankTitle}
-                              </span>
-                              <p className="text-sm font-extrabold font-mono text-amber-600 pt-1">{leader1.points.toLocaleString()} PTS</p>
-                            </div>
+                            );
+                          }
+                          return (
+                            <div className="w-full text-center space-y-3 relative">
+                              {/* Confetti element simulation */}
+                              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-8 text-xl animate-bounce">
+                                👑
+                              </div>
+                              
+                              <div className="relative inline-block">
+                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-yellow-600 p-1 shadow-xl ring-4 ring-amber-400/20">
+                                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white font-bold text-xl border-2 border-amber-400">
+                                    {leader1.initials || "NT"}
+                                  </div>
+                                </div>
+                                <span className="absolute -top-2 -right-1 bg-amber-400 text-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow-md">
+                                  1
+                                </span>
+                              </div>
+                              
+                              <div className="space-y-1 pb-2">
+                                <p className="font-black text-base text-gray-950 flex items-center justify-center gap-1">
+                                  {leader1.name}
+                                  {leader1.isCurrentUser && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
+                                </p>
+                                <p className="text-xs text-emerald-650 font-black font-mono">{(leader1.avu_balance || 0).toLocaleString()} AVU</p>
+                                <p className="text-[10px] text-gray-400 font-medium">{leader1.city} • {leader1.field}</p>
+                                <span className="inline-block px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-805 bg-amber-100/80 border border-amber-200 rounded-md">
+                                  {leader1.rankTitle}
+                                </span>
+                                <p className="text-sm font-extrabold font-mono text-amber-600 pt-1">{leader1.points.toLocaleString()} PTS</p>
+                              </div>
 
-                            {/* Podium Pedestal block */}
-                            <div className="h-24 w-full bg-gradient-to-t from-amber-100/60 to-amber-50/40 rounded-t-2xl border-t border-x border-amber-200/60 shadow-[0_-6px_20px_rgba(245,158,11,0.05)] flex flex-col items-center justify-center font-mono font-black text-amber-500 text-xl">
-                              <span>GOLD</span>
-                              <span className="text-[9px] text-amber-400/80 uppercase tracking-widest mt-0.5">Arena Leader</span>
+                              {/* Podium Pedestal block */}
+                              <div className="h-24 w-full bg-gradient-to-t from-amber-100/60 to-amber-50/40 rounded-t-2xl border-t border-x border-amber-200/60 shadow-[0_-6px_20px_rgba(245,158,11,0.05)] flex flex-col items-center justify-center font-mono font-black text-amber-500 text-xl">
+                                <span>GOLD</span>
+                                <span className="text-[9px] text-amber-400/80 uppercase tracking-widest mt-0.5">Arena Leader</span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
+                          );
+                        })()}
+                      </div>
 
-                    {/* 3rd Place (Bronze) */}
-                    <div className="order-3 md:order-3 flex flex-col items-center">
-                      {(() => {
-                        const leader3 = processedLeaders[2];
-                        return (
-                          <div className="w-full text-center space-y-3">
-                            <div className="relative inline-block">
-                              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-600 to-orange-800 p-0.5 shadow-lg">
-                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-amber-700">
-                                  {leader3.initials || "MD"}
+                      {/* 3rd Place (Bronze) */}
+                      <div className="order-3 md:order-3 flex flex-col items-center">
+                        {(() => {
+                          const leader3 = processedLeaders[2];
+                          if (!leader3) {
+                            return (
+                              <div className="w-full text-center space-y-3 opacity-40">
+                                <div className="relative inline-block">
+                                  <div className="w-16 h-16 rounded-full bg-slate-100 p-0.5 border border-dashed border-slate-300 flex items-center justify-center text-slate-400 font-bold text-sm">
+                                    TBD
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="font-bold text-xs text-slate-400">Position Open</p>
+                                  <p className="text-[10px] text-slate-350 font-medium font-mono">0 AVU</p>
+                                </div>
+                                <div className="h-12 w-full bg-gradient-to-t from-orange-50/40 to-orange-50/10 rounded-t-2xl border-t border-x border-orange-200/30 flex items-center justify-center font-mono font-black text-orange-400 text-lg">
+                                  BRONZE
                                 </div>
                               </div>
-                              <span className="absolute -top-2 -right-1 bg-orange-700 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
-                                3
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <p className="font-extrabold text-sm text-slate-800 flex items-center justify-center gap-1">
-                                {leader3.name}
-                                {leader3.isCurrentUser && <span className="text-[9px] bg-emerald-100 text-emerald-850 px-1.5 py-0.5 rounded font-black uppercase">You</span>}
-                              </p>
-                              <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader3.avu_balance || 0).toLocaleString()} AVU</p>
-                              <p className="text-[10px] text-gray-400 font-medium">{leader3.city} • {leader3.field}</p>
-                              <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 rounded-md">
-                                {leader3.rankTitle}
-                              </span>
-                              <p className="text-xs font-black font-mono text-amber-800 pt-1">{leader3.points.toLocaleString()} PTS</p>
-                            </div>
+                            );
+                          }
+                          return (
+                            <div className="w-full text-center space-y-3">
+                              <div className="relative inline-block">
+                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-600 to-orange-800 p-0.5 shadow-lg">
+                                  <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-bold text-lg border-2 border-amber-700">
+                                    {leader3.initials || "MD"}
+                                  </div>
+                                </div>
+                                <span className="absolute -top-2 -right-1 bg-orange-700 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow">
+                                  3
+                                </span>
+                              </div>
+                              
+                              <div className="space-y-1">
+                                <p className="font-extrabold text-sm text-slate-800 flex items-center justify-center gap-1">
+                                  {leader3.name}
+                                  {leader3.isCurrentUser && <span className="text-[9px] bg-emerald-100 text-emerald-850 px-1.5 py-0.5 rounded font-black uppercase">You</span>}
+                                </p>
+                                <p className="text-[10px] text-emerald-650 font-extrabold font-mono">{(leader3.avu_balance || 0).toLocaleString()} AVU</p>
+                                <p className="text-[10px] text-gray-400 font-medium">{leader3.city} • {leader3.field}</p>
+                                <span className="inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 rounded-md">
+                                  {leader3.rankTitle}
+                                </span>
+                                <p className="text-xs font-black font-mono text-amber-800 pt-1">{leader3.points.toLocaleString()} PTS</p>
+                              </div>
 
-                            {/* Podium Pedestal block */}
-                            <div className="h-12 w-full bg-gradient-to-t from-orange-50 to-orange-50/20 rounded-t-2xl border-t border-x border-orange-200/40 shadow-[0_-4px_12px_rgba(0,0,0,0.01)] flex items-center justify-center font-mono font-black text-orange-600/70 text-lg">
-                              BRONZE
+                              {/* Podium Pedestal block */}
+                              <div className="h-12 w-full bg-gradient-to-t from-orange-50 to-orange-50/20 rounded-t-2xl border-t border-x border-orange-200/40 shadow-[0_-4px_12px_rgba(0,0,0,0.01)] flex items-center justify-center font-mono font-black text-orange-600/70 text-lg">
+                                BRONZE
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Main Grid: Leaders table (Left 8 cols) & Quest list (Right 4 cols) */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
@@ -2992,6 +3089,63 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         </div>
         )}
       </div>
+
+      {/* Dashboard Footer */}
+      <footer className="mt-16 border-t border-slate-200/60 bg-white/50 backdrop-blur-md py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-slate-150 flex items-center justify-center shrink-0">
+                <img
+                  src={logoUrl}
+                  alt="Advaltad Logo"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="text-left">
+                <span className="text-xs font-display font-black tracking-tight text-slate-800 block">Advaltad Foundation</span>
+                <span className="text-[9px] text-emerald-600 font-extrabold block leading-none mt-0.5">CAC Registration No: CAC/IT8135301</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-500 font-medium">
+              <div className="flex items-center gap-1.5">
+                <Icon name="MapPin" size={13} className="text-emerald-600" />
+                <span>1/3 Adimula Street, Idimu Lagos, Nigeria</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Icon name="Phone" size={13} className="text-emerald-600" />
+                <a href="tel:+2349032445174" className="hover:text-emerald-700 transition-colors">+234 903 244 5174</a>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Icon name="Mail" size={13} className="text-emerald-600" />
+                <a href="mailto:contact@advaltad.org" className="hover:text-emerald-700 transition-colors">contact@advaltad.org</a>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <a href="https://www.facebook.com/share/1DARo9G9ZV/" target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 flex items-center justify-center transition-all shadow-sm" aria-label="Facebook">
+                <Icon name="Facebook" size={13} />
+              </a>
+              <a href="https://x.com/Advaltad" target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 flex items-center justify-center transition-all shadow-sm" aria-label="Twitter">
+                <Icon name="Twitter" size={13} />
+              </a>
+              <a href="https://www.instagram.com/advaltadfoundation?igsh=YW5jYnpobHpmbTVk" target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 flex items-center justify-center transition-all shadow-sm" aria-label="Instagram">
+                <Icon name="Instagram" size={13} />
+              </a>
+            </div>
+          </div>
+          <div className="mt-6 pt-6 border-t border-slate-200/40 text-center text-[10px] text-slate-400 font-semibold flex flex-col sm:flex-row items-center justify-between gap-4">
+            <span>© {new Date().getFullYear()} Advaltad Growth and Support Foundation. All Rights Reserved.</span>
+            <div className="flex items-center gap-4">
+              <a href="#privacy" className="hover:text-emerald-700">Privacy Charter</a>
+              <span>•</span>
+              <a href="#terms" className="hover:text-emerald-700">Terms of Synergy</a>
+            </div>
+          </div>
+        </div>
+      </footer>
 
       {/* Pop up overlay credential updater form */}
       <AnimatePresence>
