@@ -138,19 +138,20 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                 A premier global nonprofit adding value to Africa's development through long-term educational pipelines, tech labs, primary clinics, and ecological grids.
               </p>
 
+              <div className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-100/50 rounded-lg px-2.5 py-1 inline-block">
+                <span className="font-bold text-slate-500">CAC Reg:</span> CAC/IT8135301
+              </div>
+
               {/* Social links */}
               <div className="flex items-center gap-3">
-                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Twitter">
-                  <Icon name="Twitter" size={14} />
-                </a>
-                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Facebook">
+                <a href="https://www.facebook.com/share/1DARo9G9ZV/" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Facebook">
                   <Icon name="Facebook" size={14} />
                 </a>
-                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Instagram">
-                  <Icon name="Instagram" size={14} />
+                <a href="https://x.com/Advaltad" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Twitter">
+                  <Icon name="Twitter" size={14} />
                 </a>
-                <a href="#" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Linkedin">
-                  <Icon name="Linkedin" size={14} />
+                <a href="https://www.instagram.com/advaltadfoundation?igsh=YW5jYnpobHpmbTVk" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-brand-primary hover:bg-[#DDEBE5] flex items-center justify-center transition-colors" aria-label="Instagram">
+                  <Icon name="Instagram" size={14} />
                 </a>
               </div>
             </div>
@@ -187,7 +188,11 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                   </li>
                   <li className="flex items-center gap-1.5">
                     <Icon name="Phone" size={12} className="text-brand-primary" />
-                    <span>+234 812 345 6789</span>
+                    <a href="tel:+2349032445174" className="hover:text-brand-primary transition-colors">+234 903 244 5174</a>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <Icon name="MapPin" size={12} className="text-brand-primary shrink-0 mt-0.5" />
+                    <span>1/3 Adimula Street, Idimu Lagos, Nigeria</span>
                   </li>
                 </ul>
               </div>
