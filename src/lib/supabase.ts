@@ -1216,13 +1216,28 @@ export const db = {
 
     // Always keep local storage updated as well (or as fallback)
     const localDb = getLocalDb();
-    const localSender = localDb.find(a => a.id === sender.id || a.email.toLowerCase() === sender.email.toLowerCase());
+    const localSender = localDb.find(a => 
+      a.id.toLowerCase() === sender.id.toLowerCase() || 
+      a.email.toLowerCase() === sender.email.toLowerCase() ||
+      (a.user_id && sender.user_id && a.user_id.toLowerCase() === sender.user_id.toLowerCase()) ||
+      (a.ambassador_id && sender.ambassador_id && a.ambassador_id.toLowerCase() === sender.ambassador_id.toLowerCase())
+    );
     if (localSender) {
       localSender.avu_balance = senderNewBalance;
     }
-    const localRecipient = localDb.find(a => a.id === recipient.id || a.email.toLowerCase() === recipient.email.toLowerCase());
+    const localRecipient = localDb.find(a => 
+      a.id.toLowerCase() === recipient.id.toLowerCase() || 
+      a.email.toLowerCase() === recipient.email.toLowerCase() ||
+      (a.user_id && recipient.user_id && a.user_id.toLowerCase() === recipient.user_id.toLowerCase()) ||
+      (a.ambassador_id && recipient.ambassador_id && a.ambassador_id.toLowerCase() === recipient.ambassador_id.toLowerCase())
+    );
     if (localRecipient) {
       localRecipient.avu_balance = recipientNewBalance;
+    } else {
+      localDb.push({
+        ...recipient,
+        avu_balance: recipientNewBalance
+      });
     }
     saveLocalDb(localDb);
 
