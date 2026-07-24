@@ -139,6 +139,50 @@ const AUDIT_LOGS_LOCAL_STORAGE_KEY = "advaltad_audit_logs_db";
 const DONATIONS_LOCAL_STORAGE_KEY = "advaltad_donations_db";
 const DEPOSITS_LOCAL_STORAGE_KEY = "advaltad_deposits_db";
 const P2P_TX_LOCAL_STORAGE_KEY = "advaltad_p2p_transactions_db";
+const AMB_STATIC_ID_MAP_KEY = "advaltad_ambassador_static_id_map";
+
+function getStaticAmbassadorId(identifier: string): string {
+  if (!identifier) return "AV-10000";
+  const cleanKey = identifier.trim().toLowerCase();
+
+  // If identifier already is a static AV- formatted ID (e.g. AV-73862), preserve it!
+  if (/^AV-\d{4,6}$/i.test(cleanKey)) {
+    return cleanKey.toUpperCase();
+  }
+
+  let map: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem(AMB_STATIC_ID_MAP_KEY);
+      if (stored) map = JSON.parse(stored);
+    } catch (e) {
+      console.warn("Failed reading static ID map", e);
+    }
+  }
+
+  if (map[cleanKey]) {
+    return map[cleanKey];
+  }
+
+  // Calculate deterministic 5-digit number based on string hash of identifier
+  let hash = 0;
+  for (let i = 0; i < cleanKey.length; i++) {
+    hash = (hash << 5) - hash + cleanKey.charCodeAt(i);
+    hash |= 0;
+  }
+  const posHash = Math.abs(hash);
+  const num = (posHash % 89999) + 10000;
+  const generatedId = `AV-${num}`;
+
+  map[cleanKey] = generatedId;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(AMB_STATIC_ID_MAP_KEY, JSON.stringify(map));
+    } catch (e) {}
+  }
+
+  return generatedId;
+}
 
 function isUuid(val: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
@@ -182,19 +226,24 @@ function mapRowToAmbassador(row: any): DbAmbassador {
   const cityVal = row.base_city || row.city || "";
   const fieldVal = row.focus_interest || row.field || "";
   const phoneVal = row.phone_number || row.phone || "";
+  const rawEmail = row.email || "";
+  const rawId = row.user_id || row.ambassador_id || row.id || "";
+
+  // Assign deterministic static AV- ID that NEVER changes
+  const staticId = getStaticAmbassadorId(rawId || rawEmail || row.db_id || nameVal);
 
   return {
-    id: row.user_id || row.id || "",
-    user_id: row.user_id || undefined,
+    id: staticId,
+    user_id: staticId,
     db_id: row.id || undefined,
-    ambassador_id: row.ambassador_id || row.user_id || row.id || "",
+    ambassador_id: staticId,
     name: nameVal,
     professional_name: nameVal,
     city: cityVal,
     base_city: cityVal,
     field: fieldVal,
     focus_interest: fieldVal,
-    email: row.email || "",
+    email: rawEmail,
     phone: phoneVal,
     phone_number: phoneVal,
     status: mappedStatus,
@@ -231,28 +280,15 @@ export const db = {
         if (!error && data) {
           const mapped = data.map(mapRowToAmbassador);
           for (const amb of mapped) {
-            let needsUpdate = false;
-            const updatePayload: any = {};
-            if (!amb.user_id || !amb.user_id.startsWith("AV-")) {
-              const newUserId = "AV-" + Math.floor(Math.random() * 89999 + 10000);
-              amb.user_id = newUserId;
-              amb.id = newUserId;
-              updatePayload.user_id = newUserId;
-              needsUpdate = true;
-            }
-            if (!amb.ambassador_id || !amb.ambassador_id.startsWith("AV-")) {
-              const newAmbId = amb.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000);
-              amb.ambassador_id = newAmbId;
-              updatePayload.ambassador_id = newAmbId;
-              needsUpdate = true;
-            }
-            if (needsUpdate) {
+            const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
+            amb.id = staticId;
+            amb.user_id = staticId;
+            amb.ambassador_id = staticId;
+
+            if (amb.db_id) {
               try {
-                await client.from(tableToUse).update(updatePayload).eq("id", amb.db_id);
-                console.log(`[ID ASSIGNMENT] Successfully self-healed user_id/ambassador_id for ${amb.email}`);
-              } catch (updateErr) {
-                console.error("Failed to self-heal user_id for ambassador", amb.email, updateErr);
-              }
+                await client.from(tableToUse).update({ user_id: staticId, ambassador_id: staticId }).eq("id", amb.db_id);
+              } catch (updateErr) {}
             }
           }
           resultList = mapped;
@@ -266,7 +302,7 @@ export const db = {
       resultList = getLocalDb();
     }
 
-    // Ensure localDb has seeded defaults if empty
+    // Ensure localDb has seeded defaults if empty (Default AVU balance is 0)
     if (resultList.length === 0) {
       resultList = [
         {
@@ -279,7 +315,7 @@ export const db = {
           field: "Enriching African youths initiative",
           phone: "+234 801 234 5678",
           status: "approved",
-          avu_balance: 500,
+          avu_balance: 0,
           created_at: new Date().toISOString()
         },
         {
@@ -292,7 +328,7 @@ export const db = {
           field: "Eco-Housing & Construction",
           phone: "+254 712 345 678",
           status: "approved",
-          avu_balance: 1200,
+          avu_balance: 0,
           created_at: new Date().toISOString()
         },
         {
@@ -305,24 +341,20 @@ export const db = {
           field: "NextGen Software Infrastructure",
           phone: "+233 241 234 567",
           status: "approved",
-          avu_balance: 850,
+          avu_balance: 0,
           created_at: new Date().toISOString()
         }
       ];
     }
 
-    // Guarantee EVERY ambassador has valid AV- user_id and ambassador_id
-    let updatedLocal = false;
+    // Guarantee EVERY ambassador has valid static AV- user_id and ambassador_id and valid numerical balance
     for (const amb of resultList) {
-      if (!amb.user_id || !amb.user_id.startsWith("AV-")) {
-        const newUserId = "AV-" + Math.floor(Math.random() * 89999 + 10000);
-        amb.user_id = newUserId;
-        if (!amb.id || !amb.id.startsWith("AV-")) amb.id = newUserId;
-        updatedLocal = true;
-      }
-      if (!amb.ambassador_id || !amb.ambassador_id.startsWith("AV-")) {
-        amb.ambassador_id = amb.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000);
-        updatedLocal = true;
+      const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
+      amb.id = staticId;
+      amb.user_id = staticId;
+      amb.ambassador_id = staticId;
+      if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
+        amb.avu_balance = 0;
       }
     }
 
@@ -437,13 +469,12 @@ export const db = {
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string; ambassador_id?: string }): Promise<DbAmbassador> {
     const cleanEmail = newAmbassador.email.trim().toLowerCase();
-    const targetId = newAmbassador.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000);
-    const ambassadorId = newAmbassador.ambassador_id || targetId;
+    const staticId = getStaticAmbassadorId(newAmbassador.user_id || newAmbassador.ambassador_id || cleanEmail || newAmbassador.name);
 
     const fresh: DbAmbassador = {
-      id: targetId,
-      user_id: targetId,
-      ambassador_id: ambassadorId,
+      id: staticId,
+      user_id: staticId,
+      ambassador_id: staticId,
       ...newAmbassador,
       email: cleanEmail,
       avu_balance: 0,
@@ -454,8 +485,8 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const rowData = {
-          user_id: targetId,
-          ambassador_id: ambassadorId,
+          user_id: staticId,
+          ambassador_id: staticId,
           professional_name: newAmbassador.name,
           base_city: newAmbassador.city,
           focus_interest: newAmbassador.field,
