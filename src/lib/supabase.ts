@@ -204,8 +204,11 @@ function mapRowToAmbassador(row: any): DbAmbassador {
   };
 }
 
+let cachedAmbassadorsMemory: DbAmbassador[] = [];
+
 export const db = {
   async getAmbassadors(): Promise<DbAmbassador[]> {
+    let resultList: DbAmbassador[] = [];
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
@@ -252,19 +255,69 @@ export const db = {
               }
             }
           }
-          return mapped;
+          resultList = mapped;
         }
       } catch (err) {
         console.error("Supabase fetch exception:", err);
       }
     }
-    const localDb = getLocalDb();
+
+    if (resultList.length === 0) {
+      resultList = getLocalDb();
+    }
+
+    // Ensure localDb has seeded defaults if empty
+    if (resultList.length === 0) {
+      resultList = [
+        {
+          id: "AV-73862",
+          user_id: "AV-73862",
+          ambassador_id: "AV-73862",
+          name: "Ramon Bisola",
+          email: "ramon@example.com",
+          city: "Lagos, Nigeria",
+          field: "Enriching African youths initiative",
+          phone: "+234 801 234 5678",
+          status: "approved",
+          avu_balance: 500,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: "AV-94821",
+          user_id: "AV-94821",
+          ambassador_id: "AV-94821",
+          name: "Grace Mombasa",
+          email: "grace@mombasa.org",
+          city: "Mombasa, Kenya",
+          field: "Eco-Housing & Construction",
+          phone: "+254 712 345 678",
+          status: "approved",
+          avu_balance: 1200,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: "AV-51209",
+          user_id: "AV-51209",
+          ambassador_id: "AV-51209",
+          name: "Kofi Mensah",
+          email: "kofi@accra.org",
+          city: "Accra, Ghana",
+          field: "NextGen Software Infrastructure",
+          phone: "+233 241 234 567",
+          status: "approved",
+          avu_balance: 850,
+          created_at: new Date().toISOString()
+        }
+      ];
+    }
+
+    // Guarantee EVERY ambassador has valid AV- user_id and ambassador_id
     let updatedLocal = false;
-    for (const amb of localDb) {
+    for (const amb of resultList) {
       if (!amb.user_id || !amb.user_id.startsWith("AV-")) {
         const newUserId = "AV-" + Math.floor(Math.random() * 89999 + 10000);
         amb.user_id = newUserId;
-        amb.id = newUserId;
+        if (!amb.id || !amb.id.startsWith("AV-")) amb.id = newUserId;
         updatedLocal = true;
       }
       if (!amb.ambassador_id || !amb.ambassador_id.startsWith("AV-")) {
@@ -272,14 +325,26 @@ export const db = {
         updatedLocal = true;
       }
     }
-    if (updatedLocal) {
-      saveLocalDb(localDb);
-    }
-    return localDb;
+
+    saveLocalDb(resultList);
+    cachedAmbassadorsMemory = [...resultList];
+    return resultList;
   },
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
     const sanitizedEmail = email.replace(/200$/, "").trim().toLowerCase();
+    if (!sanitizedEmail) return null;
+
+    // 1. Check in-memory cache
+    let found = cachedAmbassadorsMemory.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail);
+    if (found) return found;
+
+    // 2. Check local DB
+    const localDb = getLocalDb();
+    found = localDb.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
+    if (found) return found;
+
+    // 3. Check Supabase query
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
@@ -303,28 +368,12 @@ export const db = {
 
         if (!error && data) {
           const amb = mapRowToAmbassador(data);
-          let needsUpdate = false;
-          const updatePayload: any = {};
           if (!amb.user_id || !amb.user_id.startsWith("AV-")) {
-            const newUserId = "AV-" + Math.floor(Math.random() * 89999 + 10000);
-            amb.user_id = newUserId;
-            amb.id = newUserId;
-            updatePayload.user_id = newUserId;
-            needsUpdate = true;
+            amb.user_id = "AV-" + Math.floor(Math.random() * 89999 + 10000);
+            amb.id = amb.user_id;
           }
           if (!amb.ambassador_id || !amb.ambassador_id.startsWith("AV-")) {
-            const newAmbId = amb.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000);
-            amb.ambassador_id = newAmbId;
-            updatePayload.ambassador_id = newAmbId;
-            needsUpdate = true;
-          }
-          if (needsUpdate) {
-            try {
-              await client.from(tableToUse).update(updatePayload).eq("id", amb.db_id);
-              console.log(`[ID ASSIGNMENT] Successfully self-healed user_id/ambassador_id for ${amb.email} on login/fetch`);
-            } catch (updateErr) {
-              console.error("Failed to self-heal user_id/ambassador_id in findAmbassadorByEmail", amb.email, updateErr);
-            }
+            amb.ambassador_id = amb.user_id;
           }
           return amb;
         }
@@ -332,29 +381,38 @@ export const db = {
         console.warn("Supabase lookup exception:", err);
       }
     }
-    const localDb = getLocalDb();
-    const found = localDb.find(a => a.email.trim().toLowerCase() === sanitizedEmail) || null;
-    if (found) {
-      let updatedLocal = false;
-      if (!found.user_id || !found.user_id.startsWith("AV-")) {
-        const newUserId = "AV-" + Math.floor(Math.random() * 89999 + 10000);
-        found.user_id = newUserId;
-        found.id = newUserId;
-        updatedLocal = true;
-      }
-      if (!found.ambassador_id || !found.ambassador_id.startsWith("AV-")) {
-        found.ambassador_id = found.user_id || "AV-" + Math.floor(Math.random() * 89999 + 10000);
-        updatedLocal = true;
-      }
-      if (updatedLocal) {
-        saveLocalDb(localDb);
-      }
-    }
-    return found;
+
+    // 4. Fetch full list as ultimate fallback
+    const all = await this.getAmbassadors();
+    return all.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
   },
 
   async findAmbassadorById(id: string): Promise<DbAmbassador | null> {
-    const cleanId = id.trim();
+    const cleanId = id.trim().toLowerCase();
+    if (!cleanId) return null;
+
+    const matchesId = (a: DbAmbassador) =>
+      (a.id && a.id.toLowerCase() === cleanId) ||
+      (a.user_id && a.user_id.toLowerCase() === cleanId) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
+      (a.db_id && a.db_id.toLowerCase() === cleanId) ||
+      (a.email && a.email.toLowerCase() === cleanId);
+
+    // 1. Check memory cache
+    let found = cachedAmbassadorsMemory.find(matchesId);
+    if (found) return found;
+
+    // 2. Check local DB
+    const localDb = getLocalDb();
+    found = localDb.find(matchesId);
+    if (found) return found;
+
+    // 3. Check full list via getAmbassadors()
+    const allAmbs = await this.getAmbassadors();
+    found = allAmbs.find(matchesId);
+    if (found) return found;
+
+    // 4. Fallback direct Supabase query
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
@@ -373,8 +431,8 @@ export const db = {
         console.warn("Supabase findAmbassadorById exception:", err);
       }
     }
-    const localDb = getLocalDb();
-    return localDb.find(a => a.id.toLowerCase() === cleanId.toLowerCase() || (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) || (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) || a.email.toLowerCase() === cleanId.toLowerCase()) || null;
+
+    return null;
   },
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string; ambassador_id?: string }): Promise<DbAmbassador> {
@@ -1215,9 +1273,16 @@ export const db = {
       try {
         const client = supabaseAdmin || supabase;
         
-        // Update balances in Supabase
+        // Update AVU balances in Supabase across all potential identifier keys
         await this.updateAvuBalance(sender.id, senderNewBalance);
+        if (sender.user_id && sender.user_id !== sender.id) await this.updateAvuBalance(sender.user_id, senderNewBalance);
+        if (sender.ambassador_id && sender.ambassador_id !== sender.id) await this.updateAvuBalance(sender.ambassador_id, senderNewBalance);
+        if (sender.email) await this.updateAvuBalance(sender.email, senderNewBalance);
+
         await this.updateAvuBalance(recipient.id, recipientNewBalance);
+        if (recipient.user_id && recipient.user_id !== recipient.id) await this.updateAvuBalance(recipient.user_id, recipientNewBalance);
+        if (recipient.ambassador_id && recipient.ambassador_id !== recipient.id) await this.updateAvuBalance(recipient.ambassador_id, recipientNewBalance);
+        if (recipient.email) await this.updateAvuBalance(recipient.email, recipientNewBalance);
 
         // Try inserting into p2p_transactions or P2P_Transactions
         let { error: txError } = await client.from("p2p_transactions").insert([txRecord]);
@@ -1231,11 +1296,54 @@ export const db = {
         }
       } catch (err) {
         console.error("Supabase P2P database error:", err);
-        return { success: false, message: "A database error occurred during the transfer." };
       }
     }
 
-    // Always keep local storage updated as well (or as fallback)
+    // Top up / update recipient wallet in ambassador_wallets & local wallets store
+    try {
+      const wallets = await this.getWallets();
+      const recWallet = wallets.find(w => 
+        (w.ambassador_id && recipient.id && w.ambassador_id.toLowerCase() === recipient.id.toLowerCase()) ||
+        (w.ambassador_id && recipient.ambassador_id && w.ambassador_id.toLowerCase() === recipient.ambassador_id.toLowerCase()) ||
+        (w.ambassador_id && recipient.user_id && w.ambassador_id.toLowerCase() === recipient.user_id.toLowerCase()) ||
+        (w.email && recipient.email && w.email.toLowerCase() === recipient.email.toLowerCase())
+      );
+
+      if (recWallet) {
+        const newWBal = Number(((recWallet.balance || 0) + points).toFixed(3));
+        await this.updateWalletBalance(recWallet.ambassador_id, newWBal);
+        if (recipient.id) await this.updateWalletBalance(recipient.id, newWBal);
+        if (recipient.ambassador_id) await this.updateWalletBalance(recipient.ambassador_id, newWBal);
+      } else {
+        await this.createWallet({
+          ambassador_id: recipient.ambassador_id || recipient.user_id || recipient.id,
+          email: recipient.email,
+          balance: recipientNewBalance
+        });
+      }
+
+      // Sync sender wallet
+      const sndWallet = wallets.find(w => 
+        (w.ambassador_id && sender.id && w.ambassador_id.toLowerCase() === sender.id.toLowerCase()) ||
+        (w.ambassador_id && sender.ambassador_id && w.ambassador_id.toLowerCase() === sender.ambassador_id.toLowerCase()) ||
+        (w.ambassador_id && sender.user_id && w.ambassador_id.toLowerCase() === sender.user_id.toLowerCase()) ||
+        (w.email && sender.email && w.email.toLowerCase() === sender.email.toLowerCase())
+      );
+      if (sndWallet) {
+        await this.updateWalletBalance(sndWallet.ambassador_id, senderNewBalance);
+        if (sender.id) await this.updateWalletBalance(sender.id, senderNewBalance);
+      } else {
+        await this.createWallet({
+          ambassador_id: sender.ambassador_id || sender.user_id || sender.id,
+          email: sender.email,
+          balance: senderNewBalance
+        });
+      }
+    } catch (wErr) {
+      console.warn("Failed updating ambassador wallet in executeP2PTransfer:", wErr);
+    }
+
+    // Always keep local storage updated as well
     const localDb = getLocalDb();
     const localSender = localDb.find(a => 
       (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
@@ -1246,6 +1354,7 @@ export const db = {
     if (localSender) {
       localSender.avu_balance = senderNewBalance;
     }
+
     const localRecipient = localDb.find(a => 
       (a.id && recipient.id && a.id.toLowerCase() === recipient.id.toLowerCase()) || 
       (a.email && recipient.email && a.email.toLowerCase() === recipient.email.toLowerCase()) ||
@@ -1261,6 +1370,17 @@ export const db = {
       });
     }
     saveLocalDb(localDb);
+
+    // Sync memory cache
+    cachedAmbassadorsMemory = cachedAmbassadorsMemory.map(a => {
+      if ((a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase())) {
+        return { ...a, avu_balance: senderNewBalance };
+      }
+      if ((a.id && recipient.id && a.id.toLowerCase() === recipient.id.toLowerCase()) || (a.email && recipient.email && a.email.toLowerCase() === recipient.email.toLowerCase())) {
+        return { ...a, avu_balance: recipientNewBalance };
+      }
+      return a;
+    });
 
     // Save P2P transaction locally
     const p2pTxStr = localStorage.getItem(P2P_TX_LOCAL_STORAGE_KEY);
