@@ -535,6 +535,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   const executeApproveAmbassador = async (id: string, name: string) => {
     try {
+      setAmbassadors(prev =>
+        prev.map(amb =>
+          amb.id === id ? { ...amb, status: "approved", badge_status: "approved" } : amb
+        )
+      );
+
       await db.updateStatus(id, "approved");
 
       // Dispatch transactional email notification
@@ -578,6 +584,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   const executeDisapproveAmbassador = async (id: string, name: string) => {
     try {
+      setAmbassadors(prev =>
+        prev.map(amb =>
+          amb.id === id ? { ...amb, status: "disapproved", badge_status: "disapproved" } : amb
+        )
+      );
+
       await db.updateStatus(id, "disapproved");
       await db.logActivity({
         ambassador_id: id,
@@ -636,6 +648,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const executeBulkStatusUpdate = async (ids: string[], action: "approve" | "disapprove") => {
     try {
       const statusValue = action === "approve" ? "approved" : "disapproved";
+      setAmbassadors(prev =>
+        prev.map(amb =>
+          ids.includes(amb.id)
+            ? { ...amb, status: statusValue, badge_status: statusValue }
+            : amb
+        )
+      );
       for (const id of ids) {
         await db.updateStatus(id, statusValue);
         const amb = ambassadors.find(a => a.id === id);
