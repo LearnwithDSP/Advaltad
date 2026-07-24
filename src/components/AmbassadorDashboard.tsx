@@ -535,13 +535,60 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     isCurrentUser: true,
   };
 
-  // Map dbAmbassadors to LeaderEntries
-  const approvedOtherAmbassadors = dbAmbassadors.filter(
+  // Map dbAmbassadors + mock leaders to LeaderEntries
+  const mockDbLeaders: DbAmbassador[] = baseMockLeaders.map((m) => ({
+    id: m.id,
+    user_id: m.id,
+    ambassador_id: m.id,
+    name: m.name,
+    email: `${m.name.toLowerCase().replace(/\s+/g, ".")}@advaltad.org`,
+    phone: "+2348000000000",
+    city: m.city,
+    field: m.field,
+    avu_balance: m.avu_balance,
+    status: "approved",
+    badge_status: "approved",
+    created_at: new Date().toISOString()
+  }));
+
+  const combinedAllAmbassadors = [...dbAmbassadors];
+  for (const mock of mockDbLeaders) {
+    const exists = combinedAllAmbassadors.some(
+      a =>
+        a.id.toLowerCase() === mock.id.toLowerCase() ||
+        a.email.toLowerCase() === mock.email.toLowerCase() ||
+        (a.ambassador_id && a.ambassador_id.toLowerCase() === mock.id.toLowerCase())
+    );
+    if (!exists) {
+      combinedAllAmbassadors.push(mock);
+    }
+  }
+
+  const approvedOtherAmbassadors = combinedAllAmbassadors.filter(
     (amb) =>
-      amb.status === "approved" &&
       amb.id !== profile?.id &&
       amb.email?.toLowerCase() !== profile?.email?.toLowerCase()
   );
+
+  const filteredCandidateAmbassadors = approvedOtherAmbassadors.filter((amb) => {
+    if (!recipientSearchQuery.trim()) return true;
+    const q = recipientSearchQuery.toLowerCase().trim();
+    const ambId = (amb.ambassador_id || amb.user_id || amb.id || "").toLowerCase();
+    const name = (amb.name || "").toLowerCase();
+    const email = (amb.email || "").toLowerCase();
+    const city = (amb.city || "").toLowerCase();
+    const field = (amb.field || "").toLowerCase();
+    return name.includes(q) || ambId.includes(q) || email.includes(q) || city.includes(q) || field.includes(q);
+  });
+
+  const selectedRecipient = approvedOtherAmbassadors.find((amb) => {
+    const ambId = amb.ambassador_id || amb.user_id || amb.id;
+    return (
+      ambId === transferTargetId ||
+      amb.id === transferTargetId ||
+      (amb.email && amb.email.toLowerCase() === transferTargetId.toLowerCase())
+    );
+  });
 
   const dbLeaders = dbAmbassadors
     .filter(a => a.id !== profile?.id && a.email?.toLowerCase() !== profile?.email?.toLowerCase())
@@ -903,6 +950,23 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [transferReason, setTransferReason] = useState("");
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [p2pType, setP2pType] = useState<"send" | "request" | "analytics">("send");
+  const [showTransferConfirmModal, setShowTransferConfirmModal] = useState(false);
+
+  // Searchable Recipient Combobox state
+  const [recipientSearchQuery, setRecipientSearchQuery] = useState("");
+  const [isRecipientDropdownOpen, setIsRecipientDropdownOpen] = useState(false);
+  const recipientComboboxRef = useRef<HTMLDivElement>(null);
+
+  // Close combobox when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (recipientComboboxRef.current && !recipientComboboxRef.current.contains(event.target as Node)) {
+        setIsRecipientDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Dynamic Donation Link builder
   const [donationLinkText, setDonationLinkText] = useState("https://advaltad.org/campaign/ramon-youth-labs");
@@ -1059,11 +1123,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }
   };
 
-  const handleP2PTransfer = async (e: React.FormEvent) => {
+  const handleP2PTransfer = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseInt(transferAmount);
     if (!transferTargetId || isNaN(amt) || amt <= 0) {
-      showToast("error", "Invalid Transfer", "Please specify a valid recipient email/ID and transfer amount.");
+      showToast("error", "Invalid Transfer", "Please select a valid recipient ambassador and enter a positive transfer amount.");
       return;
     }
 
@@ -1076,6 +1140,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       showToast("error", "Insufficient Balance", `You only have ${avuBalance} AVU points available.`);
       return;
     }
+
+    // Open confirmation modal before proceeding
+    setShowTransferConfirmModal(true);
+  };
+
+  const confirmExecuteTransfer = async () => {
+    const amt = parseInt(transferAmount);
+    if (!transferTargetId || isNaN(amt) || amt <= 0 || !profile?.id) return;
 
     setIsProcessing(true);
     try {
@@ -1092,32 +1164,53 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           setProfile(prev => prev ? { ...prev, avu_balance: res.senderNewBalance } : null);
         }
         
+        // Update recipient balance in dbAmbassadors state immediately
+        setDbAmbassadors(prev => prev.map(a => {
+          const matchTarget = 
+            a.id.toLowerCase() === transferTargetId.toLowerCase() ||
+            (a.email && a.email.toLowerCase() === transferTargetId.toLowerCase()) ||
+            (a.user_id && a.user_id.toLowerCase() === transferTargetId.toLowerCase()) ||
+            (a.ambassador_id && a.ambassador_id.toLowerCase() === transferTargetId.toLowerCase());
+          if (matchTarget) {
+            return { ...a, avu_balance: (a.avu_balance || 0) + amt };
+          }
+          if (a.id === profile?.id || (a.email && a.email.toLowerCase() === profile?.email?.toLowerCase())) {
+            return { ...a, avu_balance: res.senderNewBalance };
+          }
+          return a;
+        }));
+
         showToast("success", "Transfer Completed", res.message);
         setTransferSuccess(true);
 
         const newNotif: NotificationItem = {
           id: "n-p2p-" + Date.now(),
           title: "AVU Transfer Sent",
-          desc: `You transferred ${amt} AVU to ${res.recipientName || "Fellow Ambassador"}.`,
+          desc: `You transferred ${amt} AVU to ${res.recipientName || selectedRecipient?.name || "Fellow Ambassador"}.`,
           time: "Just now",
           unread: true,
           type: "p2p"
         };
         setNotifications(prev => [newNotif, ...prev]);
 
-        // Refresh transactions list
+        // Refresh transactions list & ambassadors list
         try {
           const list = await db.getP2PTransactions(profile.id);
           setP2pTxHistory(list);
+          const freshAmbs = await db.getAmbassadors();
+          setDbAmbassadors(freshAmbs || []);
         } catch (err) {
-          console.warn("Failed to reload P2P transactions history:", err);
+          console.warn("Failed to reload P2P data:", err);
         }
+
+        setShowTransferConfirmModal(false);
+        setTransferTargetId("");
+        setTransferAmount("");
+        setTransferReason("");
+        setRecipientSearchQuery("");
 
         setTimeout(() => {
           setTransferSuccess(false);
-          setTransferAmount("");
-          setTransferTargetId("");
-          setTransferReason("");
         }, 4000);
       } else {
         showToast("error", "Transfer Failed", res.message || "An unexpected error occurred.");
@@ -2138,33 +2231,124 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
                             <form onSubmit={handleP2PTransfer} className="space-y-4 text-xs font-sans">
                               <div className="grid grid-cols-2 gap-4">
-                                <div>
+                                <div className="relative" ref={recipientComboboxRef}>
                                   <label className="block font-bold text-gray-500 uppercase tracking-wider mb-1">Recipient Ambassador</label>
-                                  <div className="relative">
-                                    <select
-                                      id="p2p-target-id"
-                                      required
-                                      value={transferTargetId}
-                                      onChange={(e) => setTransferTargetId(e.target.value)}
-                                      className="w-full px-4 py-3 pr-10 rounded-xl bg-gray-50 border border-gray-100 text-sm text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all cursor-pointer font-medium"
-                                    >
-                                      <option value="" disabled>Select a fellow ambassador...</option>
-                                      {approvedOtherAmbassadors.length === 0 && (
-                                        <option disabled value="">No other approved ambassadors found</option>
-                                      )}
-                                      {approvedOtherAmbassadors.map((amb) => {
-                                        const ambId = amb.ambassador_id || amb.user_id || amb.id;
-                                        return (
-                                          <option key={amb.id} value={ambId}>
-                                            {amb.name} ({ambId})
-                                          </option>
-                                        );
-                                      })}
-                                    </select>
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
-                                      <Icon name="ChevronDown" size={16} />
+                                  
+                                  {selectedRecipient ? (
+                                    <div className="flex items-center justify-between p-2.5 px-3.5 rounded-xl bg-emerald-50/90 border border-emerald-200 text-gray-900 shadow-2xs transition-all">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-700 text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                          {selectedRecipient.name ? selectedRecipient.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() : "AV"}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5 truncate">
+                                            <span className="font-bold text-xs text-gray-900 truncate">{selectedRecipient.name}</span>
+                                            <span className="px-1 py-0.2 rounded text-[9px] font-mono font-bold bg-emerald-100 text-emerald-800 flex-shrink-0">
+                                              {selectedRecipient.ambassador_id || selectedRecipient.user_id || selectedRecipient.id}
+                                            </span>
+                                          </div>
+                                          <div className="text-[10px] text-gray-500 flex items-center gap-1.5 truncate mt-0.5">
+                                            <span className="truncate">{selectedRecipient.city || selectedRecipient.field || "Growth Ambassador"}</span>
+                                            <span className="text-emerald-700 font-bold font-mono flex-shrink-0">• {selectedRecipient.avu_balance || 0} AVU</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setTransferTargetId("");
+                                          setRecipientSearchQuery("");
+                                          setIsRecipientDropdownOpen(true);
+                                        }}
+                                        className="ml-2 px-2 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-emerald-700 hover:border-emerald-300 text-[10px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer flex-shrink-0"
+                                      >
+                                        <Icon name="RotateCcw" size={11} />
+                                        <span>Change</span>
+                                      </button>
                                     </div>
-                                  </div>
+                                  ) : (
+                                    <div className="relative">
+                                      <div className="relative flex items-center">
+                                        <div className="absolute left-3.5 text-gray-400 pointer-events-none">
+                                          <Icon name="Search" size={15} />
+                                        </div>
+                                        <input
+                                          id="p2p-target-id"
+                                          type="text"
+                                          placeholder="Search or select ambassador by name, ID, city..."
+                                          value={recipientSearchQuery}
+                                          onFocus={() => setIsRecipientDropdownOpen(true)}
+                                          onChange={(e) => {
+                                            setRecipientSearchQuery(e.target.value);
+                                            setIsRecipientDropdownOpen(true);
+                                          }}
+                                          className="w-full pl-10 pr-9 py-3 rounded-xl bg-gray-50 border border-gray-100 text-xs text-gray-900 font-medium placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => setIsRecipientDropdownOpen(!isRecipientDropdownOpen)}
+                                          className="absolute right-2.5 text-gray-400 hover:text-gray-600 cursor-pointer p-1"
+                                        >
+                                          <Icon name={isRecipientDropdownOpen ? "ChevronUp" : "ChevronDown"} size={16} />
+                                        </button>
+                                      </div>
+
+                                      <AnimatePresence>
+                                        {isRecipientDropdownOpen && (
+                                          <motion.div
+                                            initial={{ opacity: 0, y: -4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -4 }}
+                                            className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto divide-y divide-gray-50"
+                                          >
+                                            {filteredCandidateAmbassadors.length === 0 ? (
+                                              <div className="p-4 text-center text-xs text-gray-400">
+                                                No ambassadors found matching "{recipientSearchQuery}"
+                                              </div>
+                                            ) : (
+                                              filteredCandidateAmbassadors.map((amb) => {
+                                                const ambId = amb.ambassador_id || amb.user_id || amb.id;
+                                                const initials = amb.name ? amb.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() : "AM";
+                                                return (
+                                                  <button
+                                                    key={amb.id || ambId}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setTransferTargetId(ambId);
+                                                      setIsRecipientDropdownOpen(false);
+                                                      setRecipientSearchQuery("");
+                                                    }}
+                                                    className="w-full p-2.5 px-3.5 text-left flex items-center justify-between hover:bg-emerald-50/80 transition-colors cursor-pointer group"
+                                                  >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                      <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-700 text-white font-bold text-[11px] flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                                                        {initials}
+                                                      </div>
+                                                      <div className="min-w-0">
+                                                        <div className="flex items-center gap-1.5 truncate">
+                                                          <span className="font-bold text-xs text-gray-900 group-hover:text-emerald-900 truncate">{amb.name}</span>
+                                                          <span className="px-1 py-0.2 rounded text-[9px] font-mono font-bold bg-gray-100 group-hover:bg-emerald-100 text-gray-700 group-hover:text-emerald-800 flex-shrink-0">
+                                                            {ambId}
+                                                          </span>
+                                                        </div>
+                                                        <p className="text-[10px] text-gray-500 truncate">{amb.city || amb.field || "Growth Ambassador"}</p>
+                                                      </div>
+                                                    </div>
+                                                    <div className="text-right flex-shrink-0 pl-2">
+                                                      <span className="text-xs font-mono font-bold text-emerald-600 group-hover:text-emerald-700">
+                                                        {amb.avu_balance || 0} AVU
+                                                      </span>
+                                                      <p className="text-[9px] text-gray-400">Wallet</p>
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })
+                                            )}
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
+                                  )}
                                 </div>
 
                                 <div>
@@ -3330,6 +3514,128 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   Done
                 </button>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* AVU Transfer Confirmation Modal */}
+      <AnimatePresence>
+        {showTransferConfirmModal && (
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: "spring", duration: 0.3 }}
+              className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-gray-100 overflow-hidden relative text-left"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center font-bold shadow-2xs">
+                    <Icon name="Send" size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Confirm AVU Transfer</h3>
+                    <p className="text-xs text-gray-500">Peer to Peer Value Exchange</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTransferConfirmModal(false)}
+                  disabled={isProcessing}
+                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <Icon name="X" size={18} />
+                </button>
+              </div>
+
+              {/* Transfer Details Card */}
+              <div className="space-y-4 mb-6">
+                {/* Recipient Details */}
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Recipient Ambassador</span>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-700 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-2xs">
+                      {selectedRecipient?.name
+                        ? selectedRecipient.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase()
+                        : "AV"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-sm text-gray-900 truncate">
+                        {selectedRecipient?.name || "Ambassador"}
+                      </h4>
+                      <p className="text-xs text-emerald-700 font-mono font-bold">
+                        ID: {selectedRecipient?.ambassador_id || selectedRecipient?.user_id || selectedRecipient?.id || transferTargetId}
+                      </p>
+                      {(selectedRecipient?.city || selectedRecipient?.field) && (
+                        <p className="text-[11px] text-gray-500 truncate mt-0.5">
+                          {[selectedRecipient?.city, selectedRecipient?.field].filter(Boolean).join(" • ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transfer Amount & Balance Preview */}
+                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100/90 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-600 font-bold uppercase tracking-wide">Transfer Amount</span>
+                    <span className="text-2xl font-mono font-black text-emerald-700">{transferAmount} AVU</span>
+                  </div>
+                  
+                  <div className="pt-2 border-t border-emerald-100/80 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between text-gray-600">
+                      <span>Your Current Balance:</span>
+                      <span className="font-mono font-bold text-gray-900">{avuBalance} AVU</span>
+                    </div>
+                    <div className="flex items-center justify-between text-emerald-800 font-bold">
+                      <span>Remaining Balance After:</span>
+                      <span className="font-mono">{avuBalance - (parseInt(transferAmount) || 0)} AVU</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Purpose / Justification */}
+                {transferReason && (
+                  <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                      Activity Justification / Purpose
+                    </span>
+                    <p className="text-xs text-gray-700 italic">"{transferReason}"</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Action Buttons */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowTransferConfirmModal(false)}
+                  disabled={isProcessing}
+                  className="flex-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmExecuteTransfer}
+                  disabled={isProcessing}
+                  className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Icon name="Loader2" className="animate-spin" size={15} />
+                      <span>Dispatching...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="CheckCircle2" size={15} />
+                      <span>Confirm & Dispatch</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
