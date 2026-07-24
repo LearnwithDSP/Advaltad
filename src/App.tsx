@@ -10,6 +10,7 @@ import { Footer } from "./components/Footer";
 import { AmbassadorLogin } from "./components/AmbassadorLogin";
 import { AmbassadorDashboard } from "./components/AmbassadorDashboard";
 import { AdminPortal } from "./components/AdminPortal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 
 // Import new modular independent page components
@@ -136,7 +137,9 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
             >
-              <AmbassadorDashboard onLogout={handleLogout} />
+              <ErrorBoundary>
+                <AmbassadorDashboard onLogout={handleLogout} />
+              </ErrorBoundary>
             </motion.div>
           )}
         </AnimatePresence>
