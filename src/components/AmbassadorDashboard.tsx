@@ -829,11 +829,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   });
 
   const selectedRecipient = approvedOtherAmbassadors.find((amb) => {
-    const ambId = amb.ambassador_id || amb.user_id || amb.id;
+    const query = (transferTargetId || recipientSearchQuery).trim().toLowerCase();
+    if (!query) return false;
+    const ambId = (amb.ambassador_id || amb.user_id || amb.id || "").toLowerCase();
+    const ambEmail = (amb.email || "").toLowerCase();
     return (
-      ambId === transferTargetId ||
-      amb.id === transferTargetId ||
-      (amb.email && amb.email.toLowerCase() === transferTargetId.toLowerCase())
+      ambId === query ||
+      (amb.id && amb.id.toLowerCase() === query) ||
+      ambEmail === query
     );
   });
 
@@ -966,8 +969,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const handleP2PTransfer = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseInt(transferAmount);
-    if (!transferTargetId || isNaN(amt) || amt <= 0) {
-      showToast("error", "Invalid Transfer", "Please select a valid recipient ambassador and enter a positive transfer amount.");
+    const targetId = (transferTargetId || recipientSearchQuery).trim();
+
+    if (!targetId || isNaN(amt) || amt <= 0) {
+      showToast("error", "Invalid Transfer", "Please select a valid recipient ambassador or enter their ID/email.");
       return;
     }
 
@@ -986,13 +991,15 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
   const confirmExecuteTransfer = async () => {
     const amt = parseInt(transferAmount);
-    if (!transferTargetId || isNaN(amt) || amt <= 0 || !profile?.id) return;
+    const targetId = (transferTargetId || recipientSearchQuery).trim();
+
+    if (!targetId || isNaN(amt) || amt <= 0 || !profile?.id) return;
 
     setIsProcessing(true);
     try {
       const res = await db.executeP2PTransfer(
         profile.id,
-        transferTargetId,
+        targetId,
         amt,
         transferReason || "Peer technical support"
       );
@@ -1005,10 +1012,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         
         setDbAmbassadors(prev => prev.map(a => {
           const matchTarget = 
-            (a.id && transferTargetId && a.id.toLowerCase() === transferTargetId.toLowerCase()) ||
-            (a.email && transferTargetId && a.email.toLowerCase() === transferTargetId.toLowerCase()) ||
-            (a.user_id && transferTargetId && a.user_id.toLowerCase() === transferTargetId.toLowerCase()) ||
-            (a.ambassador_id && transferTargetId && a.ambassador_id.toLowerCase() === transferTargetId.toLowerCase());
+            (a.id && targetId && a.id.toLowerCase() === targetId.toLowerCase()) ||
+            (a.email && targetId && a.email.toLowerCase() === targetId.toLowerCase()) ||
+            (a.user_id && targetId && a.user_id.toLowerCase() === targetId.toLowerCase()) ||
+            (a.ambassador_id && targetId && a.ambassador_id.toLowerCase() === targetId.toLowerCase());
           if (matchTarget) {
             return { ...a, avu_balance: (a.avu_balance || 0) + amt };
           }
