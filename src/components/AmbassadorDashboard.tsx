@@ -191,7 +191,7 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
             amount_naira: amt,
             avu_earned: earnedAvu,
             paystack_reference: paymentResult.reference,
-            status: "success"
+            status: "pending"
           }]);
         }
         await db.createDeposit({
@@ -202,7 +202,7 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
           amount_naira: amt,
           avu_earned: earnedAvu,
           paystack_reference: paymentResult.reference,
-          status: "success"
+          status: "pending"
         });
       } catch (err) {
         console.error("Database registration error:", err);
@@ -250,7 +250,7 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
                 amount_naira: amt,
                 avu_earned: avuToEarn,
                 paystack_reference: simulatedRef,
-                status: "success"
+                status: "pending"
               }]);
             }
             await db.createDeposit({
@@ -261,7 +261,7 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
               amount_naira: amt,
               avu_earned: avuToEarn,
               paystack_reference: simulatedRef,
-              status: "success"
+              status: "pending"
             });
           } catch (dbErr) {
             console.error("Database registration failed:", dbErr);
