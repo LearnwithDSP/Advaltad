@@ -1217,8 +1217,8 @@ export const db = {
     // Always keep local storage updated as well (or as fallback)
     const localDb = getLocalDb();
     const localSender = localDb.find(a => 
-      a.id.toLowerCase() === sender.id.toLowerCase() || 
-      a.email.toLowerCase() === sender.email.toLowerCase() ||
+      (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
+      (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase()) ||
       (a.user_id && sender.user_id && a.user_id.toLowerCase() === sender.user_id.toLowerCase()) ||
       (a.ambassador_id && sender.ambassador_id && a.ambassador_id.toLowerCase() === sender.ambassador_id.toLowerCase())
     );
@@ -1226,8 +1226,8 @@ export const db = {
       localSender.avu_balance = senderNewBalance;
     }
     const localRecipient = localDb.find(a => 
-      a.id.toLowerCase() === recipient.id.toLowerCase() || 
-      a.email.toLowerCase() === recipient.email.toLowerCase() ||
+      (a.id && recipient.id && a.id.toLowerCase() === recipient.id.toLowerCase()) || 
+      (a.email && recipient.email && a.email.toLowerCase() === recipient.email.toLowerCase()) ||
       (a.user_id && recipient.user_id && a.user_id.toLowerCase() === recipient.user_id.toLowerCase()) ||
       (a.ambassador_id && recipient.ambassador_id && a.ambassador_id.toLowerCase() === recipient.ambassador_id.toLowerCase())
     );
@@ -1302,10 +1302,10 @@ export const db = {
     const list: DbP2PTransaction[] = p2pTxStr ? JSON.parse(p2pTxStr) : [];
     return list.filter(
       t =>
-        t.sender_id.toLowerCase() === clean ||
-        t.sender_email.toLowerCase() === clean ||
-        t.recipient_id.toLowerCase() === clean ||
-        t.recipient_email.toLowerCase() === clean
+        (t.sender_id && t.sender_id.toLowerCase() === clean) ||
+        (t.sender_email && t.sender_email.toLowerCase() === clean) ||
+        (t.recipient_id && t.recipient_id.toLowerCase() === clean) ||
+        (t.recipient_email && t.recipient_email.toLowerCase() === clean)
     ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 };
