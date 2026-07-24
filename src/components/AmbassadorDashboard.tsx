@@ -495,6 +495,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [p2pType, setP2pType] = useState<"send" | "request" | "analytics">("send");
   const [showTransferConfirmModal, setShowTransferConfirmModal] = useState(false);
+  const [transferProgressStep, setTransferProgressStep] = useState("Initializing P2P Ledger...");
+  const [transferProgressPercent, setTransferProgressPercent] = useState(0);
 
   // Searchable Recipient Combobox state
   const [recipientSearchQuery, setRecipientSearchQuery] = useState("");
@@ -993,18 +995,35 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const amt = parseInt(transferAmount);
     const targetId = (transferTargetId || recipientSearchQuery).trim();
 
-    if (!targetId || isNaN(amt) || amt <= 0 || !profile?.id) return;
+    if (!targetId || isNaN(amt) || amt <= 0 || !profile) return;
 
     setIsProcessing(true);
+    setTransferProgressPercent(20);
+    setTransferProgressStep("Authenticating sender credentials & AVU ledger balance...");
+
+    // Rolling progress animation phase 1
+    await new Promise(resolve => setTimeout(resolve, 300));
+    setTransferProgressPercent(50);
+    setTransferProgressStep("Verifying recipient profile & checking transfer limits...");
+
+    // Rolling progress animation phase 2
+    await new Promise(resolve => setTimeout(resolve, 350));
+    setTransferProgressPercent(80);
+    setTransferProgressStep("Executing AVU token transfer across ambassador wallets...");
+
     try {
+      const senderKey = profile.email || profile.ambassador_id || profile.user_id || profile.id;
       const res = await db.executeP2PTransfer(
-        profile.id,
+        senderKey,
         targetId,
         amt,
         transferReason || "Peer technical support"
       );
 
       if (res.success && res.senderNewBalance !== undefined) {
+        setTransferProgressPercent(100);
+        setTransferProgressStep("Transfer completed successfully!");
+
         setAvuBalance(res.senderNewBalance);
         if (profile) {
           setProfile(prev => prev ? { ...prev, avu_balance: res.senderNewBalance } : null);
@@ -1039,7 +1058,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setNotifications(prev => [newNotif, ...prev]);
 
         try {
-          const list = await db.getP2PTransactions(profile.id);
+          const list = await db.getP2PTransactions(profile.id || profile.email);
           setP2pTxHistory(list);
           const freshAmbs = await db.getAmbassadors();
           setDbAmbassadors(freshAmbs || []);
@@ -1047,19 +1066,25 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           console.warn("Failed to reload P2P data:", err);
         }
 
+        // Brief delay so the user sees the 100% completed roll animation
+        await new Promise(resolve => setTimeout(resolve, 800));
+
         setShowTransferConfirmModal(false);
         setTransferTargetId("");
         setTransferAmount("");
         setTransferReason("");
         setRecipientSearchQuery("");
+        setTransferProgressPercent(0);
 
         setTimeout(() => {
           setTransferSuccess(false);
         }, 4000);
       } else {
+        setTransferProgressPercent(0);
         showToast("error", "Transfer Failed", res.message || "An unexpected error occurred.");
       }
     } catch (err) {
+      setTransferProgressPercent(0);
       console.error("Failed to complete P2P transfer:", err);
       showToast("error", "Transfer Error", "An error occurred while processing the value transfer. Please try again.");
     } finally {
@@ -1770,19 +1795,54 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 {showTransferConfirmModal && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
                     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-sm w-full space-y-4 text-center">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
-                        <Icon name="ArrowLeftRight" size={24} />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-base text-white">Confirm AVU Transfer</h3>
-                        <p className="text-xs text-slate-400 mt-1">
-                          You are about to transfer <span className="font-mono font-bold text-emerald-400">{transferAmount} AVU</span> to <span className="font-bold text-white">{selectedRecipient?.name || "Selected Ambassador"}</span>.
-                        </p>
-                      </div>
-                      <div className="flex gap-2 pt-2">
-                        <button type="button" onClick={() => setShowTransferConfirmModal(false)} className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer">Cancel</button>
-                        <button type="button" onClick={confirmExecuteTransfer} disabled={isProcessing} className="w-1/2 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer">Confirm</button>
-                      </div>
+                      {isProcessing ? (
+                        <div className="py-4 space-y-4 text-center">
+                          <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+                            <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20 border-t-emerald-400 animate-spin" />
+                            <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                              <Icon name="RefreshCw" size={20} className="animate-spin" />
+                            </div>
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-base text-white">Processing AVU Transfer</h3>
+                            <p className="text-xs text-emerald-400 font-mono font-medium mt-1 animate-pulse">
+                              {transferProgressStep}
+                            </p>
+                          </div>
+
+                          {/* Rolling Progress Bar */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-800">
+                              <motion.div
+                                className="bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 h-full rounded-full"
+                                initial={{ width: "0%" }}
+                                animate={{ width: `${transferProgressPercent}%` }}
+                                transition={{ duration: 0.3 }}
+                              />
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
+                              <span>{transferProgressPercent}%</span>
+                              <span>{transferAmount} AVU &rarr; {selectedRecipient?.name || "Recipient"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
+                            <Icon name="ArrowLeftRight" size={24} />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-base text-white">Confirm AVU Transfer</h3>
+                            <p className="text-xs text-slate-400 mt-1">
+                              You are about to transfer <span className="font-mono font-bold text-emerald-400">{transferAmount} AVU</span> to <span className="font-bold text-white">{selectedRecipient?.name || "Selected Ambassador"}</span>.
+                            </p>
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            <button type="button" onClick={() => setShowTransferConfirmModal(false)} className="w-1/2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer transition-colors">Cancel</button>
+                            <button type="button" onClick={confirmExecuteTransfer} className="w-1/2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-lg shadow-emerald-950/50">Confirm</button>
+                          </div>
+                        </>
+                      )}
                     </motion.div>
                   </div>
                 )}
