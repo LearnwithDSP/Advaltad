@@ -49,7 +49,14 @@ import {
   Crown,
   Zap,
   Medal,
-  Target
+  Target,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize2,
+  RotateCcw,
+  Share2
 } from "lucide-react";
 
 const iconMap: { [key: string]: React.ComponentType<any> } = {
@@ -102,7 +109,14 @@ const iconMap: { [key: string]: React.ComponentType<any> } = {
   Crown,
   Zap,
   Medal,
-  Target
+  Target,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize2,
+  RotateCcw,
+  Share2
 };
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
