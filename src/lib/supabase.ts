@@ -664,8 +664,7 @@ export const db = {
           try {
             let query = client.from(tableName).update({ avu_balance: newBalance });
             query = applyAmbassadorFilter(query, cleanId);
-            const { error, data } = await query.select();
-            if (!error && data && data.length > 0) return true;
+            await query.select();
           } catch (err) {
             console.warn(`updateAvuBalance error for ${tableName}:`, err);
           }
@@ -1063,13 +1062,13 @@ export const db = {
         }
       }
 
-      // 1. Update deposit status to success
-      await this.updateDepositStatus(paystackRef, "success");
+      // 1. Update deposit status to success or create if missing
+      const updatedDep = await this.updateDepositStatus(paystackRef, "success");
 
       // 2. Find the ambassador to get the current avu_balance
-      const ambassador = await this.findAmbassadorByEmail(email);
+      const ambassador = await this.findAmbassadorByEmail(email) || await this.findAmbassadorById(ambassadorId);
       if (!ambassador) {
-        console.error("Could not find ambassador by email:", email);
+        console.error("Could not find ambassador by email/id:", email, ambassadorId);
         return { success: false, newBalance: 0 };
       }
       
@@ -1077,8 +1076,30 @@ export const db = {
       const currentAvuBalance = ambassador?.avu_balance || 0;
       const newAvuBalance = Number((currentAvuBalance + avuToEarn).toFixed(3));
 
-      // 3. Update ambassador's avu_balance in public.ambassadors
+      if (!updatedDep) {
+        await this.createDeposit({
+          ambassador_id: dbRowId,
+          funding_by_name: ambassador.name || email,
+          phone_number: ambassador.phone || "",
+          program_sponsored: "Wallet Funding",
+          amount_naira: amountNaira,
+          avu_earned: avuToEarn,
+          paystack_reference: paystackRef,
+          status: "success"
+        });
+      }
+
+      // 3. Update ambassador's avu_balance in public.ambassadors across all ID variations
       await this.updateAvuBalance(dbRowId, newAvuBalance);
+      if (ambassador.user_id && ambassador.user_id !== dbRowId) {
+        await this.updateAvuBalance(ambassador.user_id, newAvuBalance);
+      }
+      if (ambassador.ambassador_id && ambassador.ambassador_id !== dbRowId) {
+        await this.updateAvuBalance(ambassador.ambassador_id, newAvuBalance);
+      }
+      if (ambassador.email) {
+        await this.updateAvuBalance(ambassador.email, newAvuBalance);
+      }
 
       // 4. Update the wallet balance in public.ambassador_wallets
       // First, get all wallets to see if a wallet already exists for this ambassador
