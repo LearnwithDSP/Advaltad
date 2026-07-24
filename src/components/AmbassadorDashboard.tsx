@@ -857,7 +857,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   };
 
   const activeDbLeaders = dbAmbassadors
-    .filter(a => a.id !== profile?.id && a.email?.toLowerCase() !== profile?.email?.toLowerCase() && (a.avu_balance || 0) > 0)
+    .filter(a => a.id !== profile?.id && a.email?.toLowerCase() !== profile?.email?.toLowerCase())
     .map((a, idx) => {
       const colors = [
         "from-purple-500 to-indigo-600",
