@@ -347,13 +347,43 @@ export const db = {
       ];
     }
 
-    // Guarantee EVERY ambassador has valid static AV- user_id and ambassador_id and valid numerical balance
+    // Guarantee EVERY ambassador has valid static AV- user_id and ambassador_id
+    // and wipe default balances to 0 if no funding deposit or received transfer exists
+    let localDepositsList: DbDeposit[] = [];
+    try {
+      const depData = localStorage.getItem(DEPOSITS_LOCAL_STORAGE_KEY);
+      if (depData) localDepositsList = JSON.parse(depData);
+    } catch (e) {}
+
+    let localP2PList: any[] = [];
+    try {
+      const p2pData = localStorage.getItem(P2P_TX_LOCAL_STORAGE_KEY);
+      if (p2pData) localP2PList = JSON.parse(p2pData);
+    } catch (e) {}
+
     for (const amb of resultList) {
       const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
       amb.id = staticId;
       amb.user_id = staticId;
       amb.ambassador_id = staticId;
-      if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
+
+      const hasSuccessDeposit = localDepositsList.some(d => 
+        d.status === "success" && (
+          (d.ambassador_id && d.ambassador_id.toLowerCase() === staticId.toLowerCase()) ||
+          (amb.db_id && d.ambassador_id && d.ambassador_id.toLowerCase() === amb.db_id.toLowerCase()) ||
+          (amb.email && d.ambassador_id && d.ambassador_id.toLowerCase() === amb.email.toLowerCase())
+        )
+      );
+
+      const hasReceivedP2P = localP2PList.some(p => 
+        (p.recipient_id && p.recipient_id.toLowerCase() === staticId.toLowerCase()) ||
+        (amb.email && p.recipient_email && p.recipient_email.toLowerCase() === amb.email.toLowerCase())
+      );
+
+      // If user has never funded their wallet or received P2P, balance MUST be 0
+      if (!hasSuccessDeposit && !hasReceivedP2P) {
+        amb.avu_balance = 0;
+      } else if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
         amb.avu_balance = 0;
       }
     }
@@ -745,7 +775,7 @@ export const db = {
   },
 
   async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
-    const cleanId = id.trim();
+    const cleanId = id.trim().toLowerCase();
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
@@ -763,15 +793,35 @@ export const db = {
       }
     }
     const list = getLocalDb();
-    const idx = list.findIndex(a => 
-      a.id.toLowerCase() === cleanId.toLowerCase() || 
-      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
-      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
-      a.email.toLowerCase() === cleanId.toLowerCase()
-    );
-    if (idx !== -1) {
-      list[idx].avu_balance = newBalance;
+    let updatedLocal = false;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (
+        a.id.toLowerCase() === cleanId ||
+        (a.user_id && a.user_id.toLowerCase() === cleanId) ||
+        (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
+        (a.email && a.email.toLowerCase() === cleanId)
+      ) {
+        list[i].avu_balance = newBalance;
+        updatedLocal = true;
+      }
+    }
+    if (updatedLocal) {
       saveLocalDb(list);
+    }
+
+    if (cachedAmbassadorsMemory.length > 0) {
+      cachedAmbassadorsMemory = cachedAmbassadorsMemory.map(a => {
+        if (
+          a.id.toLowerCase() === cleanId ||
+          (a.user_id && a.user_id.toLowerCase() === cleanId) ||
+          (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
+          (a.email && a.email.toLowerCase() === cleanId)
+        ) {
+          return { ...a, avu_balance: newBalance };
+        }
+        return a;
+      });
     }
     return true;
   },
