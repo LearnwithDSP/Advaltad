@@ -141,7 +141,24 @@ const DEPOSITS_LOCAL_STORAGE_KEY = "advaltad_deposits_db";
 const P2P_TX_LOCAL_STORAGE_KEY = "advaltad_p2p_transactions_db";
 
 function isUuid(val: string): boolean {
-  return val.startsWith("AV-") || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+}
+
+function applyAmbassadorFilter(query: any, idOrEmail: string): any {
+  const clean = idOrEmail.trim();
+  const isStrictUuid = isUuid(clean);
+  const isAvId = clean.toUpperCase().startsWith("AV-");
+  const isEmail = clean.includes("@");
+
+  if (isStrictUuid) {
+    return query.or(`id.eq.${clean},user_id.eq.${clean}`);
+  } else if (isAvId) {
+    return query.or(`ambassador_id.eq.${clean},user_id.eq.${clean}`);
+  } else if (isEmail) {
+    return query.ilike("email", clean.toLowerCase());
+  } else {
+    return query.or(`ambassador_id.eq.${clean},user_id.eq.${clean},email.ilike.${clean.toLowerCase()}`);
+  }
 }
 
 function getLocalDb(): DbAmbassador[] {
@@ -341,18 +358,12 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let { data, error } = await client
-          .from("ambassadors")
-          .select("*")
-          .or(`id.eq.${cleanId},user_id.eq.${cleanId},ambassador_id.eq.${cleanId}`)
-          .maybeSingle();
+        let query = applyAmbassadorFilter(client.from("ambassadors").select("*"), cleanId);
+        let { data, error } = await query.maybeSingle();
 
         if (error || !data) {
-          const fallback = await client
-            .from("Ambassadors")
-            .select("*")
-            .or(`id.eq.${cleanId},user_id.eq.${cleanId},ambassador_id.eq.${cleanId}`)
-            .maybeSingle();
+          let fallbackQuery = applyAmbassadorFilter(client.from("Ambassadors").select("*"), cleanId);
+          const fallback = await fallbackQuery.maybeSingle();
           data = fallback.data;
           error = fallback.error;
         }
@@ -363,7 +374,7 @@ export const db = {
       }
     }
     const localDb = getLocalDb();
-    return localDb.find(a => a.id.toLowerCase() === cleanId.toLowerCase() || (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) || (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase())) || null;
+    return localDb.find(a => a.id.toLowerCase() === cleanId.toLowerCase() || (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) || (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) || a.email.toLowerCase() === cleanId.toLowerCase()) || null;
   },
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string; ambassador_id?: string }): Promise<DbAmbassador> {
@@ -392,6 +403,7 @@ export const db = {
           focus_interest: newAmbassador.field,
           email: cleanEmail,
           phone_number: newAmbassador.phone,
+          status: "pending",
           badge_status: "pending", 
           avu_balance: 0
         };
@@ -417,44 +429,49 @@ export const db = {
   },
 
   async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
+    const cleanId = id.trim();
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let tableName = "ambassadors";
-        let query = client.from(tableName).update({ badge_status: status });
-        
-        if (isUuid(id)) {
-          query = query.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-        } else {
-          query = query.eq("email", id.trim().toLowerCase());
-        }
+        const payloadsToTry = [
+          { status: status, badge_status: status },
+          { badge_status: status },
+          { status: status }
+        ];
 
-        let { error } = await query;
-        if (error) {
-          tableName = "Ambassadors";
-          let fallbackQuery = client.from(tableName).update({ badge_status: status });
-          if (isUuid(id)) {
-            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-          } else {
-            fallbackQuery = fallbackQuery.eq("email", id.trim().toLowerCase());
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          for (const payload of payloadsToTry) {
+            try {
+              let query = client.from(tableName).update(payload);
+              query = applyAmbassadorFilter(query, cleanId);
+              const { data, error } = await query.select();
+              if (!error && data && data.length > 0) {
+                console.log(`[DB UPDATE STATUS SUCCESS] Updated ambassador ${cleanId} status to '${status}' in table '${tableName}'`);
+                return true;
+              }
+            } catch (err) {
+              console.warn(`Attempt failed for table ${tableName}:`, err);
+            }
           }
-          const res = await fallbackQuery;
-          error = res.error;
         }
-        if (!error) return true;
       } catch (err) {
         console.warn("Status change update exception:", err);
       }
     }
+
     const localDb = getLocalDb();
-    const index = localDb.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+    const index = localDb.findIndex(a => 
+      a.id.toLowerCase() === cleanId.toLowerCase() || 
+      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+      a.email.toLowerCase() === cleanId.toLowerCase()
+    );
     if (index !== -1) {
       localDb[index].status = status;
       localDb[index].badge_status = status;
       saveLocalDb(localDb);
-      return true;
     }
-    return false;
+    return true;
   },
 
   async getBlogs(): Promise<DbBlog[]> {
@@ -587,86 +604,88 @@ export const db = {
   },
 
   async updateProfile(id: string, updates: Partial<DbAmbassador>): Promise<boolean> {
+    const cleanId = id.trim();
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const rowData: any = {};
-        if (updates.name !== undefined) rowData.professional_name = updates.name;
-        if (updates.city !== undefined) rowData.base_city = updates.city;
-        if (updates.field !== undefined) rowData.focus_interest = updates.field;
-        if (updates.phone !== undefined) rowData.phone_number = updates.phone;
+        if (updates.name !== undefined) {
+          rowData.professional_name = updates.name;
+          rowData.name = updates.name;
+        }
+        if (updates.city !== undefined) {
+          rowData.base_city = updates.city;
+          rowData.city = updates.city;
+        }
+        if (updates.field !== undefined) {
+          rowData.focus_interest = updates.field;
+          rowData.field = updates.field;
+        }
+        if (updates.phone !== undefined) {
+          rowData.phone_number = updates.phone;
+          rowData.phone = updates.phone;
+        }
         if (updates.password !== undefined) rowData.password = updates.password;
 
         const client = supabaseAdmin || supabase;
-        let tableName = "ambassadors";
-        let query = client.from(tableName).update(rowData);
-        if (isUuid(id)) {
-          query = query.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-        } else {
-          query = query.eq("email", id.trim().toLowerCase());
-        }
-        let { error } = await query;
-        if (error) {
-          tableName = "Ambassadors";
-          let fallbackQuery = client.from(tableName).update(rowData);
-          if (isUuid(id)) {
-            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-          } else {
-            fallbackQuery = fallbackQuery.eq("email", id.trim().toLowerCase());
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          try {
+            let query = client.from(tableName).update(rowData);
+            query = applyAmbassadorFilter(query, cleanId);
+            const { error, data } = await query.select();
+            if (!error && data && data.length > 0) return true;
+          } catch (err) {
+            console.warn(`updateProfile error for ${tableName}:`, err);
           }
-          const res = await fallbackQuery;
-          error = res.error;
         }
-        if (!error) return true;
       } catch (err) {
         console.warn("updateProfile error:", err);
       }
     }
     const list = getLocalDb();
-    const idx = list.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+    const idx = list.findIndex(a => 
+      a.id.toLowerCase() === cleanId.toLowerCase() || 
+      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+      a.email.toLowerCase() === cleanId.toLowerCase()
+    );
     if (idx !== -1) {
       list[idx] = { ...list[idx], ...updates };
       saveLocalDb(list);
-      return true;
     }
-    return false;
+    return true;
   },
 
   async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
+    const cleanId = id.trim();
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let tableName = "ambassadors";
-        let query = client.from(tableName).update({ avu_balance: newBalance });
-        if (isUuid(id)) {
-          query = query.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-        } else {
-          query = query.eq("email", id.trim().toLowerCase());
-        }
-        let { error } = await query;
-        if (error) {
-          tableName = "Ambassadors";
-          let fallbackQuery = client.from(tableName).update({ avu_balance: newBalance });
-          if (isUuid(id)) {
-            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-          } else {
-            fallbackQuery = fallbackQuery.eq("email", id.trim().toLowerCase());
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          try {
+            let query = client.from(tableName).update({ avu_balance: newBalance });
+            query = applyAmbassadorFilter(query, cleanId);
+            const { error, data } = await query.select();
+            if (!error && data && data.length > 0) return true;
+          } catch (err) {
+            console.warn(`updateAvuBalance error for ${tableName}:`, err);
           }
-          const res = await fallbackQuery;
-          error = res.error;
         }
-        if (!error) return true;
       } catch (err) {
         console.warn("updateAvuBalance error:", err);
       }
     }
     const list = getLocalDb();
-    const idx = list.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+    const idx = list.findIndex(a => 
+      a.id.toLowerCase() === cleanId.toLowerCase() || 
+      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+      a.email.toLowerCase() === cleanId.toLowerCase()
+    );
     if (idx !== -1) {
       list[idx].avu_balance = newBalance;
       saveLocalDb(list);
-      return true;
     }
-    return false;
+    return true;
   },
 
   async logActivity(activity: Omit<DbActivity, "id" | "created_at">): Promise<boolean> {
@@ -846,40 +865,35 @@ export const db = {
   },
 
   async deleteAmbassador(id: string): Promise<boolean> {
+    const cleanId = id.trim();
     if (isSupabaseConfigured && supabase) {
       try {
-        let tableName = "ambassadors";
-        let query = supabase.from(tableName).delete();
-        if (isUuid(id)) {
-          query = query.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-        } else {
-          query = query.eq("email", id.trim().toLowerCase());
-        }
-        let { error } = await query;
-        if (error) {
-          tableName = "Ambassadors";
-          let fallbackQuery = supabase.from(tableName).delete();
-          if (isUuid(id)) {
-            fallbackQuery = fallbackQuery.or(`id.eq.${id},user_id.eq.${id},ambassador_id.eq.${id}`);
-          } else {
-            fallbackQuery = fallbackQuery.eq("email", id.trim().toLowerCase());
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          try {
+            let query = supabase.from(tableName).delete();
+            query = applyAmbassadorFilter(query, cleanId);
+            const { error, data } = await query.select();
+            if (!error && data && data.length > 0) return true;
+          } catch (err) {
+            console.warn(`deleteAmbassador error for ${tableName}:`, err);
           }
-          const res = await fallbackQuery;
-          error = res.error;
         }
-        if (!error) return true;
       } catch (err) {
         console.warn("deleteAmbassador error:", err);
       }
     }
     const list = getLocalDb();
-    const idx = list.findIndex(a => a.id === id || a.email.toLowerCase() === id.toLowerCase());
+    const idx = list.findIndex(a => 
+      a.id.toLowerCase() === cleanId.toLowerCase() || 
+      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+      a.email.toLowerCase() === cleanId.toLowerCase()
+    );
     if (idx !== -1) {
       list.splice(idx, 1);
       saveLocalDb(list);
-      return true;
     }
-    return false;
+    return true;
   },
 
   async createBlog(blog: Omit<DbBlog, "id" | "created_at">): Promise<DbBlog> {
@@ -1017,31 +1031,69 @@ export const db = {
     paystackRef: string
   ): Promise<{ success: boolean; newBalance: number }> {
     try {
+      // A. Check if deposit already completed to prevent double crediting
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        const client = supabaseAdmin || supabase;
+        let { data: depData, error: depErr } = await client
+          .from("deposits")
+          .select("status")
+          .eq("paystack_reference", paystackRef)
+          .maybeSingle();
+        
+        if (depErr || !depData) {
+          const fallback = await client
+            .from("Deposits")
+            .select("status")
+            .eq("paystack_reference", paystackRef)
+            .maybeSingle();
+          depData = fallback.data;
+        }
+
+        if (depData && depData.status === "success") {
+          console.log(`[DEPOSIT CONTROL] Reference ${paystackRef} already processed success. Halting to prevent double credit.`);
+          const ambassador = await this.findAmbassadorByEmail(email);
+          return { success: true, newBalance: ambassador?.avu_balance || 0 };
+        }
+      } else {
+        const localDeposits = await this.getDeposits();
+        const localDep = localDeposits.find(d => d.paystack_reference === paystackRef);
+        if (localDep && localDep.status === "success") {
+          const ambassador = await this.findAmbassadorByEmail(email);
+          return { success: true, newBalance: ambassador?.avu_balance || 0 };
+        }
+      }
+
       // 1. Update deposit status to success
       await this.updateDepositStatus(paystackRef, "success");
 
       // 2. Find the ambassador to get the current avu_balance
       const ambassador = await this.findAmbassadorByEmail(email);
+      if (!ambassador) {
+        console.error("Could not find ambassador by email:", email);
+        return { success: false, newBalance: 0 };
+      }
+      
+      const dbRowId = ambassador.db_id || ambassador.id; // Correct database UUID row ID
       const currentAvuBalance = ambassador?.avu_balance || 0;
       const newAvuBalance = Number((currentAvuBalance + avuToEarn).toFixed(3));
 
       // 3. Update ambassador's avu_balance in public.ambassadors
-      await this.updateAvuBalance(ambassadorId, newAvuBalance);
+      await this.updateAvuBalance(dbRowId, newAvuBalance);
 
       // 4. Update the wallet balance in public.ambassador_wallets
       // First, get all wallets to see if a wallet already exists for this ambassador
       const wallets = await this.getWallets();
       const existingWallet = wallets.find(
-        w => w.ambassador_id === ambassadorId || (w.email || "").toLowerCase() === email.toLowerCase()
+        w => w.ambassador_id === dbRowId || w.ambassador_id === ambassadorId || (w.email || "").toLowerCase() === email.toLowerCase()
       );
 
       if (existingWallet) {
         const newWalletBalance = Number((existingWallet.balance + avuToEarn).toFixed(3));
-        await this.updateWalletBalance(ambassadorId, newWalletBalance);
+        await this.updateWalletBalance(existingWallet.ambassador_id || dbRowId, newWalletBalance);
       } else {
         // Create a new wallet record with the balance set to avuToEarn
         await this.createWallet({
-          ambassador_id: ambassadorId,
+          ambassador_id: dbRowId,
           email: email,
           balance: avuToEarn
         });
@@ -1054,7 +1106,7 @@ export const db = {
           const { data: walletData, error: walletError } = await client
             .from("ambassador_wallet")
             .select("*")
-            .eq("ambassador_id", ambassadorId);
+            .or(`ambassador_id.eq.${dbRowId},ambassador_id.eq.${ambassadorId}`);
           
           if (!walletError && walletData && walletData.length > 0) {
             const currentWalletBalance = Number(walletData[0].balance || 0);
@@ -1062,11 +1114,11 @@ export const db = {
             await client
               .from("ambassador_wallet")
               .update({ balance: newWalletBalance })
-              .eq("ambassador_id", ambassadorId);
+              .eq("id", walletData[0].id);
           } else {
             await client
               .from("ambassador_wallet")
-              .insert([{ ambassador_id: ambassadorId, balance: avuToEarn }]);
+              .insert([{ ambassador_id: dbRowId, balance: avuToEarn }]);
           }
         } catch (wErr) {
           console.warn("Error updating ambassador_wallet table:", wErr);
@@ -1075,7 +1127,7 @@ export const db = {
 
       // 5. Log activity
       await this.logActivity({
-        ambassador_id: ambassadorId,
+        ambassador_id: dbRowId,
         ambassador_name: ambassador?.name || "Ambassador",
         type: "avu_transfer",
         desc: `Funded wallet with ₦${amountNaira.toLocaleString()} Naira. Received ${avuToEarn} AVU tokens (Reference: ${paystackRef}).`,
