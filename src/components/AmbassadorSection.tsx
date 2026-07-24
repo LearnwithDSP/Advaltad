@@ -578,41 +578,76 @@ export const AmbassadorSection: React.FC = () => {
         
         <div className="grid lg:grid-cols-12 gap-12 lg:gap-20 items-center">
           
-          {/* Left Column: Benefits Listing */}
-          <div className="lg:col-span-6 space-y-8 text-left">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
-                <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
-                  Advaltad Global Networks
-                </span>
-              </div>
-              <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight leading-tight">
-                Advaltad Global Networks
-              </h2>
-              <p className="text-slate-500 font-sans text-base leading-relaxed">
-                Access the exclusive digital corridor of certified ambassadors overseeing real on-field regional development schemens
-              </p>
-            </div>
+          {/* Left Column: Benefits Listing in Green Gradient Card */}
+          <div className="lg:col-span-6 bg-gradient-to-b from-[#00683c] via-[#003d25] to-[#011810] text-white p-8 sm:p-10 lg:p-12 rounded-[32px] shadow-2xl relative overflow-hidden flex flex-col justify-between border border-emerald-500/20 text-left">
+            {/* Soft background glows */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:1.25rem_1.25rem] pointer-events-none opacity-40" />
 
-            {/* Benefits Block List with check icons */}
-            <div className="space-y-6 pt-4">
-              {BENEFITS.map((b, idx) => (
-                <div key={idx} className="flex items-start gap-4">
-                  <div className="w-6 h-6 rounded-full bg-[#DDEBE5] text-brand-primary flex items-center justify-center flex-shrink-0 mt-1">
-                    <Icon name="Check" size={12} className="stroke-2" />
+            <div className="relative z-10 space-y-8">
+              {/* Green Globe Icon Box */}
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/20 flex items-center justify-center text-emerald-400 backdrop-blur-md">
+                <Icon name="Globe" size={24} />
+              </div>
+
+              <div className="space-y-3">
+                <h2 className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight leading-tight">
+                  Advaltad Global Networks
+                </h2>
+                <p className="text-emerald-100/80 font-sans text-sm leading-relaxed max-w-[480px]">
+                  Join 1,200+ global ambassadors directing solar power systems, block compressors, and curriculum packages across active on-field grids.
+                </p>
+              </div>
+
+              {/* Benefits Block List */}
+              <div className="space-y-6 pt-2">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/15 flex items-center justify-center text-emerald-300 flex-shrink-0 mt-0.5">
+                    <Icon name="Award" size={18} />
                   </div>
-                  <div className="space-y-1">
-                    <h3 className="font-display font-black text-sm text-[#1E293B]">
-                      {b.title}
+                  <div className="space-y-0.5">
+                    <h3 className="font-display font-bold text-sm text-white">
+                      Dynamic Credentials
                     </h3>
-                    <p className="text-slate-500 text-xs leading-relaxed font-sans max-w-[480px]">
-                      {b.desc}
+                    <p className="text-emerald-100/70 text-xs font-sans leading-relaxed">
+                      Instant cryptographic certified badges.
                     </p>
                   </div>
                 </div>
-              ))}
+
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/15 flex items-center justify-center text-emerald-300 flex-shrink-0 mt-0.5">
+                    <Icon name="TrendingUp" size={18} />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h3 className="font-display font-bold text-sm text-white">
+                      P2P Value Exchanges
+                    </h3>
+                    <p className="text-emerald-100/70 text-xs font-sans leading-relaxed">
+                      Swap project materials using AVU.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/15 flex items-center justify-center text-emerald-300 flex-shrink-0 mt-0.5">
+                    <Icon name="Coins" size={18} />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h3 className="font-display font-bold text-sm text-white">
+                      Audited Pipelines
+                    </h3>
+                    <p className="text-emerald-100/70 text-xs font-sans leading-relaxed">
+                      100% trace ratios directed on-field.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
+
+            <p className="text-[9px] font-mono font-medium tracking-widest text-emerald-300/40 uppercase pt-10 relative z-10">
+              ADVALTAD LEGISLATIVE SECURE INTERLOCKS v2.6
+            </p>
           </div>
 
           {/* Right Column: Beautiful Membership registry card */}
