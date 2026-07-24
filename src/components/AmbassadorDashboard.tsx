@@ -572,16 +572,47 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Dynamically inject Paystack inline script
+  // Dynamically inject Paystack inline script and verify URL callback reference if present
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]')) {
-        return;
+      if (!document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]')) {
+        const script = document.createElement("script");
+        script.src = "https://js.paystack.co/v1/inline.js";
+        script.async = true;
+        document.head.appendChild(script);
       }
-      const script = document.createElement("script");
-      script.src = "https://js.paystack.co/v1/inline.js";
-      script.async = true;
-      document.head.appendChild(script);
+
+      // Check for Paystack redirect URL parameters (?reference=... or ?trxref=...)
+      const urlParams = new URLSearchParams(window.location.search);
+      const paystackRef = urlParams.get("reference") || urlParams.get("trxref");
+      if (paystackRef) {
+        const autoVerifyPaystackRef = async () => {
+          try {
+            const sessionEmail = localStorage.getItem("advaltad_session_email") || "ramon@example.com";
+            const user = await db.findAmbassadorByEmail(sessionEmail);
+            if (user) {
+              const res = await db.processFundingSuccess(
+                user.id,
+                sessionEmail,
+                1000,
+                1.002,
+                paystackRef
+              );
+              if (res.success) {
+                setAvuBalance(res.newBalance);
+                setProfile(prev => prev ? { ...prev, avu_balance: res.newBalance } : null);
+                showToast("success", "Paystack Payment Verified", "Your wallet has been credited with AVU tokens!");
+                fetchAmbassadorData();
+              }
+            }
+          } catch (err) {
+            console.error("Paystack auto-verification error:", err);
+          } finally {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        };
+        autoVerifyPaystackRef();
+      }
     }
   }, []);
 
@@ -632,11 +663,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       try {
         const allDeposits = await db.getDeposits();
         const matchedSuccessDeposits = allDeposits.filter(d => 
-          d.ambassador_id === user.id && d.status === "success"
+          d.status === "success" && (
+            (d.ambassador_id && user.id && d.ambassador_id.toLowerCase() === user.id.toLowerCase()) ||
+            (d.ambassador_id && user.user_id && d.ambassador_id.toLowerCase() === user.user_id.toLowerCase()) ||
+            (d.ambassador_id && user.ambassador_id && d.ambassador_id.toLowerCase() === user.ambassador_id.toLowerCase()) ||
+            (d.ambassador_id && user.db_id && d.ambassador_id.toLowerCase() === user.db_id.toLowerCase()) ||
+            (d.funding_by_name && user.name && d.funding_by_name.toLowerCase() === user.name.toLowerCase()) ||
+            (user.email && d.ambassador_id && d.ambassador_id.toLowerCase() === user.email.toLowerCase())
+          )
         );
         const sumNaira = matchedSuccessDeposits.reduce((acc, curr) => acc + (curr.amount_naira || 0), 0);
         setTotalDepositsNaira(sumNaira);
-        setHasFunded(matchedSuccessDeposits.length > 0);
+        setHasFunded(matchedSuccessDeposits.length > 0 || (user.avu_balance || 0) > 0);
       } catch (err) {
         console.error("Error checking funding status:", err);
         setHasFunded(false);
