@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "motion/react";
 import { Hero } from "../components/Hero";
+import { FoundationVideoSection } from "../components/FoundationVideoSection";
 import { CtaStrip } from "../components/CtaStrip";
 import { Icon } from "../components/Icon";
 
@@ -21,6 +22,13 @@ export const HomePage: React.FC<HomePageProps> = ({
       <Hero
         onDonateClick={onDonateClick}
         onAmbassadorClick={onAmbassadorClick}
+      />
+
+      {/* Official Growth Ambassador Foundation Video Showcase */}
+      <FoundationVideoSection
+        onDonateClick={onDonateClick}
+        onAmbassadorClick={onAmbassadorClick}
+        onNavigate={onNavigate}
       />
 
       {/* Brief Focus Pillars Overview */}
