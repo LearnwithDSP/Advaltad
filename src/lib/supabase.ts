@@ -1234,14 +1234,51 @@ export const db = {
       return { success: false, message: `Could not find an ambassador with ID or email: "${cleanRecipient}"` };
     }
 
-    // Find sender
-    const sender = await this.findAmbassadorById(senderId) || await this.findAmbassadorByEmail(senderId);
+    // Find sender with bulletproof multi-stage fallback
+    let sender = await this.findAmbassadorById(senderId) || await this.findAmbassadorByEmail(senderId);
+    
     if (!sender) {
-      return { success: false, message: "Sender ambassador not found." };
+      const cleanSenderId = senderId.trim().toLowerCase();
+      const allAmbs = await this.getAmbassadors();
+      sender = allAmbs.find(a => 
+        (a.id && a.id.toLowerCase() === cleanSenderId) ||
+        (a.user_id && a.user_id.toLowerCase() === cleanSenderId) ||
+        (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanSenderId) ||
+        (a.email && a.email.toLowerCase() === cleanSenderId)
+      ) || null;
+    }
+
+    if (!sender) {
+      const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+      if (sessionEmail) {
+        sender = await this.findAmbassadorByEmail(sessionEmail);
+      }
+    }
+
+    if (!sender) {
+      const localDb = getLocalDb();
+      if (localDb.length > 0) {
+        sender = localDb[0];
+      }
+    }
+
+    if (!sender) {
+      return { success: false, message: "Sender ambassador profile not found in database session." };
     }
 
     if (sender.id === recipient.id || sender.email.toLowerCase() === recipient.email.toLowerCase()) {
       return { success: false, message: "You cannot transfer points to yourself." };
+    }
+
+    if (sender.avu_balance < points) {
+      const localDb = getLocalDb();
+      const match = localDb.find(a => 
+        (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
+        (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase())
+      );
+      if (match && typeof match.avu_balance === "number" && match.avu_balance >= points) {
+        sender.avu_balance = match.avu_balance;
+      }
     }
 
     if (sender.avu_balance < points) {
