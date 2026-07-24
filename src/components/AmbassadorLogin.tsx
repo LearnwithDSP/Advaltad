@@ -363,54 +363,55 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       <div className="w-full max-w-4xl grid md:grid-cols-12 bg-white rounded-3xl overflow-hidden shadow-2xl border border-gray-100">
         
         {/* Left decoration illustration column */}
-        <div className="md:col-span-5 bg-gradient-to-br from-emerald-900 via-emerald-800 to-slate-950 text-white p-8 sm:p-12 flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute inset-0 pointer-events-none opacity-10">
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:1rem_1rem]" />
+        <div className="md:col-span-5 bg-gradient-to-b from-[#00683c] via-[#003d25] to-[#011810] text-white p-8 sm:p-12 flex flex-col justify-between relative overflow-hidden text-left">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:1.25rem_1.25rem] pointer-events-none opacity-40" />
+
+          <div className="space-y-6 relative z-10">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/20 flex items-center justify-center text-emerald-400 backdrop-blur-md">
+              <Icon name="Globe" className="text-emerald-400" size={24} />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-2xl sm:text-3xl font-black font-display leading-tight text-white">Advaltad Global Networks</h3>
+              <p className="text-xs text-emerald-100/80 leading-relaxed font-sans">
+                Join 1,200+ global ambassadors directing solar power systems, block compressors, and curriculum packages across active on-field grids.
+              </p>
+            </div>
+
+            <div className="space-y-5 pt-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/15 text-emerald-300 flex items-center justify-center flex-shrink-0">
+                  <Icon name="Award" size={18} />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-white">Dynamic Credentials</p>
+                  <p className="text-[11px] text-emerald-100/70 leading-snug">Instant cryptographic certified badges.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/15 text-emerald-300 flex items-center justify-center flex-shrink-0">
+                  <Icon name="TrendingUp" size={18} />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-white">P2P Value Exchanges</p>
+                  <p className="text-[11px] text-emerald-100/70 leading-snug">Swap project materials using AVU.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/15 text-emerald-300 flex items-center justify-center flex-shrink-0">
+                  <Icon name="Coins" size={18} />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-white">Audited Pipelines</p>
+                  <p className="text-[11px] text-emerald-100/70 leading-snug">100% trace ratios directed on-field.</p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-3 relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center mb-6">
-              <Icon name="Globe" className="text-emerald-400" size={20} />
-            </div>
-            <h3 className="text-2xl font-black font-serif leading-tight">Advaltad Global Networks</h3>
-            <p className="text-xs text-gray-300 leading-relaxed font-sans mt-2">
-              Access the exclusive digital corridor of certified ambassadors overseeing real on-field regional development schemes.
-            </p>
-          </div>
-
-          <div className="space-y-4 pt-10 relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-300">
-                <Icon name="Award" size={14} />
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold">Dynamic Credentials</p>
-                <p className="text-[10px] text-gray-400 leading-none">Instant cryptographic certified badges.</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-300">
-                <Icon name="TrendingUp" size={14} />
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold">P2P Value Exchanges</p>
-                <p className="text-[10px] text-gray-400 leading-none">Swap project materials using AVU.</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-300">
-                <Icon name="Coins" size={14} />
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold">Audited Pipelines</p>
-                <p className="text-[10px] text-gray-400 leading-none">100% trace ratios directed on-field.</p>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-[9px] text-gray-400/80 mt-10 font-mono tracking-tight relative z-10">
+          <p className="text-[9px] text-emerald-300/40 mt-10 font-mono tracking-widest uppercase relative z-10">
             ADVALTAD LEGISLATIVE SECURE INTERLOCKS v2.6
           </p>
         </div>
