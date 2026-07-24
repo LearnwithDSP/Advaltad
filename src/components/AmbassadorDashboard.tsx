@@ -555,8 +555,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   for (const mock of mockDbLeaders) {
     const exists = combinedAllAmbassadors.some(
       a =>
-        a.id.toLowerCase() === mock.id.toLowerCase() ||
-        a.email.toLowerCase() === mock.email.toLowerCase() ||
+        (a.id && a.id.toLowerCase() === mock.id.toLowerCase()) ||
+        (a.email && a.email.toLowerCase() === mock.email.toLowerCase()) ||
         (a.ambassador_id && a.ambassador_id.toLowerCase() === mock.id.toLowerCase())
     );
     if (!exists) {
@@ -1167,14 +1167,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         // Update recipient balance in dbAmbassadors state immediately
         setDbAmbassadors(prev => prev.map(a => {
           const matchTarget = 
-            a.id.toLowerCase() === transferTargetId.toLowerCase() ||
-            (a.email && a.email.toLowerCase() === transferTargetId.toLowerCase()) ||
-            (a.user_id && a.user_id.toLowerCase() === transferTargetId.toLowerCase()) ||
-            (a.ambassador_id && a.ambassador_id.toLowerCase() === transferTargetId.toLowerCase());
+            (a.id && transferTargetId && a.id.toLowerCase() === transferTargetId.toLowerCase()) ||
+            (a.email && transferTargetId && a.email.toLowerCase() === transferTargetId.toLowerCase()) ||
+            (a.user_id && transferTargetId && a.user_id.toLowerCase() === transferTargetId.toLowerCase()) ||
+            (a.ambassador_id && transferTargetId && a.ambassador_id.toLowerCase() === transferTargetId.toLowerCase());
           if (matchTarget) {
             return { ...a, avu_balance: (a.avu_balance || 0) + amt };
           }
-          if (a.id === profile?.id || (a.email && a.email.toLowerCase() === profile?.email?.toLowerCase())) {
+          if (a.id === profile?.id || (a.email && profile?.email && a.email.toLowerCase() === profile.email.toLowerCase())) {
             return { ...a, avu_balance: res.senderNewBalance };
           }
           return a;
@@ -2591,11 +2591,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         ) : (
                           <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
                             {p2pTxHistory.map((tx) => {
-                              const isSender = profile?.id && (
-                                tx.sender_id.toLowerCase() === profile.id.toLowerCase() || 
-                                (profile.user_id && tx.sender_id.toLowerCase() === profile.user_id.toLowerCase()) ||
-                                tx.sender_email.toLowerCase() === profile.email.toLowerCase()
-                              );
+                              const isSender = Boolean(profile?.id && (
+                                (tx.sender_id && profile.id && tx.sender_id.toLowerCase() === profile.id.toLowerCase()) || 
+                                (profile.user_id && tx.sender_id && tx.sender_id.toLowerCase() === profile.user_id.toLowerCase()) ||
+                                (profile.email && tx.sender_email && tx.sender_email.toLowerCase() === profile.email.toLowerCase())
+                              ));
                               return (
                                 <div key={tx.id} className="p-3 rounded-xl bg-slate-50 border border-slate-105 space-y-1 text-left">
                                   <div className="flex justify-between items-start">
@@ -3037,10 +3037,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         {(() => {
                           // Apply client-side search and filters to processedLeaders
                           const filteredLeaders = processedLeaders.filter(leader => {
-                            const matchSearch = leader.name.toLowerCase().includes(leaderSearch.toLowerCase()) || 
-                                                leader.city.toLowerCase().includes(leaderSearch.toLowerCase());
-                            const matchRegion = leaderRegionFilter === "All" || getBroadRegion(leader.city) === leaderRegionFilter;
-                            const matchDivision = leaderDivisionFilter === "All" || getBroadDivision(leader.field) === leaderDivisionFilter;
+                            const nameStr = leader.name || "";
+                            const cityStr = leader.city || "";
+                            const searchStr = leaderSearch || "";
+                            const matchSearch = nameStr.toLowerCase().includes(searchStr.toLowerCase()) || 
+                                                cityStr.toLowerCase().includes(searchStr.toLowerCase());
+                            const matchRegion = leaderRegionFilter === "All" || getBroadRegion(cityStr) === leaderRegionFilter;
+                            const matchDivision = leaderDivisionFilter === "All" || getBroadDivision(leader.field || "") === leaderDivisionFilter;
                             return matchSearch && matchRegion && matchDivision;
                           });
 
