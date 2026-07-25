@@ -790,8 +790,75 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setGrantSuccess(false);
 
     try {
-      const newBalance = selectedAmbassador.avu_balance + tokens;
+      const currentBal = typeof selectedAmbassador.avu_balance === "number" ? selectedAmbassador.avu_balance : 0;
+      const newBalance = currentBal + tokens;
+
+      // 1. Update AVU balance across all identifier variations
       await db.updateAvuBalance(selectedAmbassador.id, newBalance);
+      if (selectedAmbassador.email) await db.updateAvuBalance(selectedAmbassador.email, newBalance);
+      if (selectedAmbassador.user_id && selectedAmbassador.user_id !== selectedAmbassador.id) {
+        await db.updateAvuBalance(selectedAmbassador.user_id, newBalance);
+      }
+      if (selectedAmbassador.ambassador_id && selectedAmbassador.ambassador_id !== selectedAmbassador.id) {
+        await db.updateAvuBalance(selectedAmbassador.ambassador_id, newBalance);
+      }
+      if (selectedAmbassador.db_id) await db.updateAvuBalance(selectedAmbassador.db_id, newBalance);
+
+      // 2. Sync wallet record in ambassador_wallet
+      const currentWallet = wallets.find(w => 
+        w.ambassador_id === selectedAmbassador.id || 
+        (selectedAmbassador.email && w.email && w.email.toLowerCase() === selectedAmbassador.email.toLowerCase())
+      );
+      if (currentWallet) {
+        await db.updateWalletBalance(selectedAmbassador.id, newBalance);
+        if (selectedAmbassador.email) await db.updateWalletBalance(selectedAmbassador.email, newBalance);
+      } else {
+        await db.createWallet({
+          ambassador_id: selectedAmbassador.id,
+          email: selectedAmbassador.email,
+          balance: newBalance
+        });
+      }
+
+      // 3. Log a deposit record for funding history sync
+      const grantRef = `GRANT-${Date.now()}`;
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from("deposits").insert([{
+            ambassador_id: selectedAmbassador.id,
+            funding_by_name: currentAdmin?.name || "Super Admin Authorization",
+            phone_number: selectedAmbassador.phone || "",
+            program_sponsored: "AVU Admin Token Authorization",
+            amount_naira: tokens * 1000,
+            avu_earned: tokens,
+            paystack_reference: grantRef,
+            status: "success"
+          }]);
+        } catch (depErr) {
+          console.warn("Error inserting grant deposit into Supabase:", depErr);
+        }
+      }
+
+      let localDeps: any[] = [];
+      try {
+        const localDepData = localStorage.getItem("avu_deposits_list");
+        if (localDepData) localDeps = JSON.parse(localDepData);
+      } catch (e) {}
+      localDeps.push({
+        id: "DEP-" + Date.now(),
+        ambassador_id: selectedAmbassador.id,
+        funding_by_name: currentAdmin?.name || "Super Admin Authorization",
+        phone_number: selectedAmbassador.phone || "",
+        program_sponsored: "AVU Admin Token Authorization",
+        amount_naira: tokens * 1000,
+        avu_earned: tokens,
+        paystack_reference: grantRef,
+        status: "success",
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem("avu_deposits_list", JSON.stringify(localDeps));
+
+      // 4. Log activity
       await db.logActivity({
         ambassador_id: selectedAmbassador.id,
         ambassador_name: selectedAmbassador.name,
@@ -802,11 +869,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       setGrantSuccess(true);
       setGrantAmount("");
-      loadDbData();
+      await loadWallets();
+      await loadDbData();
       setSelectedAmbassador(prev => prev ? { ...prev, avu_balance: newBalance } : null);
       setTimeout(() => setGrantSuccess(false), 3000);
     } catch (err) {
-      console.error(err);
+      console.error("Error authorizing AVU grant:", err);
     } finally {
       setIsGranting(false);
     }
@@ -887,12 +955,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
     setIsFundingWallet(true);
     try {
-      const currentWallet = wallets.find(w => w.ambassador_id === selectedWalletAmbassador.id);
-      const currentBal = currentWallet ? currentWallet.balance : selectedWalletAmbassador.avu_balance;
+      const currentWallet = wallets.find(w => 
+        w.ambassador_id === selectedWalletAmbassador.id || 
+        (selectedWalletAmbassador.email && w.email && w.email.toLowerCase() === selectedWalletAmbassador.email.toLowerCase())
+      );
+      const currentBal = currentWallet ? currentWallet.balance : (selectedWalletAmbassador.avu_balance || 0);
       const newBal = currentBal + amount;
 
       if (currentWallet) {
         await db.updateWalletBalance(selectedWalletAmbassador.id, newBal);
+        if (selectedWalletAmbassador.email) await db.updateWalletBalance(selectedWalletAmbassador.email, newBal);
       } else {
         await db.createWallet({
           ambassador_id: selectedWalletAmbassador.id,
@@ -902,6 +974,50 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
 
       await db.updateAvuBalance(selectedWalletAmbassador.id, newBal);
+      if (selectedWalletAmbassador.email) await db.updateAvuBalance(selectedWalletAmbassador.email, newBal);
+      if (selectedWalletAmbassador.user_id && selectedWalletAmbassador.user_id !== selectedWalletAmbassador.id) {
+        await db.updateAvuBalance(selectedWalletAmbassador.user_id, newBal);
+      }
+      if (selectedWalletAmbassador.ambassador_id && selectedWalletAmbassador.ambassador_id !== selectedWalletAmbassador.id) {
+        await db.updateAvuBalance(selectedWalletAmbassador.ambassador_id, newBal);
+      }
+
+      const grantRef = `GRANT-WALLET-${Date.now()}`;
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from("deposits").insert([{
+            ambassador_id: selectedWalletAmbassador.id,
+            funding_by_name: currentAdmin?.name || "Admin Wallet Allocation",
+            phone_number: selectedWalletAmbassador.phone || "",
+            program_sponsored: "AVU Admin Wallet Allocation",
+            amount_naira: amount * 1000,
+            avu_earned: amount,
+            paystack_reference: grantRef,
+            status: "success"
+          }]);
+        } catch (depErr) {
+          console.warn("Error inserting wallet deposit into Supabase:", depErr);
+        }
+      }
+
+      let localDeps: any[] = [];
+      try {
+        const localDepData = localStorage.getItem("avu_deposits_list");
+        if (localDepData) localDeps = JSON.parse(localDepData);
+      } catch (e) {}
+      localDeps.push({
+        id: "DEP-" + Date.now(),
+        ambassador_id: selectedWalletAmbassador.id,
+        funding_by_name: currentAdmin?.name || "Admin Wallet Allocation",
+        phone_number: selectedWalletAmbassador.phone || "",
+        program_sponsored: "AVU Admin Wallet Allocation",
+        amount_naira: amount * 1000,
+        avu_earned: amount,
+        paystack_reference: grantRef,
+        status: "success",
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem("avu_deposits_list", JSON.stringify(localDeps));
 
       await db.logActivity({
         ambassador_id: selectedWalletAmbassador.id,
@@ -914,8 +1030,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       setWalletFundAmount("");
       setSelectedWalletAmbassador(null);
       setIsWalletModalOpen(false);
-      loadWallets();
-      loadDbData();
+      await loadWallets();
+      await loadDbData();
     } catch (err) {
       console.error("Failed to fund wallet:", err);
     } finally {
