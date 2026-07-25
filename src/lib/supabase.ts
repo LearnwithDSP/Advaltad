@@ -380,10 +380,7 @@ export const db = {
         (amb.email && p.recipient_email && p.recipient_email.toLowerCase() === amb.email.toLowerCase())
       );
 
-      // If user has never funded their wallet or received P2P, balance MUST be 0
-      if (!hasSuccessDeposit && !hasReceivedP2P) {
-        amb.avu_balance = 0;
-      } else if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
+      if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
         amb.avu_balance = 0;
       }
     }
