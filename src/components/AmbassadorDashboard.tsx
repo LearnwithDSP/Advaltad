@@ -638,9 +638,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }, 6000);
   };
 
-  const fetchAmbassadorData = async () => {
+  const fetchAmbassadorData = async (isInitial = false) => {
     const sessionEmail = localStorage.getItem("advaltad_session_email") || "ramon@example.com";
-    setIsLoadingProfile(true);
+    if (isInitial) {
+      setIsLoadingProfile(true);
+    }
     try {
       let user = await db.findAmbassadorByEmail(sessionEmail);
       if (!user) {
@@ -663,15 +665,17 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       setAmbassadorField(user.field);
       setAvuBalance(user.avu_balance);
 
-      setTempName(user.name);
-      setTempRegion(user.city);
-      setTempField(user.field);
+      if (isInitial) {
+        setTempName(user.name);
+        setTempRegion(user.city);
+        setTempField(user.field);
 
-      if (user.created_at) {
-        const d = new Date(user.created_at);
-        const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-        setCommissionDate(d.toLocaleDateString('en-US', options));
-        setTempDate(d.toLocaleDateString('en-US', options));
+        if (user.created_at) {
+          const d = new Date(user.created_at);
+          const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+          setCommissionDate(d.toLocaleDateString('en-US', options));
+          setTempDate(d.toLocaleDateString('en-US', options));
+        }
       }
 
       try {
@@ -722,7 +726,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     } catch (e) {
       console.error("Error loading ambassador data", e);
     } finally {
-      setIsLoadingProfile(false);
+      if (isInitial) {
+        setIsLoadingProfile(false);
+      }
     }
   };
 
@@ -921,7 +927,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           }
         }
       }
-      fetchAmbassadorData();
+      fetchAmbassadorData(true);
     };
 
     verifyAndFetch();
@@ -943,15 +949,16 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       } catch (err) {
         console.error("Error polling ambassador status:", err);
       }
-    }, 2000);
+    }, 4000);
 
     return () => clearInterval(intervalId);
-  }, [profile]);
+  }, [profile?.status, profile?.email]);
 
   useEffect(() => {
     if (!profile || !isSupabaseConfigured || !supabase) return;
 
     const rowId = profile.db_id || profile.id;
+    const ambId = profile.id;
 
     const ambassadorChannel = supabase
       .channel(`public:ambassadors:id=${rowId}`)
@@ -979,22 +986,22 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               };
             });
           }
-          fetchAmbassadorData();
+          fetchAmbassadorData(false);
         }
       )
       .subscribe();
 
     const depositsChannel = supabase
-      .channel(`public:deposits:ambassador_id=${profile.id}`)
+      .channel(`public:deposits:ambassador_id=${ambId}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "deposits",
-          filter: `ambassador_id=eq.${profile.id}`
+          filter: `ambassador_id=eq.${ambId}`
         },
-        () => fetchAmbassadorData()
+        () => fetchAmbassadorData(false)
       )
       .subscribe();
 
@@ -1008,32 +1015,32 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           table: "ambassador_wallet",
           filter: `ambassador_id=eq.${rowId}`
         },
-        () => fetchAmbassadorData()
+        () => fetchAmbassadorData(false)
       )
       .subscribe();
 
     const auditChannel = supabase
-      .channel(`public:audit_logs:ambassador_id=${profile.id}`)
+      .channel(`public:audit_logs:ambassador_id=${ambId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "audit_logs" },
-        () => fetchAmbassadorData()
+        () => fetchAmbassadorData(false)
       )
       .subscribe();
 
     const activityChannel = supabase
-      .channel(`public:activities:ambassador_id=${profile.id}`)
+      .channel(`public:activities:ambassador_id=${ambId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "activities" },
-        () => fetchAmbassadorData()
+        () => fetchAmbassadorData(false)
       )
       .subscribe();
 
-    // Periodic poll for live admin transaction updates
+    // Silent background poll for live admin transaction updates
     const pollTimer = setInterval(() => {
-      fetchAmbassadorData();
-    }, 4000);
+      fetchAmbassadorData(false);
+    }, 12000);
 
     return () => {
       supabase.removeChannel(ambassadorChannel);
@@ -1043,7 +1050,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       supabase.removeChannel(activityChannel);
       clearInterval(pollTimer);
     };
-  }, [profile]);
+  }, [profile?.id, profile?.db_id, profile?.email]);
 
   // ==========================================
   // DERIVED DATA & COMPUTATIONS (Safe to access hooks now)
