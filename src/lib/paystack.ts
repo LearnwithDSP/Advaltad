@@ -3,6 +3,12 @@ export function convertNairaToAvu(nairaAmount: number): number {
   return Number(computed.toFixed(3));
 }
 
+export function convertAvuToNaira(avuAmount: number): number {
+  if (!avuAmount || avuAmount <= 0) return 0;
+  const computed = (avuAmount / 1.002) * 1000;
+  return Number(computed.toFixed(2));
+}
+
 export interface PaystackTransactionConfig {
   email: string;
   amountNaira: number;
