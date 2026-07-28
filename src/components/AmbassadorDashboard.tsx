@@ -1264,8 +1264,19 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     );
   }
 
+  const navTabs = [
+    { id: "overview", label: "Overview", shortLabel: "Overview", icon: "LayoutDashboard" },
+    { id: "activities", label: "Activities & Logs", shortLabel: "Activities", icon: "Activity" },
+    { id: "certificate", label: "Fellowship Certificate", shortLabel: "Certificate", icon: "Award" },
+    { id: "p2p", label: "P2P Token Transfer", shortLabel: "P2P", icon: "ArrowLeftRight" },
+    { id: "payments", label: "Payments & Funding", shortLabel: "Payments", icon: "Wallet" },
+    { id: "projects", label: "Projects", shortLabel: "Projects", icon: "FolderKanban" },
+    { id: "leaderboard", label: "Leaderboard", shortLabel: "Leaderboard", icon: "Trophy" },
+    { id: "profile", label: "Profile", shortLabel: "Profile", icon: "User" },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white pb-20">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white flex flex-col md:flex-row">
       {/* Toast Notifications */}
       <div className="fixed top-5 right-5 z-[150] space-y-2 max-w-sm w-full pointer-events-none">
         <AnimatePresence>
@@ -1297,52 +1308,79 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         </AnimatePresence>
       </div>
 
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src={logoUrl} alt="Advaltad Logo" className="w-10 h-10 rounded-xl object-cover border border-slate-700 shadow-sm" />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-extrabold text-white tracking-wide">{ambassadorName}</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                  Fellow Ambassador
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
-                <Icon name="MapPin" size={12} className="text-emerald-400" />
-                <span>{ambassadorRegion}</span>
-              </p>
+      {/* DESKTOP SIDEBAR NAVIGATION (hidden on mobile, flex on md+) */}
+      <aside className="hidden md:flex flex-col w-64 xl:w-72 bg-slate-900 border-r border-slate-800 sticky top-0 h-screen overflow-y-auto flex-shrink-0 text-left p-5 text-slate-300 z-30 justify-between">
+        <div className="space-y-6">
+          {/* Logo & Ambassador Badge */}
+          <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
+            <img src={logoUrl} alt="Advaltad Logo" className="w-10 h-10 rounded-xl object-cover border border-slate-700 shadow-sm flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-sm font-extrabold text-white tracking-wide truncate">{ambassadorName}</h1>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 inline-block">
+                Fellow Ambassador
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-            {/* AVU Balance Chip */}
-            <div className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 text-[11px] sm:text-xs font-mono">
-              <span className="hidden xs:inline text-slate-400 font-sans font-bold">Balance:</span>
-              <span className="font-extrabold text-emerald-400">{avuBalance.toLocaleString()} <span className="text-[10px] sm:text-xs">AVU</span></span>
+          {/* Wallet Summary Card */}
+          <div className="p-4 rounded-2xl bg-slate-850 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="font-medium">Wallet Balance</span>
+              <span className="text-[10px] text-emerald-400 font-mono font-bold">₦{totalDepositsNaira.toLocaleString()}</span>
             </div>
-
-            {/* Fund Wallet Button */}
+            <div className="text-xl font-black text-white font-mono">
+              {avuBalance.toLocaleString()} <span className="text-xs text-emerald-400 font-sans font-bold">AVU</span>
+            </div>
             <button
               onClick={() => setIsFundWalletModalOpen(true)}
               type="button"
-              className="px-3 sm:px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-1 sm:gap-1.5 cursor-pointer flex-shrink-0"
+              className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Icon name="Plus" size={14} />
               <span>Fund Wallet</span>
             </button>
+          </div>
 
-            {/* Notifications Bell */}
+          {/* Sidebar Navigation Links */}
+          <nav className="space-y-1.5">
+            <span className="text-[10px] uppercase font-mono font-extrabold text-slate-500 px-3 tracking-wider block mb-2">Navigation</span>
+            {navTabs.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-3 cursor-pointer ${
+                    isActive
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                  }`}
+                >
+                  <Icon name={tab.icon as any} size={16} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar Footer Actions */}
+        <div className="pt-4 border-t border-slate-800 space-y-3">
+          <div className="flex items-center justify-between px-2 text-xs text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <Icon name="MapPin" size={12} className="text-emerald-400" />
+              <span className="truncate max-w-[120px]">{ambassadorRegion}</span>
+            </div>
             <div className="relative">
               <button
                 onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
                 type="button"
-                className="p-2 sm:p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors relative cursor-pointer"
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 relative cursor-pointer"
               >
-                <Icon name="Bell" size={16} className="sm:w-[18px] sm:h-[18px]" />
+                <Icon name="Bell" size={16} />
                 {notifications.some(n => n.unread) && (
-                  <span className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
                 )}
               </button>
 
@@ -1352,7 +1390,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
+                    className="absolute bottom-10 left-0 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                       <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">Notifications</span>
@@ -1379,55 +1417,80 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 )}
               </AnimatePresence>
             </div>
+          </div>
+          <button
+            onClick={onLogout}
+            type="button"
+            className="w-full py-2 rounded-xl bg-slate-800 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-700/50 transition-colors flex items-center justify-center gap-2 text-xs font-bold cursor-pointer"
+          >
+            <Icon name="LogOut" size={14} />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
 
-            {/* Logout Button */}
+      {/* MAIN CONTENT WRAPPER */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* MOBILE TOP HEADER (< md) */}
+        <header className="md:hidden sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img src={logoUrl} alt="Advaltad Logo" className="w-8 h-8 rounded-lg object-cover border border-slate-700 shadow-sm flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-xs font-extrabold text-white tracking-wide truncate">{ambassadorName}</h1>
+              <p className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                <Icon name="MapPin" size={10} />
+                <span className="truncate">{ambassadorRegion}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-mono text-emerald-400 font-bold">
+              {avuBalance.toLocaleString()} AVU
+            </div>
+            <button
+              onClick={() => setIsFundWalletModalOpen(true)}
+              type="button"
+              className="p-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs cursor-pointer"
+              title="Fund Wallet"
+            >
+              <Icon name="Plus" size={14} />
+            </button>
             <button
               onClick={onLogout}
               type="button"
-              className="p-2 sm:p-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-700/50 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-rose-300 cursor-pointer"
               title="Sign Out"
             >
-              <Icon name="LogOut" size={16} className="sm:w-[18px] sm:h-[18px]" />
+              <Icon name="LogOut" size={14} />
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Navigation Tabs */}
-      <div className="bg-slate-900/60 border-b border-slate-800/80 sticky top-20 z-30 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center gap-1.5 overflow-x-auto py-2.5 scrollbar-none">
-          {[
-            { id: "overview", label: "Overview", icon: "LayoutDashboard" },
-            { id: "activities", label: "Activities & Logs", icon: "Activity" },
-            { id: "certificate", label: "Fellowship Certificate", icon: "Award" },
-            { id: "p2p", label: "P2P Token Transfer", icon: "ArrowLeftRight" },
-            { id: "payments", label: "Payments & Funding", icon: "Wallet" },
-            { id: "projects", label: "Projects", icon: "FolderKanban" },
-            { id: "leaderboard", label: "Leaderboard", icon: "Trophy" },
-            { id: "profile", label: "Profile", icon: "User" },
-          ].map(tab => {
+        {/* MOBILE BOTTOM NAVIGATION TAB BAR (< md) */}
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 px-1 py-1.5 flex items-center justify-around overflow-x-auto scrollbar-none shadow-2xl">
+          {navTabs.map(tab => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap flex-shrink-0 cursor-pointer ${
+                className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all cursor-pointer flex-shrink-0 min-w-[56px] ${
                   isActive
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                    ? "text-emerald-400 font-black bg-emerald-500/10 border border-emerald-500/30"
+                    : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                <Icon name={tab.icon as any} size={15} />
-                <span>{tab.label}</span>
+                <Icon name={tab.icon as any} size={18} />
+                <span className="text-[9px] tracking-tight leading-none whitespace-nowrap font-bold">{tab.shortLabel}</span>
               </button>
             );
           })}
-        </div>
-      </div>
+        </nav>
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-12 text-left">
         <AnimatePresence mode="wait">
           {activeTab === "overview" && (
             <motion.div key="overview" variants={containerVariants} initial="hidden" animate="show" exit={{ opacity: 0 }} className="space-y-8">
@@ -2315,6 +2378,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           )}
         </AnimatePresence>
       </main>
+      </div>
 
       {/* Fund Wallet Modal */}
       <FundWalletModal
