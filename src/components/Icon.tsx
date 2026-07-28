@@ -56,7 +56,19 @@ import {
   VolumeX,
   Maximize2,
   RotateCcw,
-  Share2
+  Share2,
+  Loader2,
+  Wallet,
+  Download,
+  Receipt,
+  LogOut,
+  Bell,
+  User,
+  Search,
+  FileCheck,
+  BarChart3,
+  RefreshCw,
+  FileDown
 } from "lucide-react";
 
 const iconMap: { [key: string]: React.ComponentType<any> } = {
@@ -116,7 +128,19 @@ const iconMap: { [key: string]: React.ComponentType<any> } = {
   VolumeX,
   Maximize2,
   RotateCcw,
-  Share2
+  Share2,
+  Loader2,
+  Wallet,
+  Download,
+  Receipt,
+  LogOut,
+  Bell,
+  User,
+  Search,
+  FileCheck,
+  BarChart3,
+  RefreshCw,
+  FileDown
 };
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
