@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, isSupabaseConfigured, supabase } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase } from "../lib/supabase";
 import { convertNairaToAvu, initializePayment } from "../lib/paystack";
+import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
 import { AmbassadorProfile } from "./AmbassadorProfile";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
@@ -131,6 +132,7 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
   const [fundingPhone, setFundingPhone] = useState("");
   const [programSponsored, setProgramSponsored] = useState("Youth Empowerment Initiative");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [completedReceipt, setCompletedReceipt] = useState<ReceiptData | null>(null);
 
   if (!isOpen) return null;
 
@@ -155,8 +157,39 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
     }
 
     setIsProcessing(true);
-    showToast("info", "Initializing Transaction", `Preparing checkout for ₦${amt.toLocaleString()}...`);
+    showToast("info", "Initiating Deposit", `Creating pending transaction record for ₦${amt.toLocaleString()} (${avuToEarn} AVU)...`);
 
+    const transactionRef = `WAL-${Date.now()}`;
+
+    // 1. Create a 'pending' state in the database before opening the Paystack payment gateway
+    try {
+      if (supabase && isSupabaseConfigured) {
+        await supabase.from("deposits").insert([{
+          ambassador_id: currentAmbassadorId,
+          funding_by_name: fundingByName,
+          phone_number: fundingPhone,
+          program_sponsored: programSponsored,
+          amount_naira: amt,
+          avu_earned: avuToEarn,
+          paystack_reference: transactionRef,
+          status: "pending"
+        }]);
+      }
+      await db.createDeposit({
+        ambassador_id: currentAmbassadorId,
+        funding_by_name: fundingByName,
+        phone_number: fundingPhone,
+        program_sponsored: programSponsored,
+        amount_naira: amt,
+        avu_earned: avuToEarn,
+        paystack_reference: transactionRef,
+        status: "pending"
+      });
+    } catch (pendingErr) {
+      console.warn("Error creating pending deposit state:", pendingErr);
+    }
+
+    // 2. Open Paystack payment modal with active loading overlay in UI
     try {
       const metadata = {
         custom_fields: [
@@ -178,127 +211,52 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
         ]
       };
 
-      const paymentResult = await initializePayment(amt, email, metadata);
-      const earnedAvu = paymentResult.avuEarned;
-
-      try {
-        if (supabase && isSupabaseConfigured) {
-          await supabase.from("deposits").insert([{
-            ambassador_id: currentAmbassadorId,
-            funding_by_name: fundingByName,
-            phone_number: fundingPhone,
-            program_sponsored: programSponsored,
-            amount_naira: amt,
-            avu_earned: earnedAvu,
-            paystack_reference: paymentResult.reference,
-            status: "pending"
-          }]);
-        }
-        await db.createDeposit({
-          ambassador_id: currentAmbassadorId,
-          funding_by_name: fundingByName,
-          phone_number: fundingPhone,
-          program_sponsored: programSponsored,
-          amount_naira: amt,
-          avu_earned: earnedAvu,
-          paystack_reference: paymentResult.reference,
-          status: "pending"
-        });
-      } catch (err) {
-        console.error("Database registration error:", err);
-      }
-
+      const paymentResult = await initializePayment(amt, email, metadata, transactionRef);
+      
+      // 3. Upon receiving successful payment callback, commit balance increment to wallet and profiles/ambassadors tables
       const result = await db.processFundingSuccess(
         currentAmbassadorId,
         email,
         amt,
-        earnedAvu,
-        paymentResult.reference
+        paymentResult.avuEarned || avuToEarn,
+        paymentResult.reference || transactionRef
       );
 
       if (result.success) {
+        const receiptObj: ReceiptData = {
+          reference: paymentResult.reference || transactionRef,
+          ambassadorName: profile?.name || fundingByName || "Ambassador",
+          ambassadorEmail: email,
+          amountNaira: amt,
+          avuEarned: paymentResult.avuEarned || avuToEarn,
+          date: new Date().toLocaleString(),
+          fundingByName: fundingByName,
+          programSponsored: programSponsored,
+        };
+        setCompletedReceipt(receiptObj);
         onSuccess(result.newBalance);
-        showToast("success", "Payment Verified", `Successfully verified payment of ₦${amt.toLocaleString()} NGN. Credited ${earnedAvu} AVU to your balance!`);
-        setAmountNaira("");
-        setFundingByName("");
-        setFundingPhone("");
+        showToast("success", "Wallet Balance Credited", `Successfully committed +${avuToEarn} AVU to your wallet balance!`);
         fetchAmbassadorData();
-        onClose();
       } else {
-        showToast("error", "Verification Error", "Could not fully verify transaction in database, please contact support.");
+        showToast("error", "Verification Notice", "Could not fully commit wallet transaction in database, please contact support.");
+        onClose();
       }
     } catch (paystackError: any) {
-      console.warn("Paystack Inline failed or closed, launching simulated fallback:", paystackError);
-
-      const simulatedConfirm = confirm(
-        `[PAYSTACK GATEWAY DIALOGUE]\n\n` +
-        `The Paystack checkout window was closed or bypassed.\n` +
-        `Would you like to process this transaction using the simulated backup gateway for testing?`
-      );
-
-      if (simulatedConfirm) {
-        const simulatedRef = `WAL-${Date.now()}`;
-        setIsProcessing(true);
-        try {
-          try {
-            if (supabase && isSupabaseConfigured) {
-              await supabase.from("deposits").insert([{
-                ambassador_id: currentAmbassadorId,
-                funding_by_name: fundingByName,
-                phone_number: fundingPhone,
-                program_sponsored: programSponsored,
-                amount_naira: amt,
-                avu_earned: avuToEarn,
-                paystack_reference: simulatedRef,
-                status: "pending"
-              }]);
-            }
-            await db.createDeposit({
-              ambassador_id: currentAmbassadorId,
-              funding_by_name: fundingByName,
-              phone_number: fundingPhone,
-              program_sponsored: programSponsored,
-              amount_naira: amt,
-              avu_earned: avuToEarn,
-              paystack_reference: simulatedRef,
-              status: "pending"
-            });
-          } catch (dbErr) {
-            console.error("Database registration failed:", dbErr);
-          }
-
-          const result = await db.processFundingSuccess(
-            currentAmbassadorId,
-            email,
-            amt,
-            avuToEarn,
-            simulatedRef
-          );
-
-          if (result.success) {
-            onSuccess(result.newBalance);
-            showToast("success", "Payment Verified (Simulation)", `Successfully processed simulated payment of ₦${amt.toLocaleString()} NGN. Logged ${avuToEarn} AVU to your balance!`);
-            setAmountNaira("");
-            setFundingByName("");
-            setFundingPhone("");
-            fetchAmbassadorData();
-            onClose();
-          } else {
-            showToast("error", "Verification Error", "Simulation completed but database update failed.");
-          }
-        } catch (err) {
-          console.error("Error updating simulated deposit", err);
-          showToast("error", "Verification Error", "Simulation failed.");
-        } finally {
-          setIsProcessing(false);
-        }
-      } else {
-        showToast("error", "Transaction Cancelled", "The transaction was cancelled by the user.");
-        fetchAmbassadorData();
-      }
+      console.warn("Paystack Inline gateway finished or closed:", paystackError);
+      showToast("info", "Transaction Notice", "Paystack payment window closed or cancelled.");
+      fetchAmbassadorData();
+      onClose();
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleModalClose = () => {
+    setCompletedReceipt(null);
+    setAmountNaira("");
+    setFundingByName("");
+    setFundingPhone("");
+    onClose();
   };
 
   return (
@@ -307,7 +265,7 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 0.6 }}
         exit={{ opacity: 0 }}
-        onClick={onClose}
+        onClick={handleModalClose}
         className="absolute inset-0 bg-black backdrop-blur-sm"
       />
 
@@ -315,111 +273,194 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="relative z-10 w-full max-w-xl bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8 overflow-y-auto max-h-[90vh]"
+        className="relative z-10 w-full max-w-xl bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8 overflow-y-auto max-h-[90vh] overflow-hidden"
       >
+        {isProcessing && (
+          <div className="absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-white space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center animate-pulse">
+              <Icon name="Loader2" size={32} className="text-emerald-400 animate-spin" />
+            </div>
+            <div className="space-y-1 max-w-xs">
+              <h5 className="font-extrabold text-sm uppercase tracking-wider text-white">
+                Paystack Gateway Active
+              </h5>
+              <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                Pending transaction created. Awaiting payment authorization to commit <span className="text-emerald-400 font-bold font-mono">+{avuToEarn} AVU</span> to your wallet table...
+              </p>
+            </div>
+            <div className="w-full max-w-xs bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div className="bg-emerald-400 h-full w-2/3 animate-pulse rounded-full" />
+            </div>
+          </div>
+        )}
         <button
-          onClick={onClose}
+          onClick={handleModalClose}
           type="button"
           className="absolute top-5 right-5 p-1.5 text-gray-400 hover:text-slate-600 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
         >
           <Icon name="X" size={18} />
         </button>
 
-        <div className="flex items-center gap-3 pb-5 border-b border-slate-100 font-sans">
-          <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-700">
-            <Icon name="Wallet" size={24} />
-          </div>
-          <div>
-            <h4 className="font-extrabold text-lg text-slate-900 uppercase tracking-wide">Wallet Funding Terminal</h4>
-            <p className="text-xs text-slate-500">Fund your growth wallet to instantly accumulate AVU tokens securely.</p>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5 pt-6">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Who is funding Project</label>
-              <input
-                required
-                type="text"
-                placeholder="Ambassador Name"
-                value={fundingByName}
-                onChange={(e) => setFundingByName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans"
-              />
+        {completedReceipt ? (
+          <div className="space-y-6 text-slate-900 py-2 font-sans">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+              <Icon name="CheckCircle2" size={36} />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Phone Number</label>
-              <input
-                required
-                type="tel"
-                placeholder="+234..."
-                value={fundingPhone}
-                onChange={(e) => setFundingPhone(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans"
-              />
+            <div className="text-center space-y-1">
+              <h4 className="font-extrabold text-xl text-slate-900 uppercase tracking-wide">Top-Up Successful</h4>
+              <p className="text-xs text-slate-500">Your wallet balance has been updated with AVU tokens.</p>
             </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Programs to be Sponsored</label>
-            <select
-              required
-              value={programSponsored}
-              onChange={(e) => setProgramSponsored(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans cursor-pointer"
-            >
-              <option value="Youth Empowerment Initiative">Youth Empowerment Initiative</option>
-              <option value="Community Health Drive">Community Health Drive</option>
-              <option value="Digital Literacy Accelerator">Digital Literacy Accelerator</option>
-            </select>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Amount (₦)</label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-2.5 text-sm font-bold text-slate-400">₦</span>
-                <input
-                  required
-                  type="number"
-                  min="100"
-                  placeholder="e.g. 50000"
-                  value={amountNaira}
-                  onChange={(e) => setAmountNaira(e.target.value)}
-                  className="w-full pl-8 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
-                />
+            {/* Transaction Summary Table */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Reference Code</span>
+                <span className="font-mono font-bold text-slate-900 bg-slate-200/60 px-2 py-0.5 rounded-md">{completedReceipt.reference}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Date & Time</span>
+                <span className="font-medium text-slate-800">{completedReceipt.date}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Ambassador</span>
+                <span className="font-semibold text-slate-800">{completedReceipt.ambassadorName}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Funder / Sponsor</span>
+                <span className="font-medium text-slate-800">{completedReceipt.fundingByName || "Direct Top-Up"}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Program Sponsored</span>
+                <span className="font-medium text-slate-800">{completedReceipt.programSponsored}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Amount Paid (NGN)</span>
+                <span className="font-mono font-black text-slate-900 text-sm">₦{completedReceipt.amountNaira.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">AVU Tokens Earned</span>
+                <span className="font-mono font-black text-emerald-600 text-base">+{completedReceipt.avuEarned.toLocaleString()} AVU</span>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">AVU to Receive</label>
-              <input
-                disabled
-                type="text"
-                value={`${convertNairaToAvu(Number(amountNaira || 0)).toFixed(3)} AVU`}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-sm font-black text-emerald-800 font-mono cursor-not-allowed"
-              />
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => downloadDepositReceiptPDF(completedReceipt)}
+                className="flex-1 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/20 cursor-pointer"
+              >
+                <Icon name="Download" size={16} />
+                <span>Download Receipt (PDF)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleModalClose}
+                className="py-3.5 px-5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Done
+              </button>
             </div>
           </div>
-
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
-            <div className="text-left">
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Rate Ratio</p>
-              <p className="text-xs text-slate-600 font-sans font-medium">1,000 Naira = <span className="font-bold text-emerald-700">1.002 AVU</span></p>
+        ) : (
+          <>
+            <div className="flex items-center gap-3 pb-5 border-b border-slate-100 font-sans">
+              <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-700">
+                <Icon name="Wallet" size={24} />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-lg text-slate-900 uppercase tracking-wide">Wallet Funding Terminal</h4>
+                <p className="text-xs text-slate-500">Fund your growth wallet to instantly accumulate AVU tokens securely.</p>
+              </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isProcessing}
-              className="px-6 py-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
-            >
-              <Icon name={isProcessing ? "Loader2" : "Lock"} size={14} className={`text-emerald-400 ${isProcessing ? "animate-spin" : ""}`} />
-              <span>{isProcessing ? "Initializing..." : "Initialize Paystack Deposit"}</span>
-            </button>
-          </div>
-        </form>
+            <form onSubmit={handleSubmit} className="space-y-5 pt-6">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Who is funding Project</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ambassador Name"
+                    value={fundingByName}
+                    onChange={(e) => setFundingByName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Phone Number</label>
+                  <input
+                    required
+                    type="tel"
+                    placeholder="+234..."
+                    value={fundingPhone}
+                    onChange={(e) => setFundingPhone(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Programs to be Sponsored</label>
+                <select
+                  required
+                  value={programSponsored}
+                  onChange={(e) => setProgramSponsored(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-sans cursor-pointer"
+                >
+                  <option value="Youth Empowerment Initiative">Youth Empowerment Initiative</option>
+                  <option value="Community Health Drive">Community Health Drive</option>
+                  <option value="Digital Literacy Accelerator">Digital Literacy Accelerator</option>
+                </select>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Amount (₦)</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-sm font-bold text-slate-400">₦</span>
+                    <input
+                      required
+                      type="number"
+                      min="100"
+                      placeholder="e.g. 50000"
+                      value={amountNaira}
+                      onChange={(e) => setAmountNaira(e.target.value)}
+                      className="w-full pl-8 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">AVU to Receive</label>
+                  <input
+                    disabled
+                    type="text"
+                    value={`${convertNairaToAvu(Number(amountNaira || 0)).toFixed(3)} AVU`}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-sm font-black text-emerald-800 font-mono cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
+                <div className="text-left">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Rate Ratio</p>
+                  <p className="text-xs text-slate-600 font-sans font-medium">1,000 Naira = <span className="font-bold text-emerald-700">1.002 AVU</span></p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-6 py-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                >
+                  <Icon name={isProcessing ? "Loader2" : "Lock"} size={14} className={`text-emerald-400 ${isProcessing ? "animate-spin" : ""}`} />
+                  <span>{isProcessing ? "Initializing..." : "Initialize Paystack Deposit"}</span>
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </motion.div>
     </div>
   );
@@ -429,7 +470,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // ==========================================
   // ALL HOOKS DECLARED FIRST AT COMPONENT TOP
   // ==========================================
-  const [activeTab, setActiveTab] = useState<"overview" | "certificate" | "p2p" | "payments" | "projects" | "profile" | "leaderboard">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "activities" | "certificate" | "p2p" | "payments" | "projects" | "profile" | "leaderboard">("overview");
 
   // Profile & Auth state
   const [profile, setProfile] = useState<DbAmbassador | null>(null);
@@ -446,6 +487,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [isProcessing, setIsProcessing] = useState(false);
   const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
   const [dbAmbassadors, setDbAmbassadors] = useState<DbAmbassador[]>([]);
+  const [activities, setActivities] = useState<DbActivity[]>([]);
   const [totalDepositsNaira, setTotalDepositsNaira] = useState(0);
 
   // Toast notifications state
@@ -458,6 +500,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [tempField, setTempField] = useState("Youth Technology Labs");
   const [tempDate, setTempDate] = useState("May 27, 2026");
   const [downloadingCert, setDownloadingCert] = useState(false);
+  const [userDeposits, setUserDeposits] = useState<DbDeposit[]>([]);
 
   // Notifications state
   const [notifications, setNotifications] = useState<NotificationItem[]>([
@@ -662,16 +705,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
       try {
         const allDeposits = await db.getDeposits();
-        const matchedSuccessDeposits = allDeposits.filter(d => 
-          d.status === "success" && (
-            (d.ambassador_id && user.id && d.ambassador_id.toLowerCase() === user.id.toLowerCase()) ||
-            (d.ambassador_id && user.user_id && d.ambassador_id.toLowerCase() === user.user_id.toLowerCase()) ||
-            (d.ambassador_id && user.ambassador_id && d.ambassador_id.toLowerCase() === user.ambassador_id.toLowerCase()) ||
-            (d.ambassador_id && user.db_id && d.ambassador_id.toLowerCase() === user.db_id.toLowerCase()) ||
-            (d.funding_by_name && user.name && d.funding_by_name.toLowerCase() === user.name.toLowerCase()) ||
-            (user.email && d.ambassador_id && d.ambassador_id.toLowerCase() === user.email.toLowerCase())
-          )
+        const userMatchedDeposits = allDeposits.filter(d => 
+          (d.ambassador_id && user.id && d.ambassador_id.toLowerCase() === user.id.toLowerCase()) ||
+          (d.ambassador_id && user.user_id && d.ambassador_id.toLowerCase() === user.user_id.toLowerCase()) ||
+          (d.ambassador_id && user.ambassador_id && d.ambassador_id.toLowerCase() === user.ambassador_id.toLowerCase()) ||
+          (d.ambassador_id && user.db_id && d.ambassador_id.toLowerCase() === user.db_id.toLowerCase()) ||
+          (d.funding_by_name && user.name && d.funding_by_name.toLowerCase() === user.name.toLowerCase()) ||
+          (user.email && d.ambassador_id && d.ambassador_id.toLowerCase() === user.email.toLowerCase())
         );
+        const depositsList = userMatchedDeposits.length > 0 ? userMatchedDeposits : allDeposits;
+        setUserDeposits(depositsList);
+
+        const matchedSuccessDeposits = depositsList.filter(d => d.status === "success");
         const sumNaira = matchedSuccessDeposits.reduce((acc, curr) => acc + (curr.amount_naira || 0), 0);
         setTotalDepositsNaira(sumNaira);
         setHasFunded(matchedSuccessDeposits.length > 0 || (user.avu_balance || 0) > 0);
@@ -695,6 +740,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setDbAmbassadors(allAmbs || []);
       } catch (ambErr) {
         console.warn("Failed to load ambassadors list:", ambErr);
+      }
+
+      try {
+        const allActs = await db.getActivities();
+        setActivities(allActs || []);
+      } catch (actErr) {
+        console.warn("Failed to load activities list:", actErr);
       }
     } catch (e) {
       console.error("Error loading ambassador data", e);
@@ -1349,6 +1401,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-1 overflow-x-auto py-2 scrollbar-none">
           {[
             { id: "overview", label: "Overview", icon: "LayoutDashboard" },
+            { id: "activities", label: "Activities & Logs", icon: "Activity" },
             { id: "certificate", label: "Fellowship Certificate", icon: "Award" },
             { id: "p2p", label: "P2P Token Transfer", icon: "ArrowLeftRight" },
             { id: "payments", label: "Payments & Funding", icon: "Wallet" },
@@ -1528,6 +1581,130 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   ))}
                 </div>
               </motion.div>
+
+              {/* Activity Stream Section */}
+              <motion.div variants={itemVariants} className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 text-left">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Icon name="Activity" size={16} className="text-emerald-400" />
+                      <span>Recent Activity Stream</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">Live ledger log events and system authorizations</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("activities")}
+                    className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer"
+                  >
+                    View All Activities &rarr;
+                  </button>
+                </div>
+                <div className="divide-y divide-slate-800/80 max-h-72 overflow-y-auto pr-1">
+                  {activities.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">
+                      No recent activity events recorded.
+                    </div>
+                  ) : (
+                    activities.slice(0, 10).map((act) => {
+                      let typeBg = "bg-slate-800 text-slate-300 border-slate-700";
+                      if (act.type === "avu_transfer") typeBg = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+                      if (act.type === "status_change") typeBg = "bg-purple-500/10 text-purple-400 border-purple-500/30";
+                      if (act.type === "registration") typeBg = "bg-sky-500/10 text-sky-400 border-sky-500/30";
+                      if (act.type === "profile_update") typeBg = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+
+                      return (
+                        <div key={act.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${typeBg}`}>
+                                {act.type.replace("_", " ")}
+                              </span>
+                              {act.ambassador_name && (
+                                <span className="font-bold text-slate-200 truncate">{act.ambassador_name}</span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">{act.desc}</p>
+                          </div>
+                          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 shrink-0">
+                            {act.amount && <p className="font-mono font-bold text-emerald-400">{act.amount}</p>}
+                            <p className="text-[10px] text-slate-500">
+                              {act.created_at ? new Date(act.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
+          {activeTab === "activities" && (
+            <motion.div key="activities" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-5xl mx-auto text-left">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <h2 className="text-xl font-black text-white tracking-wide uppercase flex items-center gap-2">
+                    <Icon name="Activity" size={20} className="text-emerald-400" />
+                    <span>System & Portfolio Activity Ledger</span>
+                  </h2>
+                  <p className="text-xs text-slate-400">Real-time ledger events, AVU token allocations, transfers, and verification status logs</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchAmbassadorData}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors flex items-center gap-2 cursor-pointer"
+                >
+                  <Icon name="RefreshCw" size={14} />
+                  <span>Refresh Activity Log</span>
+                </button>
+              </div>
+
+              <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="divide-y divide-slate-800/80">
+                  {activities.length === 0 ? (
+                    <div className="p-12 text-center text-slate-500 text-xs">
+                      <Icon name="Activity" size={32} className="mx-auto mb-3 text-slate-600" />
+                      No activity events currently registered.
+                    </div>
+                  ) : (
+                    activities.map((act) => {
+                      let typeBg = "bg-slate-800 text-slate-300 border-slate-700";
+                      if (act.type === "avu_transfer") typeBg = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+                      if (act.type === "status_change") typeBg = "bg-purple-500/10 text-purple-400 border-purple-500/30";
+                      if (act.type === "registration") typeBg = "bg-sky-500/10 text-sky-400 border-sky-500/30";
+                      if (act.type === "profile_update") typeBg = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+
+                      return (
+                        <div key={act.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${typeBg}`}>
+                                {act.type.replace("_", " ")}
+                              </span>
+                              {act.ambassador_name && (
+                                <span className="font-bold text-slate-200">{act.ambassador_name}</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed">{act.desc}</p>
+                          </div>
+                          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0">
+                            {act.amount && (
+                              <span className="px-3 py-1 rounded-xl bg-slate-950 font-mono font-bold text-emerald-400 border border-slate-800 text-xs">
+                                {act.amount}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {act.created_at ? new Date(act.created_at).toLocaleString() : "Just now"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -1943,6 +2120,67 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       {termStatus === "submitting" ? "Logging Contribution..." : "Log Contribution to Pipeline"}
                     </button>
                   </form>
+                </div>
+              </div>
+
+              {/* Top-Up Deposit Summaries & PDF Receipts History */}
+              <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-5 text-left">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Icon name="Receipt" size={18} className="text-emerald-400" />
+                      <span>Top-Up Deposit Summaries & Receipts</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Download official PDF receipts for your verified AVU wallet deposits</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {userDeposits.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-500 rounded-2xl bg-slate-950/50 border border-slate-800/80">
+                      No wallet top-up transactions recorded yet. Open Paystack Deposit Checkout to credit your wallet.
+                    </div>
+                  ) : (
+                    userDeposits.map((dep) => (
+                      <div key={dep.id || dep.paystack_reference} className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/90 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                        <div className="flex items-center gap-3 min-w-[200px]">
+                          <div className={`p-2.5 rounded-xl ${dep.status === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                            <Icon name={dep.status === 'success' ? 'CheckCircle2' : 'Clock'} size={20} />
+                          </div>
+                          <div>
+                            <p className="font-bold text-xs text-white font-mono">{dep.paystack_reference || 'WAL-REF'}</p>
+                            <p className="text-[10px] text-slate-400">{dep.created_at ? new Date(dep.created_at).toLocaleString() : 'Recent Transaction'}</p>
+                            <span className="text-[10px] font-bold text-slate-500 block">Funder: {dep.funding_by_name || 'Self Direct'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800/60 pt-3 sm:pt-0">
+                          <div className="text-left sm:text-right">
+                            <p className="font-mono font-black text-xs text-white">₦{(dep.amount_naira || 0).toLocaleString()}</p>
+                            <p className="font-mono font-bold text-emerald-400 text-xs">+{(dep.avu_earned || 0).toLocaleString()} AVU</p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => downloadDepositReceiptPDF({
+                              reference: dep.paystack_reference || 'WAL-REF',
+                              ambassadorName: profile?.name || dep.funding_by_name || "Ambassador",
+                              ambassadorEmail: profile?.email || "ambassador@domain.com",
+                              amountNaira: dep.amount_naira || 0,
+                              avuEarned: dep.avu_earned || 0,
+                              date: dep.created_at ? new Date(dep.created_at).toLocaleString() : new Date().toLocaleString(),
+                              fundingByName: dep.funding_by_name || "Direct Deposit",
+                              programSponsored: dep.program_sponsored || "Youth Empowerment Initiative"
+                            })}
+                            className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700/80"
+                          >
+                            <Icon name="Download" size={14} />
+                            <span>Download Receipt</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </motion.div>
