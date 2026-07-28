@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase } from "../lib/supabase";
-import { convertNairaToAvu, initializePayment } from "../lib/paystack";
+import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
 import { AmbassadorProfile } from "./AmbassadorProfile";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
@@ -488,7 +488,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
   const [dbAmbassadors, setDbAmbassadors] = useState<DbAmbassador[]>([]);
   const [activities, setActivities] = useState<DbActivity[]>([]);
-  const [totalDepositsNaira, setTotalDepositsNaira] = useState(0);
+  const totalDepositsNaira = convertAvuToNaira(avuBalance);
 
   // Toast notifications state
   const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
@@ -717,13 +717,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setUserDeposits(depositsList);
 
         const matchedSuccessDeposits = depositsList.filter(d => d.status === "success");
-        const sumNaira = matchedSuccessDeposits.reduce((acc, curr) => acc + (curr.amount_naira || 0), 0);
-        setTotalDepositsNaira(sumNaira);
         setHasFunded(matchedSuccessDeposits.length > 0 || (user.avu_balance || 0) > 0);
       } catch (err) {
         console.error("Error checking funding status:", err);
         setHasFunded(false);
-        setTotalDepositsNaira(0);
       }
 
       if (user) {
@@ -965,7 +962,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         city: a.city || "Lagos, Nigeria",
         field: a.field || "Growth Ambassador",
         avu_balance: a.avu_balance || 0,
-        totalDeposits: 0,
+        totalDeposits: convertAvuToNaira(a.avu_balance || 0),
         projects: 2,
         avatarBg,
         initials,
@@ -1457,10 +1454,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     </div>
                   </div>
                   <div className="space-y-0.5">
-                    <h3 className="text-2xl font-black text-white font-mono">₦{totalDepositsNaira.toLocaleString()} <span className="text-xs font-sans font-medium text-slate-400">NGN</span></h3>
+                    <h3 className="text-2xl font-black text-white font-mono">₦{totalDepositsNaira.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} <span className="text-xs font-sans font-medium text-slate-400">NGN</span></h3>
                     <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
                       <Icon name="CheckCircle2" size={12} />
-                      <span>{hasFunded ? "Active Funding Account" : "No funding logged yet"}</span>
+                      <span>{avuBalance > 0 ? "Naira Value of Available AVU" : "No AVU tokens in wallet"}</span>
                     </p>
                   </div>
                 </motion.div>
