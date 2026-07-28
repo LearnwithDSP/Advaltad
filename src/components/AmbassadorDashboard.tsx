@@ -503,32 +503,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [userDeposits, setUserDeposits] = useState<DbDeposit[]>([]);
 
   // Notifications state
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: "n-1",
-      title: "Value Exchange Confirmed",
-      desc: "Grace Adebayo accepted your query for 2 Sustainable Shelter Layout designs. -300 AVU allocated.",
-      time: "20 mins ago",
-      unread: true,
-      type: "p2p"
-    },
-    {
-      id: "n-2",
-      title: "Direct Regional Donation",
-      desc: "$450 allocated to NextGen Scholarships in Lagos from a verified anonymous sponsor.",
-      time: "2 hours ago",
-      unread: true,
-      type: "payment"
-    },
-    {
-      id: "n-3",
-      title: "Mobile Clinic Live Launch",
-      desc: "Mombasa wellness hub has initiated telemedicine services. Project milestones updated.",
-      time: "1 day ago",
-      unread: false,
-      type: "project"
-    }
-  ]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
 
   // Peer to Peer Value Transfer State
@@ -555,10 +530,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [donationLinkText, setDonationLinkText] = useState("https://advaltad.org/campaign/ramon-youth-labs");
   const [campaignTitle, setCampaignTitle] = useState("Support Ramon's TechHub");
   const [campaignGenerated, setCampaignGenerated] = useState(false);
-  const [termAmount, setTermAmount] = useState("");
-  const [termDonorName, setTermDonorName] = useState("");
-  const [termDonorEmail, setTermDonorEmail] = useState("");
-  const [termStatus, setTermStatus] = useState<"idle" | "submitting" | "completed">("idle");
 
   // Projects state
   const [projects] = useState<ProjectItem[]>([
@@ -745,10 +716,186 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       } catch (actErr) {
         console.warn("Failed to load activities list:", actErr);
       }
+
+      // Load live notifications capturing admin transactions and individual ambassador activities
+      await loadLiveNotifications(user);
     } catch (e) {
       console.error("Error loading ambassador data", e);
     } finally {
       setIsLoadingProfile(false);
+    }
+  };
+
+  const loadLiveNotifications = async (user: DbAmbassador) => {
+    if (!user) return;
+    const uid = (user.id || user.user_id || user.db_id || "").toLowerCase();
+    const uname = (user.name || "").toLowerCase();
+    const uemail = (user.email || "").toLowerCase();
+
+    const notifList: NotificationItem[] = [];
+
+    const isUserRecord = (ambId?: string, ambName?: string, ambEmail?: string) => {
+      if (ambId && (ambId.toLowerCase() === uid || ambId.toLowerCase() === uemail)) return true;
+      if (ambName && uname && ambName.toLowerCase() === uname) return true;
+      if (ambEmail && uemail && ambEmail.toLowerCase() === uemail) return true;
+      return false;
+    };
+
+    const formatTimeAgo = (dateStr?: string) => {
+      if (!dateStr) return "Recently";
+      try {
+        const d = new Date(dateStr);
+        const now = new Date();
+        const diffMs = Math.max(0, now.getTime() - d.getTime());
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        if (diffMins < 1) return "Just now";
+        if (diffMins < 60) return `${diffMins}m ago`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours}h ago`;
+        const diffDays = Math.floor(diffHours / 24);
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      } catch {
+        return "Recently";
+      }
+    };
+
+    // 1. Audit logs (Admin actions with this individual ambassador)
+    try {
+      const logs = await db.getAuditLogs();
+      logs.forEach((log) => {
+        if (isUserRecord(log.ambassador_id, log.ambassador_name)) {
+          let title = "Admin Action";
+          let desc = `Admin action: ${log.action}`;
+          if (log.action === "approved") {
+            title = "Super Admin Approval";
+            desc = `Super Admin "${log.admin_name || 'Admin'}" approved your ambassador application & fellowship status.`;
+          } else if (log.action === "disapproved") {
+            title = "Fellowship Status Update";
+            desc = `Super Admin "${log.admin_name || 'Admin'}" set your profile status to disapproved.`;
+          } else if (log.action === "updated_portfolio") {
+            title = "Admin Portfolio Update";
+            desc = `Super Admin "${log.admin_name || 'Admin'}" updated your official portfolio credentials.`;
+          } else if (log.action === "suspended") {
+            title = "Account Status Notice";
+            desc = `Super Admin "${log.admin_name || 'Admin'}" updated your account access level.`;
+          }
+          notifList.push({
+            id: `audit-${log.id}`,
+            title,
+            desc,
+            time: formatTimeAgo(log.created_at),
+            unread: true,
+            type: "general"
+          });
+        }
+      });
+    } catch (err) {
+      console.warn("Error fetching audit logs for notifications:", err);
+    }
+
+    // 2. Activities (Admin token grants, status changes, etc.)
+    try {
+      const acts = await db.getActivities();
+      acts.forEach((act) => {
+        if (isUserRecord(act.ambassador_id, act.ambassador_name)) {
+          let title = "System Activity";
+          if (act.type === "avu_transfer") title = "Admin Token Grant";
+          else if (act.type === "status_change") title = "Admin Status Change";
+          else if (act.type === "registration") title = "Registration Verified";
+
+          notifList.push({
+            id: `act-${act.id}`,
+            title,
+            desc: act.desc,
+            time: formatTimeAgo(act.created_at),
+            unread: true,
+            type: act.type === "avu_transfer" ? "p2p" : "general"
+          });
+        }
+      });
+    } catch (err) {
+      console.warn("Error fetching activities for notifications:", err);
+    }
+
+    // 3. Wallet Deposits & Grants
+    try {
+      const deposits = await db.getDeposits();
+      deposits.forEach((dep) => {
+        const matchesUser = isUserRecord(dep.ambassador_id, dep.funding_by_name) || (dep.funding_by_name && uname && dep.funding_by_name.toLowerCase().includes(uname));
+        if (matchesUser) {
+          const isAdminFunding = (dep.funding_by_name || "").toLowerCase().includes("admin") || (dep.funding_by_name || "").toLowerCase().includes("authorization");
+          const title = isAdminFunding ? "Admin Wallet Top-Up" : "Wallet Deposit Verified";
+          const desc = isAdminFunding
+            ? `${dep.funding_by_name}: Credited ₦${(dep.amount_naira || 0).toLocaleString()} (+${dep.avu_earned || 0} AVU) to your wallet balance.`
+            : `Paystack top-up of ₦${(dep.amount_naira || 0).toLocaleString()} verified (+${dep.avu_earned || 0} AVU). Ref: ${dep.paystack_reference || 'REF'}`;
+
+          notifList.push({
+            id: `dep-${dep.id || dep.paystack_reference}`,
+            title,
+            desc,
+            time: formatTimeAgo(dep.created_at),
+            unread: dep.status === "success",
+            type: "payment"
+          });
+        }
+      });
+    } catch (err) {
+      console.warn("Error fetching deposits for notifications:", err);
+    }
+
+    // 4. P2P Transactions
+    try {
+      const p2p = await db.getP2PTransactions(user.id || user.email);
+      p2p.forEach((tx) => {
+        const isRecipient = isUserRecord(tx.recipient_id, tx.recipient_name, tx.recipient_email);
+        const isSender = isUserRecord(tx.sender_id, tx.sender_name, tx.sender_email);
+
+        if (isRecipient) {
+          notifList.push({
+            id: `p2p-in-${tx.id}`,
+            title: "AVU Received",
+            desc: `Received ${tx.points} AVU from ${tx.sender_name}. ${tx.reason ? `Reason: "${tx.reason}"` : ''}`,
+            time: formatTimeAgo(tx.created_at),
+            unread: true,
+            type: "p2p"
+          });
+        } else if (isSender) {
+          notifList.push({
+            id: `p2p-out-${tx.id}`,
+            title: "AVU Transferred",
+            desc: `Transferred ${tx.points} AVU to ${tx.recipient_name}. ${tx.reason ? `Reason: "${tx.reason}"` : ''}`,
+            time: formatTimeAgo(tx.created_at),
+            unread: false,
+            type: "p2p"
+          });
+        }
+      });
+    } catch (err) {
+      console.warn("Error fetching P2P transactions for notifications:", err);
+    }
+
+    // 5. Current Fellowship Relationship status
+    if (user.status) {
+      notifList.push({
+        id: `status-${user.id}`,
+        title: user.status === "approved" ? "Active Fellowship Status" : "Pending Application Review",
+        desc: user.status === "approved"
+          ? "Your ambassador profile is verified & active with Advaltad Super Admin."
+          : "Your ambassador application is currently under review by Super Admin.",
+        time: formatTimeAgo(user.created_at),
+        unread: false,
+        type: "general"
+      });
+    }
+
+    // Deduplicate & sort newest first
+    const uniqueMap = new Map<string, NotificationItem>();
+    notifList.forEach(item => uniqueMap.set(item.id, item));
+
+    const sortedList = Array.from(uniqueMap.values());
+    if (sortedList.length > 0) {
+      setNotifications(sortedList);
     }
   };
 
@@ -865,10 +1012,36 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       )
       .subscribe();
 
+    const auditChannel = supabase
+      .channel(`public:audit_logs:ambassador_id=${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "audit_logs" },
+        () => fetchAmbassadorData()
+      )
+      .subscribe();
+
+    const activityChannel = supabase
+      .channel(`public:activities:ambassador_id=${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "activities" },
+        () => fetchAmbassadorData()
+      )
+      .subscribe();
+
+    // Periodic poll for live admin transaction updates
+    const pollTimer = setInterval(() => {
+      fetchAmbassadorData();
+    }, 4000);
+
     return () => {
       supabase.removeChannel(ambassadorChannel);
       supabase.removeChannel(depositsChannel);
       supabase.removeChannel(walletChannel);
+      supabase.removeChannel(auditChannel);
+      supabase.removeChannel(activityChannel);
+      clearInterval(pollTimer);
     };
   }, [profile]);
 
@@ -1179,47 +1352,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }
   };
 
-  const handleDirectDonationGateway = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = parseFloat(termAmount);
-    if (!termDonorName || !termDonorEmail || isNaN(amt) || amt <= 0) return;
-
-    setTermStatus("submitting");
-    setTimeout(async () => {
-      setTermStatus("completed");
-      setHasFunded(true);
-      
-      if (profile?.id) {
-        try {
-          await db.logActivity({
-            ambassador_id: profile.id,
-            ambassador_name: ambassadorName,
-            type: "donation_logged",
-            desc: `Logged donation of $${amt} USD from ${termDonorName} (${termDonorEmail}) into regional pipeline tracker.`,
-            amount: `$${amt} USD`
-          });
-        } catch (err) {
-          console.error("Failed to log activity:", err);
-        }
-      }
-
-      const newNotif: NotificationItem = {
-        id: "n-don-" + Date.now(),
-        title: "Direct Pipeline Donation Logged",
-        desc: `$${amt} USD logged for ${campaignTitle} from ${termDonorName}.`,
-        time: "Just now",
-        unread: true,
-        type: "payment"
-      };
-      setNotifications(prev => [newNotif, ...prev]);
-
-      setTermAmount("");
-      setTermDonorName("");
-      setTermDonorEmail("");
-      setTimeout(() => setTermStatus("idle"), 4000);
-    }, 1200);
-  };
-
   const handleClaimExchange = (item: ExchangeListing) => {
     setActiveItemDetails(item);
     if (avuBalance < item.avuCost) {
@@ -1456,6 +1588,59 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             >
               <Icon name="Plus" size={14} />
             </button>
+
+            {/* Mobile Notification Bell */}
+            <div className="relative">
+              <button
+                onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+                type="button"
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-300 relative cursor-pointer"
+                title="Live Notifications"
+              >
+                <Icon name="Bell" size={16} />
+                {notifications.some(n => n.unread) && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {notifDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">Live Notifications</span>
+                      <button
+                        onClick={() => setNotifications(prev => prev.map(n => ({ ...n, unread: false })))}
+                        type="button"
+                        className="text-[10px] text-emerald-400 hover:underline cursor-pointer font-bold"
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {notifications.length === 0 ? (
+                        <p className="text-slate-500 text-center py-4 text-[11px]">No notifications recorded yet.</p>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} className={`p-2.5 rounded-xl border text-left space-y-1 ${n.unread ? "bg-slate-800/80 border-slate-700" : "bg-slate-900 border-slate-800/60 opacity-75"}`}>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-200">{n.title}</span>
+                              <span className="text-[9px] text-slate-500 font-mono">{n.time}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-snug">{n.desc}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <button
               onClick={onLogout}
               type="button"
@@ -2153,94 +2338,65 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </button>
                 </div>
 
-                {/* Direct Pipeline Logger */}
-                <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6">
-                  <div className="border-b border-slate-800 pb-4">
-                    <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                      <Icon name="FileText" size={18} className="text-sky-400" />
-                      <span>Manual/Physical Donation Logger</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-1">Log cash or cheque regional campaign contributions</p>
+                {/* Top-Up Deposit Summaries & PDF Receipts History */}
+                <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-5 text-left">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                    <div>
+                      <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                        <Icon name="Receipt" size={18} className="text-emerald-400" />
+                        <span>Top-Up Deposit Summaries & Receipts</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">Download official PDF receipts for your verified AVU wallet deposits</p>
+                    </div>
                   </div>
 
-                  <form onSubmit={handleDirectDonationGateway} className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Donor Full Name</label>
-                      <input type="text" placeholder="e.g. Dr. Adebayo Ogunlesi" value={termDonorName} onChange={e => setTermDonorName(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Donor Email Contact</label>
-                      <input type="email" placeholder="donor@domain.org" value={termDonorEmail} onChange={e => setTermDonorEmail(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Contribution Amount ($ USD)</label>
-                      <input type="number" placeholder="500" value={termAmount} onChange={e => setTermAmount(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-mono" />
-                    </div>
-                    <button type="submit" disabled={termStatus === "submitting"} className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer">
-                      {termStatus === "submitting" ? "Logging Contribution..." : "Log Contribution to Pipeline"}
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {/* Top-Up Deposit Summaries & PDF Receipts History */}
-              <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-5 text-left">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div>
-                    <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                      <Icon name="Receipt" size={18} className="text-emerald-400" />
-                      <span>Top-Up Deposit Summaries & Receipts</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-1">Download official PDF receipts for your verified AVU wallet deposits</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {userDeposits.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-slate-500 rounded-2xl bg-slate-950/50 border border-slate-800/80">
-                      No wallet top-up transactions recorded yet. Open Paystack Deposit Checkout to credit your wallet.
-                    </div>
-                  ) : (
-                    userDeposits.map((dep) => (
-                      <div key={dep.id || dep.paystack_reference} className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/90 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
-                        <div className="flex items-center gap-3 min-w-[200px]">
-                          <div className={`p-2.5 rounded-xl ${dep.status === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
-                            <Icon name={dep.status === 'success' ? 'CheckCircle2' : 'Clock'} size={20} />
-                          </div>
-                          <div>
-                            <p className="font-bold text-xs text-white font-mono">{dep.paystack_reference || 'WAL-REF'}</p>
-                            <p className="text-[10px] text-slate-400">{dep.created_at ? new Date(dep.created_at).toLocaleString() : 'Recent Transaction'}</p>
-                            <span className="text-[10px] font-bold text-slate-500 block">Funder: {dep.funding_by_name || 'Self Direct'}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800/60 pt-3 sm:pt-0">
-                          <div className="text-left sm:text-right">
-                            <p className="font-mono font-black text-xs text-white">₦{(dep.amount_naira || 0).toLocaleString()}</p>
-                            <p className="font-mono font-bold text-emerald-400 text-xs">+{(dep.avu_earned || 0).toLocaleString()} AVU</p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => downloadDepositReceiptPDF({
-                              reference: dep.paystack_reference || 'WAL-REF',
-                              ambassadorName: profile?.name || dep.funding_by_name || "Ambassador",
-                              ambassadorEmail: profile?.email || "ambassador@domain.com",
-                              amountNaira: dep.amount_naira || 0,
-                              avuEarned: dep.avu_earned || 0,
-                              date: dep.created_at ? new Date(dep.created_at).toLocaleString() : new Date().toLocaleString(),
-                              fundingByName: dep.funding_by_name || "Direct Deposit",
-                              programSponsored: dep.program_sponsored || "Youth Empowerment Initiative"
-                            })}
-                            className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700/80"
-                          >
-                            <Icon name="Download" size={14} />
-                            <span>Download Receipt</span>
-                          </button>
-                        </div>
+                  <div className="space-y-3">
+                    {userDeposits.length === 0 ? (
+                      <div className="p-8 text-center text-xs text-slate-500 rounded-2xl bg-slate-950/50 border border-slate-800/80">
+                        No wallet top-up transactions recorded yet. Open Paystack Deposit Checkout to credit your wallet.
                       </div>
-                    ))
-                  )}
+                    ) : (
+                      userDeposits.map((dep) => (
+                        <div key={dep.id || dep.paystack_reference} className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/90 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                          <div className="flex items-center gap-3 min-w-[200px]">
+                            <div className={`p-2.5 rounded-xl ${dep.status === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                              <Icon name={dep.status === 'success' ? 'CheckCircle2' : 'Clock'} size={20} />
+                            </div>
+                            <div>
+                              <p className="font-bold text-xs text-white font-mono">{dep.paystack_reference || 'WAL-REF'}</p>
+                              <p className="text-[10px] text-slate-400">{dep.created_at ? new Date(dep.created_at).toLocaleString() : 'Recent Transaction'}</p>
+                              <span className="text-[10px] font-bold text-slate-500 block">Funder: {dep.funding_by_name || 'Self Direct'}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800/60 pt-3 sm:pt-0">
+                            <div className="text-left sm:text-right">
+                              <p className="font-mono font-black text-xs text-white">₦{(dep.amount_naira || 0).toLocaleString()}</p>
+                              <p className="font-mono font-bold text-emerald-400 text-xs">+{(dep.avu_earned || 0).toLocaleString()} AVU</p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => downloadDepositReceiptPDF({
+                                reference: dep.paystack_reference || 'WAL-REF',
+                                ambassadorName: profile?.name || dep.funding_by_name || "Ambassador",
+                                ambassadorEmail: profile?.email || "ambassador@domain.com",
+                                amountNaira: dep.amount_naira || 0,
+                                avuEarned: dep.avu_earned || 0,
+                                date: dep.created_at ? new Date(dep.created_at).toLocaleString() : new Date().toLocaleString(),
+                                fundingByName: dep.funding_by_name || "Direct Deposit",
+                                programSponsored: dep.program_sponsored || "Youth Empowerment Initiative"
+                              })}
+                              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700/80"
+                            >
+                              <Icon name="Download" size={14} />
+                              <span>Download Receipt</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>
