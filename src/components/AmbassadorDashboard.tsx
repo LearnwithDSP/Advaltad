@@ -1316,21 +1316,21 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* AVU Balance Chip */}
-            <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 text-xs font-mono">
-              <span className="text-slate-400 font-sans font-bold">Balance:</span>
-              <span className="font-extrabold text-emerald-400">{avuBalance.toLocaleString()} AVU</span>
+            <div className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 text-[11px] sm:text-xs font-mono">
+              <span className="hidden xs:inline text-slate-400 font-sans font-bold">Balance:</span>
+              <span className="font-extrabold text-emerald-400">{avuBalance.toLocaleString()} <span className="text-[10px] sm:text-xs">AVU</span></span>
             </div>
 
             {/* Fund Wallet Button */}
             <button
               onClick={() => setIsFundWalletModalOpen(true)}
               type="button"
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer"
+              className="px-3 sm:px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-1 sm:gap-1.5 cursor-pointer flex-shrink-0"
             >
               <Icon name="Plus" size={14} />
-              <span className="hidden sm:inline">Fund Wallet</span>
+              <span>Fund Wallet</span>
             </button>
 
             {/* Notifications Bell */}
@@ -1338,11 +1338,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <button
                 onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
                 type="button"
-                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors relative cursor-pointer"
+                className="p-2 sm:p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors relative cursor-pointer"
               >
-                <Icon name="Bell" size={18} />
+                <Icon name="Bell" size={16} className="sm:w-[18px] sm:h-[18px]" />
                 {notifications.some(n => n.unread) && (
-                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
+                  <span className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
                 )}
               </button>
 
@@ -1352,7 +1352,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
+                    className="absolute right-0 mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                       <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">Notifications</span>
@@ -1384,10 +1384,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             <button
               onClick={onLogout}
               type="button"
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-700/50 transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-700/50 transition-colors cursor-pointer"
               title="Sign Out"
             >
-              <Icon name="LogOut" size={18} />
+              <Icon name="LogOut" size={16} className="sm:w-[18px] sm:h-[18px]" />
             </button>
           </div>
         </div>
@@ -1395,7 +1395,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
       {/* Main Navigation Tabs */}
       <div className="bg-slate-900/60 border-b border-slate-800/80 sticky top-20 z-30 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-1 overflow-x-auto py-2 scrollbar-none">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center gap-1.5 overflow-x-auto py-2.5 scrollbar-none">
           {[
             { id: "overview", label: "Overview", icon: "LayoutDashboard" },
             { id: "activities", label: "Activities & Logs", icon: "Activity" },
@@ -1412,7 +1412,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                className={`px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap flex-shrink-0 cursor-pointer ${
                   isActive
                     ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
