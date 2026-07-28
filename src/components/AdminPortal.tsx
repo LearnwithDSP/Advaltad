@@ -1247,7 +1247,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           
           {/* Sidebar menu - collapsible */}
           <aside 
-            className={`bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col transition-all duration-300 ${
+            className={`bg-slate-900 border-r border-slate-800 text-slate-300 hidden md:flex flex-col transition-all duration-300 ${
               sidebarCollapsed ? "w-16" : "w-64"
             } relative z-20`}
           >
@@ -1384,7 +1384,59 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
           {/* Main workspace section */}
           <main className="flex-1 flex flex-col overflow-y-auto text-left">
-            <header className="bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+            {/* Mobile Super Admin Header */}
+            <div className="md:hidden bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-3 text-white sticky top-0 z-40">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-display font-black text-sm flex-shrink-0">
+                  A
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black tracking-wider text-white leading-tight">ADVALTAD</p>
+                  <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest block truncate">
+                    {currentAdmin?.name || "SUPER ADMIN"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={handleAdminLogout}
+                  type="button"
+                  className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 font-bold text-xs flex items-center gap-1 border border-rose-500/20 transition-all cursor-pointer"
+                  title="Sign Out"
+                >
+                  <LogOut size={14} />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile Navigation sub-bar */}
+            <div className="md:hidden bg-slate-900/95 backdrop-blur-md border-b border-slate-800 p-2 flex items-center gap-2 overflow-x-auto scrollbar-none sticky top-[53px] z-30">
+              {[
+                { id: "overview", label: "Ledger & Activities", icon: Activity },
+                { id: "ambassadors", label: `Ambassadors ${pendingCount > 0 ? `(${pendingCount})` : ''}`, icon: Users },
+                { id: "blogs", label: "Blog Management", icon: Compass },
+                { id: "wallets", label: "Financial Overview", icon: Coins },
+                { id: "payments", label: "Payment Gateway", icon: CreditCard },
+                { id: "history", label: "Oversight History", icon: History },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id as any)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap flex-shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    activeTab === t.id
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-slate-800/80 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <t.icon size={13} />
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <header className="bg-white border-b border-slate-100 px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
                   <ShieldCheck className="text-emerald-600" size={20} />
