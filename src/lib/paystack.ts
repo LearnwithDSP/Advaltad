@@ -98,9 +98,9 @@ export function processPayment(amountNaira: number, email: string, metadata?: an
 /**
  * Initializes a Paystack transaction with currency-to-AVU conversion and reference generation.
  */
-export function initializePayment(amountNaira: number, email: string, metadata?: any): Promise<{ reference: string; status: string; avuEarned: number }> {
+export function initializePayment(amountNaira: number, email: string, metadata?: any, customRef?: string): Promise<{ reference: string; status: string; avuEarned: number }> {
   const avuEarned = convertNairaToAvu(amountNaira);
-  const reference = `WAL-${Date.now()}`;
+  const reference = customRef || `WAL-${Date.now()}`;
   
   const mergedMetadata = {
     ...metadata,
