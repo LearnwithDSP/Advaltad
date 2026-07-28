@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+      dedupe: ['react', 'react-dom'],
     },
     define: {
       'process.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
