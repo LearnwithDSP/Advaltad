@@ -269,7 +269,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             
             // Find matched wallet balance
             const wallet = walletsData.find(w => w.ambassador_id === ambId || (w.email || "").toLowerCase() === (ambEmail || "").toLowerCase());
-            const walletBal = wallet ? wallet.balance : 0;
+            const walletBal = wallet ? wallet.balance : (typeof row.avu_balance === "number" ? row.avu_balance : 0);
 
             return {
               id: ambId,
