@@ -961,66 +961,45 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const ambId = profile.id;
 
     const ambassadorChannel = supabase
-      .channel(`public:ambassadors:id=${rowId}`)
+      .channel(`public:ambassadors:realtime:${ambId}`)
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "ambassadors",
-          filter: `id=eq.${rowId}`
-        },
-        (payload: any) => {
-          const newRecord = payload.new || {};
-          if (newRecord) {
-            if (newRecord.avu_balance !== undefined) {
-              setAvuBalance(newRecord.avu_balance);
-            }
-            setProfile((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                ...newRecord,
-                avu_balance: newRecord.avu_balance !== undefined ? newRecord.avu_balance : prev.avu_balance,
-                badge_status: newRecord.badge_status !== undefined ? newRecord.badge_status : (newRecord.status || prev.badge_status || prev.status)
-              };
-            });
-          }
-          fetchAmbassadorData(false);
-        }
+        { event: "*", schema: "public", table: "ambassadors" },
+        () => fetchAmbassadorData(false)
       )
-      .subscribe();
-
-    const depositsChannel = supabase
-      .channel(`public:deposits:ambassador_id=${ambId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "deposits",
-          filter: `ambassador_id=eq.${ambId}`
-        },
+        { event: "*", schema: "public", table: "Ambassadors" },
+        () => fetchAmbassadorData(false)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallet" },
+        () => fetchAmbassadorData(false)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallets" },
+        () => fetchAmbassadorData(false)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "wallets" },
         () => fetchAmbassadorData(false)
       )
       .subscribe();
 
-    const walletChannel = supabase
-      .channel(`public:ambassador_wallet:ambassador_id=${rowId}`)
+    const depositsChannel = supabase
+      .channel(`public:deposits:${ambId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "ambassador_wallet",
-          filter: `ambassador_id=eq.${rowId}`
-        },
+        { event: "*", schema: "public", table: "deposits" },
         () => fetchAmbassadorData(false)
       )
       .subscribe();
 
     const auditChannel = supabase
-      .channel(`public:audit_logs:ambassador_id=${ambId}`)
+      .channel(`public:audit_logs:${ambId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "audit_logs" },
@@ -1029,7 +1008,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       .subscribe();
 
     const activityChannel = supabase
-      .channel(`public:activities:ambassador_id=${ambId}`)
+      .channel(`public:activities:${ambId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "activities" },
@@ -1045,7 +1024,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     return () => {
       supabase.removeChannel(ambassadorChannel);
       supabase.removeChannel(depositsChannel);
-      supabase.removeChannel(walletChannel);
       supabase.removeChannel(auditChannel);
       supabase.removeChannel(activityChannel);
       clearInterval(pollTimer);
