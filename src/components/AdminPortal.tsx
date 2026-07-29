@@ -26,7 +26,7 @@ import {
   CreditCard,
   MapPin
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbAuditLog, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
@@ -255,6 +255,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         logDbOperation("Admin Portal Fetch Wallets Error", {}, wErr);
       }
 
+      // Pre-load deposits to accurately check funding history
+      let depositsData: DbDeposit[] = [];
+      try {
+        depositsData = await db.getDeposits();
+      } catch (dErr) {
+        console.error("[ADMIN PORTAL] Failed to pre-load deposits:", dErr);
+      }
+
       let allAmbassadors: DbAmbassador[] = [];
       if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
         console.log("[ADMIN PORTAL] ATTEMPT: Initiating direct SELECT * query on 'public.ambassadors' table ordered by created_at desc to pull raw, real-time data from Supabase...");
@@ -300,8 +308,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             const ambEmail = row.email || "";
             
             // Find matched wallet balance
-            const wallet = walletsData.find(w => w.ambassador_id === ambId || (w.email || "").toLowerCase() === (ambEmail || "").toLowerCase());
-            const walletBal = wallet ? wallet.balance : (typeof row.avu_balance === "number" ? row.avu_balance : 0);
+            const wallet = walletsData.find(w => 
+              w.ambassador_id === ambId || 
+              (row.id && w.ambassador_id === row.id) ||
+              (ambEmail && w.email && w.email.toLowerCase() === ambEmail.toLowerCase()) ||
+              (ambEmail && w.ambassador_id && w.ambassador_id.toLowerCase() === ambEmail.toLowerCase())
+            );
+
+            const hasSuccessDeposit = depositsData.some(d => 
+              d.status === "success" && (
+                (d.ambassador_id && d.ambassador_id.toLowerCase() === ambId.toLowerCase()) ||
+                (row.id && d.ambassador_id && d.ambassador_id.toLowerCase() === row.id.toLowerCase()) ||
+                (ambEmail && d.ambassador_id && d.ambassador_id.toLowerCase() === ambEmail.toLowerCase())
+              )
+            );
+
+            const walletBal = wallet ? wallet.balance : (hasSuccessDeposit ? (typeof row.avu_balance === "number" ? row.avu_balance : 0) : 0);
 
             return {
               id: ambId,
