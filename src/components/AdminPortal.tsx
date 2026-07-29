@@ -176,6 +176,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           loadDbData();
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallet" },
+        () => {
+          console.info("Realtime Postgres update received on 'ambassador_wallet' table, refetching fresh records...");
+          loadDbData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallets" },
+        () => {
+          console.info("Realtime Postgres update received on 'ambassador_wallets' table, refetching fresh records...");
+          loadDbData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "wallets" },
+        () => {
+          console.info("Realtime Postgres update received on 'wallets' table, refetching fresh records...");
+          loadDbData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deposits" },
+        () => {
+          console.info("Realtime Postgres update received on 'deposits' table, refetching fresh records...");
+          loadDbData();
+        }
+      )
       .subscribe();
 
     return () => {
