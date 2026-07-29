@@ -783,7 +783,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const handleGrantAVU = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAmbassador || !grantAmount) return;
-    const tokens = parseInt(grantAmount);
+    const tokens = parseFloat(grantAmount);
     if (isNaN(tokens) || tokens <= 0) return;
 
     setIsGranting(true);
@@ -950,7 +950,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const handleFundWallet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedWalletAmbassador || !walletFundAmount) return;
-    const amount = parseInt(walletFundAmount);
+    const amount = parseFloat(walletFundAmount);
     if (isNaN(amount) || amount <= 0) return;
 
     setIsFundingWallet(true);
@@ -2737,9 +2737,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   <form onSubmit={handleGrantAVU} className="flex gap-2">
                     <input
                       type="number"
+                      step="any"
                       required
-                      min="1"
-                      placeholder="e.g. 500"
+                      min="0.001"
+                      placeholder="e.g. 1.5 or 500"
                       value={grantAmount}
                       onChange={(e) => setGrantAmount(e.target.value)}
                       className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
