@@ -765,18 +765,72 @@ export const DonationPanel: React.FC = () => {
                       )}
 
                       {paystackMethod === "bank_transfer" && (
-                        <div className="space-y-2 text-xs">
-                          <p className="text-[10px] text-slate-400 font-extrabold uppercase">Bank account details*</p>
-                          <div className="p-3.5 bg-[#3bb75e]/10 border border-[#3bb75e]/30 rounded-2xl space-y-1">
-                            <p className="font-extrabold text-[#268943] uppercase text-[9px] tracking-wider">OFFICIAL DIRECT TRANSFER</p>
-                            <p className="text-slate-700 font-medium">Please send exactly {selectedCurrency.symbol}{activeAmount.toLocaleString()} to:</p>
-                            <div className="font-mono text-sm font-bold text-slate-900 bg-white/50 p-2 rounded-lg mt-1 border border-slate-150 space-y-0.5">
-                              <p className="text-xs text-slate-500 font-sans font-medium">BANK NAME: <span className="font-bold text-slate-800">GTbank</span></p>
-                              <p className="text-xs text-slate-500 font-sans font-medium">ACCOUNT NAME: <span className="font-bold text-slate-800">Advaltad growth and support foundation</span></p>
-                              <p className="text-xs text-slate-500 font-sans font-medium">NAIRA ACCOUNT NUMBER: <span className="font-mono font-black text-slate-900 tracking-wider">300 292 7219</span></p>
+                        <div className="space-y-2 text-xs text-left">
+                          <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Bank account details*</p>
+                          <div className="p-3.5 bg-[#3bb75e]/10 border border-[#3bb75e]/30 rounded-2xl space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <p className="font-extrabold text-[#268943] uppercase text-[9px] tracking-wider">OFFICIAL DIRECT TRANSFER</p>
+                              <span className="text-[10px] font-bold text-slate-600 bg-white/70 px-2 py-0.5 rounded-full border border-slate-200">GTbank / Opay</span>
+                            </div>
+                            <p className="text-slate-700 font-medium text-[11px]">Please send your contribution ({selectedCurrency.symbol}{activeAmount.toLocaleString()}) to any of our official accounts:</p>
+                            
+                            <div className="bg-white/90 p-3 rounded-xl border border-slate-200/80 space-y-2 text-xs font-sans">
+                              <div className="border-b border-slate-100 pb-1.5 space-y-0.5">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Account Name</span>
+                                <span className="font-extrabold text-slate-900 block text-xs">Advaltad growth and support foundation</span>
+                              </div>
+
+                              <div className="border-b border-slate-100 pb-1.5 space-y-0.5">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Bank Name</span>
+                                <span className="font-extrabold text-slate-900 block text-xs">GTbank</span>
+                              </div>
+
+                              <div className="space-y-2 pt-1">
+                                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Dollar account number</span>
+                                    <span className="font-mono font-black text-slate-900 text-xs">300 292 7257</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText("3002927257")}
+                                    className="text-[10px] font-extrabold text-[#268943] hover:underline px-2 py-1 bg-emerald-50 rounded border border-emerald-200 cursor-pointer"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+
+                                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Naira account number</span>
+                                    <span className="font-mono font-black text-slate-900 text-xs">300 292 7219</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText("3002927219")}
+                                    className="text-[10px] font-extrabold text-[#268943] hover:underline px-2 py-1 bg-emerald-50 rounded border border-emerald-200 cursor-pointer"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+
+                                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Opay account number (naira account)</span>
+                                    <span className="font-mono font-black text-slate-900 text-xs">6140627114</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText("6140627114")}
+                                    className="text-[10px] font-extrabold text-[#268943] hover:underline px-2 py-1 bg-emerald-50 rounded border border-emerald-200 cursor-pointer"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          <p className="text-[10px] text-slate-400 leading-relaxed">Your transfer will be automatically detected and credited. The system monitors the gateway constantly.</p>
+                          <p className="text-[10px] text-slate-400 leading-relaxed">Your transfer will be verified and credited upon confirmation by our finance team.</p>
                         </div>
                       )}
 
