@@ -46,24 +46,22 @@ export const AdminStats: React.FC = () => {
       setIsAuthenticated(!!session);
       setSessionChecked(true);
 
-      // Step 2: Query the correct Ambassadors table (supporting both casing variations)
-      let tableToUse = "Ambassadors";
+      // Step 2: Query the correct ambassadors table (supporting both casing variations)
+      let tableToUse = "ambassadors";
       
-      // Let's test the exact query specified: supabase.from('Ambassadors').select('*', { count: 'exact', head: true })
       let { count, error: queryError } = await supabase
-        .from("Ambassadors")
+        .from("ambassadors")
         .select("*", { count: "exact", head: true });
 
-      // If capitalized Ambassadors table does not exist or fails, fall back to lowercase "ambassadors"
       if (queryError) {
-        console.info("Trying lowercase 'ambassadors' table fallback...");
+        console.info("Trying capitalized 'Ambassadors' table fallback...");
         const fallbackRes = await supabase
-          .from("ambassadors")
+          .from("Ambassadors")
           .select("*", { count: "exact", head: true });
         
         if (!fallbackRes.error) {
           count = fallbackRes.count;
-          tableToUse = "ambassadors";
+          tableToUse = "Ambassadors";
           queryError = null;
         } else {
           // Both failed, throw query error
