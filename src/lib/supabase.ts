@@ -279,11 +279,28 @@ export const db = {
 
         if (!error && data) {
           const mapped = data.map(mapRowToAmbassador);
+
+          // Sync wallet balances from ambassador_wallet / ambassador_wallets / wallets
+          let walletList: DbAmbassadorWallet[] = [];
+          try {
+            walletList = await this.getWallets();
+          } catch (wErr) {}
+
           for (const amb of mapped) {
             const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
             amb.id = staticId;
             amb.user_id = staticId;
             amb.ambassador_id = staticId;
+
+            const matchedWallet = walletList.find(w => 
+              w.ambassador_id === staticId || 
+              (amb.db_id && w.ambassador_id === amb.db_id) || 
+              (amb.email && w.email && w.email.toLowerCase() === amb.email.toLowerCase()) ||
+              (amb.email && w.ambassador_id && w.ambassador_id.toLowerCase() === amb.email.toLowerCase())
+            );
+            if (matchedWallet && typeof matchedWallet.balance === "number") {
+              amb.avu_balance = matchedWallet.balance;
+            }
 
             if (amb.db_id) {
               try {
@@ -394,20 +411,12 @@ export const db = {
     const sanitizedEmail = email.replace(/200$/, "").trim().toLowerCase();
     if (!sanitizedEmail) return null;
 
-    // 1. Check in-memory cache
-    let found = cachedAmbassadorsMemory.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail);
-    if (found) return found;
+    let ambResult: DbAmbassador | null = null;
 
-    // 2. Check local DB
-    const localDb = getLocalDb();
-    found = localDb.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
-    if (found) return found;
-
-    // 3. Check Supabase query
+    // 1. Direct Supabase query first for real-time live database synchronization
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let tableToUse = "ambassadors";
         let { data, error } = await client
           .from("ambassadors")
           .select("*")
@@ -415,7 +424,6 @@ export const db = {
           .maybeSingle();
 
         if (error || !data) {
-          tableToUse = "Ambassadors";
           const fallback = await client
             .from("Ambassadors")
             .select("*")
@@ -426,52 +434,62 @@ export const db = {
         }
 
         if (!error && data) {
-          const amb = mapRowToAmbassador(data);
-          if (!amb.user_id || !amb.user_id.startsWith("AV-")) {
-            amb.user_id = "AV-" + Math.floor(Math.random() * 89999 + 10000);
-            amb.id = amb.user_id;
-          }
-          if (!amb.ambassador_id || !amb.ambassador_id.startsWith("AV-")) {
-            amb.ambassador_id = amb.user_id;
-          }
-          return amb;
+          ambResult = mapRowToAmbassador(data);
         }
       } catch (err) {
         console.warn("Supabase lookup exception:", err);
       }
     }
 
+    // 2. Check in-memory cache
+    if (!ambResult) {
+      ambResult = cachedAmbassadorsMemory.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
+    }
+
+    // 3. Check local DB
+    if (!ambResult) {
+      const localDb = getLocalDb();
+      ambResult = localDb.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
+    }
+
     // 4. Fetch full list as ultimate fallback
-    const all = await this.getAmbassadors();
-    return all.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
+    if (!ambResult) {
+      const all = await this.getAmbassadors();
+      ambResult = all.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail) || null;
+    }
+
+    if (ambResult) {
+      const staticId = getStaticAmbassadorId(ambResult.user_id || ambResult.ambassador_id || ambResult.id || ambResult.email || ambResult.db_id);
+      ambResult.id = staticId;
+      ambResult.user_id = staticId;
+      ambResult.ambassador_id = staticId;
+
+      // Sync wallet balance from ambassador_wallet / ambassador_wallets / wallets in Supabase
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        try {
+          const wallets = await this.getWallets();
+          const wallet = wallets.find(w => 
+            w.ambassador_id === staticId || 
+            (ambResult?.db_id && w.ambassador_id === ambResult.db_id) || 
+            (w.email || "").toLowerCase() === sanitizedEmail
+          );
+          if (wallet && typeof wallet.balance === "number") {
+            ambResult.avu_balance = wallet.balance;
+          }
+        } catch (wErr) {}
+      }
+    }
+
+    return ambResult;
   },
 
   async findAmbassadorById(id: string): Promise<DbAmbassador | null> {
     const cleanId = id.trim().toLowerCase();
     if (!cleanId) return null;
 
-    const matchesId = (a: DbAmbassador) =>
-      (a.id && a.id.toLowerCase() === cleanId) ||
-      (a.user_id && a.user_id.toLowerCase() === cleanId) ||
-      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
-      (a.db_id && a.db_id.toLowerCase() === cleanId) ||
-      (a.email && a.email.toLowerCase() === cleanId);
+    let ambResult: DbAmbassador | null = null;
 
-    // 1. Check memory cache
-    let found = cachedAmbassadorsMemory.find(matchesId);
-    if (found) return found;
-
-    // 2. Check local DB
-    const localDb = getLocalDb();
-    found = localDb.find(matchesId);
-    if (found) return found;
-
-    // 3. Check full list via getAmbassadors()
-    const allAmbs = await this.getAmbassadors();
-    found = allAmbs.find(matchesId);
-    if (found) return found;
-
-    // 4. Fallback direct Supabase query
+    // 1. Direct Supabase query first
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
@@ -485,13 +503,57 @@ export const db = {
           error = fallback.error;
         }
 
-        if (!error && data) return mapRowToAmbassador(data);
+        if (!error && data) {
+          ambResult = mapRowToAmbassador(data);
+        }
       } catch (err) {
         console.warn("Supabase findAmbassadorById exception:", err);
       }
     }
 
-    return null;
+    const matchesId = (a: DbAmbassador) =>
+      (a.id && a.id.toLowerCase() === cleanId) ||
+      (a.user_id && a.user_id.toLowerCase() === cleanId) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
+      (a.db_id && a.db_id.toLowerCase() === cleanId) ||
+      (a.email && a.email.toLowerCase() === cleanId);
+
+    if (!ambResult) {
+      ambResult = cachedAmbassadorsMemory.find(matchesId) || null;
+    }
+
+    if (!ambResult) {
+      const localDb = getLocalDb();
+      ambResult = localDb.find(matchesId) || null;
+    }
+
+    if (!ambResult) {
+      const allAmbs = await this.getAmbassadors();
+      ambResult = allAmbs.find(matchesId) || null;
+    }
+
+    if (ambResult) {
+      const staticId = getStaticAmbassadorId(ambResult.user_id || ambResult.ambassador_id || ambResult.id || ambResult.email || ambResult.db_id);
+      ambResult.id = staticId;
+      ambResult.user_id = staticId;
+      ambResult.ambassador_id = staticId;
+
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        try {
+          const wallets = await this.getWallets();
+          const wallet = wallets.find(w => 
+            w.ambassador_id === staticId || 
+            (ambResult?.db_id && w.ambassador_id === ambResult.db_id) || 
+            (ambResult?.email && (w.email || "").toLowerCase() === ambResult.email.toLowerCase())
+          );
+          if (wallet && typeof wallet.balance === "number") {
+            ambResult.avu_balance = wallet.balance;
+          }
+        } catch (wErr) {}
+      }
+    }
+
+    return ambResult;
   },
 
   async createAmbassador(newAmbassador: Omit<DbAmbassador, "id" | "avu_balance" | "created_at" | "status"> & { user_id?: string; ambassador_id?: string }): Promise<DbAmbassador> {
@@ -776,13 +838,20 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        for (const tableName of ["ambassadors", "Ambassadors"]) {
+        for (const tableName of ["ambassadors", "Ambassadors", "profiles", "Profiles"]) {
           try {
             let query = client.from(tableName).update({ avu_balance: newBalance });
             query = applyAmbassadorFilter(query, cleanId);
             await query.select();
           } catch (err) {
             console.warn(`updateAvuBalance error for ${tableName}:`, err);
+          }
+        }
+        for (const tableName of ["wallet", "Wallet", "wallets", "Wallets", "ambassador_wallet"]) {
+          try {
+            await client.from(tableName).update({ balance: newBalance }).or(`ambassador_id.eq.${cleanId},id.eq.${cleanId},email.eq.${cleanId}`);
+          } catch (err) {
+            console.warn(`updateAvuBalance wallet sync error for ${tableName}:`, err);
           }
         }
       } catch (err) {
@@ -831,20 +900,20 @@ export const db = {
     };
     if (isSupabaseConfigured && supabase) {
       try {
-        let { error } = await supabase.from("activities").insert([activity]);
+        let { error } = await supabase.from("activities").insert([fresh]);
         if (error) {
-          const res = await supabase.from("Activities").insert([activity]);
-          error = res.error;
+          await supabase.from("Activities").insert([fresh]);
         }
-        if (!error) return true;
       } catch (err) {
         console.warn("logActivity error:", err);
       }
     }
     const listStr = localStorage.getItem(ACTIVITIES_LOCAL_STORAGE_KEY);
     const list: DbActivity[] = listStr ? JSON.parse(listStr) : [];
-    list.push(fresh);
-    localStorage.setItem(ACTIVITIES_LOCAL_STORAGE_KEY, JSON.stringify(list));
+    if (!list.some(a => a.id === fresh.id)) {
+      list.unshift(fresh);
+      localStorage.setItem(ACTIVITIES_LOCAL_STORAGE_KEY, JSON.stringify(list.slice(0, 500)));
+    }
     return true;
   },
 
@@ -881,22 +950,31 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let { data, error } = await client.from("ambassador_wallets").select("*").order("created_at", { ascending: false });
-        if (error || !data) {
-          const fallback = await client.from("wallets").select("*").order("created_at", { ascending: false });
-          data = fallback.data;
-          error = fallback.error;
+        let { data, error } = await client.from("ambassador_wallet").select("*").order("created_at", { ascending: false });
+        if (error || !data || data.length === 0) {
+          const fallback1 = await client.from("ambassador_wallets").select("*").order("created_at", { ascending: false });
+          if (!fallback1.error && fallback1.data && fallback1.data.length > 0) {
+            data = fallback1.data;
+            error = null;
+          } else {
+            const fallback2 = await client.from("wallets").select("*").order("created_at", { ascending: false });
+            if (!fallback2.error && fallback2.data) {
+              data = fallback2.data;
+              error = null;
+            }
+          }
         }
         if (!error && data) return data;
       } catch (err) {
         console.warn("getWallets error:", err);
       }
     }
-    const data = localStorage.getItem(WALLETS_LOCAL_STORAGE_KEY);
+    const data = typeof window !== "undefined" ? localStorage.getItem(WALLETS_LOCAL_STORAGE_KEY) : null;
     return data ? JSON.parse(data) : [];
   },
 
   async getActivities(): Promise<DbActivity[]> {
+    let supabaseActivities: DbActivity[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
         let { data, error } = await supabase.from("activities").select("*").order("created_at", { ascending: false });
@@ -905,13 +983,25 @@ export const db = {
           data = fallback.data;
           error = fallback.error;
         }
-        if (!error && data) return data;
+        if (!error && data) supabaseActivities = data;
       } catch (err) {
         console.warn("getActivities error:", err);
       }
     }
     const data = localStorage.getItem(ACTIVITIES_LOCAL_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const localActivities: DbActivity[] = data ? JSON.parse(data) : [];
+
+    const map = new Map<string, DbActivity>();
+    for (const act of [...supabaseActivities, ...localActivities]) {
+      if (!act || !act.desc) continue;
+      const key = act.id || `${act.type}-${act.desc}-${act.created_at}`;
+      if (!map.has(key)) {
+        map.set(key, act);
+      }
+    }
+    const combined = Array.from(map.values());
+    combined.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    return combined;
   },
 
   async getAuditLogs(): Promise<DbAuditLog[]> {
@@ -1115,44 +1205,65 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let { data, error } = await client.from("ambassador_wallets").insert([wallet]).select().single();
-        if (error) {
-          const fallback = await client.from("wallets").insert([wallet]).select().single();
-          data = fallback.data;
-          error = fallback.error;
+        for (const tableName of ["ambassador_wallet", "ambassador_wallets", "wallets"]) {
+          try {
+            const { data, error } = await client.from(tableName).insert([wallet]).select().single();
+            if (!error && data) return data;
+          } catch (e) {}
         }
-        if (!error && data) return data;
       } catch (err) {
         console.warn("createWallet error:", err);
       }
     }
     const list = await this.getWallets();
     list.push(fresh);
-    localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+    }
     return fresh;
   },
 
   async updateWalletBalance(ambassadorId: string, newBalance: number): Promise<boolean> {
+    const cleanId = ambassadorId.trim().toLowerCase();
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let tableName = "ambassador_wallets";
-        let { error } = await client.from(tableName).update({ balance: newBalance }).eq("ambassador_id", ambassadorId);
-        if (error) {
-          tableName = "wallets";
-          const res = await client.from(tableName).update({ balance: newBalance }).eq("ambassador_id", ambassadorId);
-          error = res.error;
+        let success = false;
+
+        // 1. Update wallet tables in Supabase
+        for (const tableName of ["ambassador_wallet", "ambassador_wallets", "wallets", "wallet", "Wallet", "Wallets"]) {
+          try {
+            const res = await client
+              .from(tableName)
+              .update({ balance: newBalance })
+              .or(`ambassador_id.eq.${ambassadorId},ambassador_id.ilike.${cleanId},email.ilike.${cleanId}`);
+            if (!res.error) success = true;
+          } catch (err) {
+            console.warn(`updateWalletBalance error for ${tableName}:`, err);
+          }
         }
-        if (!error) return true;
+
+        // 2. Also update ambassadors avu_balance column in Supabase
+        for (const tableName of ["ambassadors", "Ambassadors", "profiles", "Profiles"]) {
+          try {
+            let query = client.from(tableName).update({ avu_balance: newBalance });
+            query = applyAmbassadorFilter(query, cleanId);
+            await query.select();
+          } catch (err) {}
+        }
+
+        if (success) return true;
       } catch (err) {
         console.warn("updateWalletBalance error:", err);
       }
     }
     const list = await this.getWallets();
-    const idx = list.findIndex(w => w.ambassador_id === ambassadorId);
+    const idx = list.findIndex(w => w.ambassador_id === ambassadorId || (w.email || "").toLowerCase() === cleanId);
     if (idx !== -1) {
       list[idx].balance = newBalance;
-      localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+      if (typeof window !== "undefined") {
+        localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+      }
       return true;
     }
     return false;
@@ -1256,10 +1367,24 @@ export const db = {
         });
       }
 
-      // 4b. Explicitly update the public.ambassador_wallet table to ensure 100% database sync
+      // 4b. Explicitly update public.ambassador_wallet, public.wallet, and public.profiles tables to ensure 100% database sync
       if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
         try {
           const client = supabaseAdmin || supabase;
+
+          // Update profiles table if present
+          for (const pTable of ["profiles", "Profiles"]) {
+            try {
+              await client
+                .from(pTable)
+                .update({ avu_balance: newAvuBalance })
+                .or(`id.eq.${dbRowId},email.eq.${email}`);
+            } catch (pErr) {
+              // Ignore if profiles table is absent
+            }
+          }
+
+          // Update ambassador_wallet & wallet tables
           const { data: walletData, error: walletError } = await client
             .from("ambassador_wallet")
             .select("*")
@@ -1278,7 +1403,7 @@ export const db = {
               .insert([{ ambassador_id: dbRowId, balance: avuToEarn }]);
           }
         } catch (wErr) {
-          console.warn("Error updating ambassador_wallet table:", wErr);
+          console.warn("Error updating ambassador_wallet/profiles table:", wErr);
         }
       }
 
