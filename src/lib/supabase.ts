@@ -397,6 +397,23 @@ export const db = {
         (amb.email && p.recipient_email && p.recipient_email.toLowerCase() === amb.email.toLowerCase())
       );
 
+      if (!hasSuccessDeposit && !hasReceivedP2P) {
+        // Also verify if a wallet record with balance exists
+        let hasWalletEntry = false;
+        try {
+          const wallets = await this.getWallets();
+          hasWalletEntry = wallets.some(w => 
+            (w.ambassador_id && w.ambassador_id.toLowerCase() === staticId.toLowerCase()) ||
+            (amb.db_id && w.ambassador_id && w.ambassador_id.toLowerCase() === amb.db_id.toLowerCase()) ||
+            (amb.email && w.email && w.email.toLowerCase() === amb.email.toLowerCase())
+          );
+        } catch (e) {}
+
+        if (!hasWalletEntry) {
+          amb.avu_balance = 0;
+        }
+      }
+
       if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
         amb.avu_balance = 0;
       }
