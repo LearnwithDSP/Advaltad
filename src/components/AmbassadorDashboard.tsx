@@ -1237,11 +1237,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
   const handleP2PTransfer = (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = parseInt(transferAmount);
+    const amt = parseFloat(transferAmount);
     const targetId = (transferTargetId || recipientSearchQuery).trim();
 
     if (!targetId || isNaN(amt) || amt <= 0) {
-      showToast("error", "Invalid Transfer", "Please select a valid recipient ambassador or enter their ID/email.");
+      showToast("error", "Invalid Transfer", "Please select a valid recipient ambassador or enter a valid positive amount.");
       return;
     }
 
@@ -1259,7 +1259,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   };
 
   const confirmExecuteTransfer = async () => {
-    const amt = parseInt(transferAmount);
+    const amt = parseFloat(transferAmount);
     const targetId = (transferTargetId || recipientSearchQuery).trim();
 
     if (!targetId || isNaN(amt) || amt <= 0 || !profile) return;
@@ -2166,8 +2166,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Transfer Amount (AVU)</label>
                       <input
                         type="number"
-                        min="1"
-                        placeholder="e.g. 250"
+                        step="any"
+                        min="0.001"
+                        placeholder="e.g. 1.5 or 250"
                         value={transferAmount}
                         onChange={(e) => setTransferAmount(e.target.value)}
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
