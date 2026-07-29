@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { CreditCard, Landmark, Send, Loader2, ArrowRight, ShieldCheck, Mail, User, Phone, Check } from "lucide-react";
+import { CreditCard, Landmark, Send, Loader2, ArrowRight, ShieldCheck, Mail, User, Phone, Check, Copy } from "lucide-react";
 
 export const DonationForm: React.FC = () => {
   // Form states
@@ -14,12 +14,25 @@ export const DonationForm: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Static bank details
+  // Bank details
   const BANK_DETAILS = {
+    accountName: "Advaltad growth and support foundation",
     bankName: "GTbank",
-    accountName: "Advaltad Growth and Support Foundation",
-    accountNumber: "3002927257 (USD ACCOUNT)",
+    dollarAccount: "300 292 7257",
+    nairaAccount: "300 292 7219",
+    opayAccount: "6140627114",
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    try {
+      navigator.clipboard.writeText(text.replace(/\s+/g, ''));
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.warn("Failed to copy:", err);
+    }
   };
 
   const validateForm = () => {
@@ -131,7 +144,7 @@ export const DonationForm: React.FC = () => {
           </div>
           <h3 className="font-bold text-sm">WhatsApp Confirmation Opened!</h3>
           <p className="text-xs text-emerald-700 mt-1">
-            We have opened WhatsApp to message our support team. Please complete your transfer of <strong className="font-extrabold">₦{parseFloat(amount).toLocaleString()}</strong> to the Zenith Bank account and share the receipt.
+            We have opened WhatsApp to message our support team. Please complete your transfer of <strong className="font-extrabold">₦{parseFloat(amount).toLocaleString()}</strong> to our official GTbank or Opay account and share the receipt.
           </p>
         </motion.div>
       )}
@@ -250,24 +263,83 @@ export const DonationForm: React.FC = () => {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-3.5 my-1">
-                <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Advaltad Bank Accounts</span>
-                <div className="grid grid-cols-1 gap-2.5 text-xs text-slate-700">
-                  <div className="flex justify-between border-b border-slate-200/50 pb-2">
-                    <span className="text-slate-400 font-medium">Bank Name:</span>
-                    <span className="font-extrabold text-slate-800">{BANK_DETAILS.bankName}</span>
+              <div className="bg-slate-50 rounded-2xl border border-slate-200/80 p-4 sm:p-5 space-y-3.5 my-2 text-left">
+                <div className="flex items-center justify-between border-b border-slate-200/70 pb-2.5">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Bank account details*
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[10px] uppercase">
+                    Official Accounts
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 text-xs text-slate-700 font-sans">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-1.5 shadow-2xs">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span className="font-extrabold text-[11px] uppercase tracking-wide text-slate-400">Account Name</span>
+                      <span className="font-extrabold text-slate-900 text-right">{BANK_DETAILS.accountName}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600 border-t border-slate-100 pt-1.5">
+                      <span className="font-extrabold text-[11px] uppercase tracking-wide text-slate-400">Bank Name</span>
+                      <span className="font-extrabold text-slate-900">{BANK_DETAILS.bankName}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between border-b border-slate-200/50 pb-2">
-                    <span className="text-slate-400 font-medium">Account Name:</span>
-                    <span className="font-extrabold text-slate-800 text-right">{BANK_DETAILS.accountName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400 font-medium">Account Number:</span>
-                    <span className="font-mono font-extrabold text-emerald-700 text-sm select-all">{BANK_DETAILS.accountNumber}</span>
+
+                  {/* Accounts List */}
+                  <div className="space-y-2">
+                    {/* Dollar Account */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 shadow-2xs">
+                      <div>
+                        <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Dollar account number</span>
+                        <span className="font-mono font-black text-slate-900 text-sm tracking-wider">{BANK_DETAILS.dollarAccount}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(BANK_DETAILS.dollarAccount, "dollar")}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] flex items-center gap-1 transition-all cursor-pointer border border-emerald-200/60"
+                      >
+                        {copiedField === "dollar" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedField === "dollar" ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
+
+                    {/* Naira Account */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 shadow-2xs">
+                      <div>
+                        <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Naira account number</span>
+                        <span className="font-mono font-black text-slate-900 text-sm tracking-wider">{BANK_DETAILS.nairaAccount}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(BANK_DETAILS.nairaAccount, "naira")}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] flex items-center gap-1 transition-all cursor-pointer border border-emerald-200/60"
+                      >
+                        {copiedField === "naira" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedField === "naira" ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
+
+                    {/* Opay Account */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 shadow-2xs">
+                      <div>
+                        <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Opay account number (naira account)</span>
+                        <span className="font-mono font-black text-slate-900 text-sm tracking-wider">{BANK_DETAILS.opayAccount}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(BANK_DETAILS.opayAccount, "opay")}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] flex items-center gap-1 transition-all cursor-pointer border border-emerald-200/60"
+                      >
+                        {copiedField === "opay" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedField === "opay" ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="p-3 bg-emerald-50/30 rounded-xl text-[11px] text-emerald-800 font-medium border border-emerald-500/10 leading-relaxed">
-                  After transfer, click the green confirmation button below to notify our team on WhatsApp with your payment slip.
+
+                <div className="p-3 bg-emerald-50/70 rounded-xl text-[11px] text-emerald-800 font-medium border border-emerald-200/60 leading-relaxed flex items-start gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>After completing your bank or Opay transfer, click the confirmation button below to notify our finance team on WhatsApp with your payment slip.</span>
                 </div>
               </div>
             </motion.div>
