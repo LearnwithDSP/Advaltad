@@ -688,7 +688,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           (d.funding_by_name && user.name && d.funding_by_name.toLowerCase() === user.name.toLowerCase()) ||
           (user.email && d.ambassador_id && d.ambassador_id.toLowerCase() === user.email.toLowerCase())
         );
-        const depositsList = userMatchedDeposits.length > 0 ? userMatchedDeposits : allDeposits;
+        const depositsList = userMatchedDeposits;
         setUserDeposits(depositsList);
 
         const matchedSuccessDeposits = depositsList.filter(d => d.status === "success");
@@ -1971,39 +1971,123 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </div>
               </div>
 
-              {/* Certificate Canvas Box */}
-              <div className="p-8 sm:p-12 rounded-3xl bg-slate-900 border-2 border-emerald-500/30 text-center space-y-8 relative overflow-hidden shadow-2xl">
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
-                
-                <div className="flex items-center justify-between border-b border-slate-800 pb-6">
-                  <img src={logoUrl} alt="Advaltad" className="w-12 h-12 rounded-2xl object-cover border border-slate-700" />
-                  <div className="text-right">
-                    <span className="text-[10px] font-mono text-emerald-400 font-bold block uppercase tracking-widest">Commission ID</span>
-                    <span className="text-xs font-mono text-slate-300 font-bold">{profile?.id || "AV-2026-99401"}</span>
+              {/* Modern Certificate Canvas Box with Beautiful Side Ribbons */}
+              <div className="relative overflow-hidden rounded-3xl bg-slate-950 p-2 sm:p-4 shadow-2xl border-2 border-amber-500/40">
+                {/* Outer Gold Decorative Frame */}
+                <div className="relative rounded-2xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 p-6 sm:p-12 border border-amber-500/30 text-center space-y-6 sm:space-y-8 overflow-hidden">
+                  
+                  {/* Left Side Ornamental Ribbon Banner */}
+                  <div className="absolute top-0 left-0 bottom-0 w-8 sm:w-12 pointer-events-none flex flex-col justify-between items-center py-2 z-10">
+                    <div className="w-full h-full bg-gradient-to-r from-amber-600 via-amber-400 to-amber-700 shadow-xl opacity-90 border-r border-amber-300/40 relative flex flex-col justify-between items-center py-4">
+                      {/* Ribbon Fold Lines & Sheen */}
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      {/* Side Medallion Badge */}
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-700 border-2 border-amber-100 flex items-center justify-center shadow-lg my-auto">
+                        <Icon name="Award" size={14} className="text-slate-950" />
+                      </div>
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-3 py-4">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-widest">
-                    Official Certificate of Commission
-                  </span>
-                  <h3 className="text-3xl sm:text-4xl font-black text-white font-serif">{ambassadorName}</h3>
-                  <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
-                    is hereby recognized and commissioned as an official <span className="text-emerald-400 font-bold">Growth Ambassador</span> supervising regional empowerment initiatives in <span className="text-slate-200 font-bold">{ambassadorRegion}</span> under the <span className="text-slate-200 font-bold">{ambassadorField}</span> division.
-                  </p>
-                </div>
-
-                <div className="pt-6 border-t border-slate-800 flex items-center justify-between gap-4 text-left">
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Date of Commission</p>
-                    <p className="text-xs text-slate-300 font-bold font-mono">{commissionDate}</p>
+                  {/* Right Side Ornamental Ribbon Banner */}
+                  <div className="absolute top-0 right-0 bottom-0 w-8 sm:w-12 pointer-events-none flex flex-col justify-between items-center py-2 z-10">
+                    <div className="w-full h-full bg-gradient-to-l from-amber-600 via-amber-400 to-amber-700 shadow-xl opacity-90 border-l border-amber-300/40 relative flex flex-col justify-between items-center py-4">
+                      {/* Ribbon Fold Lines & Sheen */}
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      {/* Side Medallion Badge */}
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-700 border-2 border-amber-100 flex items-center justify-center shadow-lg my-auto">
+                        <Icon name="ShieldCheck" size={14} className="text-slate-950" />
+                      </div>
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                      <div className="w-full h-1 bg-amber-200/50 my-2" />
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Verification Status</p>
-                    <p className="text-xs text-emerald-400 font-bold flex items-center gap-1 justify-end">
-                      <Icon name="CheckCircle2" size={12} />
-                      <span>Verified On-Chain</span>
-                    </p>
+
+                  {/* Top & Bottom Accent Gold Bars */}
+                  <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-600 via-yellow-300 to-amber-600 z-20" />
+                  <div className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-600 via-yellow-300 to-amber-600 z-20" />
+
+                  {/* Inner Certificate Content Container */}
+                  <div className="px-6 sm:px-12 py-2 space-y-6 sm:space-y-8 relative z-20">
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between border-b border-amber-500/20 pb-4 sm:pb-6">
+                      <div className="flex items-center gap-3">
+                        <img src={logoUrl} alt="Advaltad" className="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-amber-400/50 shadow-md" />
+                        <div className="text-left hidden sm:block">
+                          <span className="text-[11px] font-black tracking-widest uppercase text-amber-400 block font-sans">Advaltad Fellowship</span>
+                          <span className="text-[9px] text-slate-400 block font-sans">Pan-African Grassroots Commission</span>
+                        </div>
+                      </div>
+                      
+                      {/* Top Center Crown/Crest */}
+                      <div className="text-center">
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-500/10 border border-amber-400/30 text-amber-300 mb-1">
+                          <Icon name="Crown" size={20} />
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[9px] sm:text-[10px] font-mono text-amber-400 font-bold block uppercase tracking-widest">Commission Ref</span>
+                        <span className="text-xs sm:text-sm font-mono text-slate-200 font-extrabold">{profile?.id || "AV-2026-99401"}</span>
+                      </div>
+                    </div>
+
+                    {/* Main Body */}
+                    <div className="space-y-3 sm:space-y-4 py-2">
+                      <div className="inline-block px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-inner">
+                        Certificate of Official Commission
+                      </div>
+                      
+                      <p className="text-[11px] sm:text-xs text-slate-400 uppercase tracking-widest font-semibold">This is to certify that</p>
+                      
+                      <h3 className="text-2xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 font-serif tracking-tight py-1 drop-shadow-md">
+                        {ambassadorName}
+                      </h3>
+                      
+                      <div className="w-24 sm:w-32 h-0.5 mx-auto bg-gradient-to-r from-transparent via-amber-400 to-transparent" />
+
+                      <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed font-sans px-2">
+                        has been duly vetted, ratified, and commissioned as an official <span className="text-amber-300 font-extrabold">Growth Ambassador</span> overseeing local empowerment initiatives in <span className="text-emerald-400 font-bold">{ambassadorRegion}</span> under the <span className="text-amber-200 font-bold">{ambassadorField}</span> division.
+                      </p>
+                    </div>
+
+                    {/* Bottom Signatures & Central Starburst Seal */}
+                    <div className="pt-6 sm:pt-8 border-t border-amber-500/20 grid grid-cols-3 items-end gap-2 text-center">
+                      {/* Left Signature */}
+                      <div className="text-left space-y-1">
+                        <div className="h-8 border-b border-amber-400/30 font-serif italic text-amber-200 text-xs sm:text-sm flex items-end">
+                          Ramon Bisola
+                        </div>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider">Executive Chairman</p>
+                        <p className="text-[8px] text-slate-500 font-mono">{commissionDate}</p>
+                      </div>
+
+                      {/* Center Starburst Seal */}
+                      <div className="flex flex-col items-center justify-center relative">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600 p-0.5 shadow-2xl border-2 border-yellow-100 flex items-center justify-center relative z-20">
+                          <div className="w-full h-full rounded-full bg-gradient-to-tr from-amber-700 via-amber-500 to-yellow-300 flex flex-col items-center justify-center text-slate-950 border border-amber-200 shadow-inner p-1">
+                            <Icon name="Award" size={18} className="text-slate-950 drop-shadow" />
+                            <span className="text-[6px] sm:text-[7px] font-black uppercase tracking-tighter text-slate-950 leading-none mt-0.5">Verified Seal</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Signature */}
+                      <div className="text-right space-y-1">
+                        <div className="h-8 border-b border-amber-400/30 font-serif italic text-amber-200 text-xs sm:text-sm flex items-end justify-end">
+                          Advaltad Board
+                        </div>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider">Director of Governance</p>
+                        <p className="text-[8px] text-emerald-400 font-mono font-bold flex items-center gap-1 justify-end">
+                          <Icon name="CheckCircle2" size={10} /> Verified On-Chain
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
