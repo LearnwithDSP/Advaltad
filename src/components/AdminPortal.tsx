@@ -323,7 +323,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               )
             );
 
-            const walletBal = wallet ? wallet.balance : (hasSuccessDeposit ? (typeof row.avu_balance === "number" ? row.avu_balance : 0) : 0);
+            const walletBal = typeof row.avu_balance === "number" ? row.avu_balance : (wallet ? wallet.balance : 0);
 
             return {
               id: ambId,
@@ -876,41 +876,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       // 3. Log a deposit record for funding history sync
       const grantRef = `GRANT-${Date.now()}`;
-      if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase.from("deposits").insert([{
-            ambassador_id: selectedAmbassador.id,
-            funding_by_name: currentAdmin?.name || "Super Admin Authorization",
-            phone_number: selectedAmbassador.phone || "",
-            program_sponsored: "AVU Admin Token Authorization",
-            amount_naira: tokens * 1000,
-            avu_earned: tokens,
-            paystack_reference: grantRef,
-            status: "success"
-          }]);
-        } catch (depErr) {
-          console.warn("Error inserting grant deposit into Supabase:", depErr);
-        }
-      }
-
-      let localDeps: any[] = [];
       try {
-        const localDepData = localStorage.getItem("avu_deposits_list");
-        if (localDepData) localDeps = JSON.parse(localDepData);
-      } catch (e) {}
-      localDeps.push({
-        id: "DEP-" + Date.now(),
-        ambassador_id: selectedAmbassador.id,
-        funding_by_name: currentAdmin?.name || "Super Admin Authorization",
-        phone_number: selectedAmbassador.phone || "",
-        program_sponsored: "AVU Admin Token Authorization",
-        amount_naira: tokens * 1000,
-        avu_earned: tokens,
-        paystack_reference: grantRef,
-        status: "success",
-        created_at: new Date().toISOString()
-      });
-      localStorage.setItem("avu_deposits_list", JSON.stringify(localDeps));
+        await db.createDeposit({
+          ambassador_id: selectedAmbassador.id,
+          funding_by_name: currentAdmin?.name || "Super Admin Authorization",
+          phone_number: selectedAmbassador.phone || "",
+          program_sponsored: "AVU Admin Token Authorization",
+          amount_naira: tokens * 1000,
+          avu_earned: tokens,
+          paystack_reference: grantRef,
+          status: "success"
+        });
+      } catch (depErr) {
+        console.warn("Error inserting grant deposit:", depErr);
+      }
 
       // 4. Log activity
       await db.logActivity({
@@ -1037,41 +1016,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
 
       const grantRef = `GRANT-WALLET-${Date.now()}`;
-      if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase.from("deposits").insert([{
-            ambassador_id: selectedWalletAmbassador.id,
-            funding_by_name: currentAdmin?.name || "Admin Wallet Allocation",
-            phone_number: selectedWalletAmbassador.phone || "",
-            program_sponsored: "AVU Admin Wallet Allocation",
-            amount_naira: amount * 1000,
-            avu_earned: amount,
-            paystack_reference: grantRef,
-            status: "success"
-          }]);
-        } catch (depErr) {
-          console.warn("Error inserting wallet deposit into Supabase:", depErr);
-        }
-      }
-
-      let localDeps: any[] = [];
       try {
-        const localDepData = localStorage.getItem("avu_deposits_list");
-        if (localDepData) localDeps = JSON.parse(localDepData);
-      } catch (e) {}
-      localDeps.push({
-        id: "DEP-" + Date.now(),
-        ambassador_id: selectedWalletAmbassador.id,
-        funding_by_name: currentAdmin?.name || "Admin Wallet Allocation",
-        phone_number: selectedWalletAmbassador.phone || "",
-        program_sponsored: "AVU Admin Wallet Allocation",
-        amount_naira: amount * 1000,
-        avu_earned: amount,
-        paystack_reference: grantRef,
-        status: "success",
-        created_at: new Date().toISOString()
-      });
-      localStorage.setItem("avu_deposits_list", JSON.stringify(localDeps));
+        await db.createDeposit({
+          ambassador_id: selectedWalletAmbassador.id,
+          funding_by_name: currentAdmin?.name || "Admin Wallet Allocation",
+          phone_number: selectedWalletAmbassador.phone || "",
+          program_sponsored: "AVU Admin Wallet Allocation",
+          amount_naira: amount * 1000,
+          avu_earned: amount,
+          paystack_reference: grantRef,
+          status: "success"
+        });
+      } catch (depErr) {
+        console.warn("Error inserting wallet deposit:", depErr);
+      }
 
       await db.logActivity({
         ambassador_id: selectedWalletAmbassador.id,
