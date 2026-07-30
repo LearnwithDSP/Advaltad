@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase } from "../lib/supabase";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
 import { AmbassadorProfile } from "./AmbassadorProfile";
@@ -114,7 +115,7 @@ interface FundWalletModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: DbAmbassador | null;
-  onSuccess: (newBalance: number) => void;
+  onSuccess: (newBalance?: number) => void;
   showToast: (type: "success" | "error" | "info", title: string, message: string) => void;
   fetchAmbassadorData: () => void;
 }
@@ -481,7 +482,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [ambassadorRegion, setAmbassadorRegion] = useState("Lagos, Nigeria");
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
-  const [avuBalance, setAvuBalance] = useState(0);
+  
+  // Single Source of Truth for Wallet Balance from Supabase
+  const activeIdentifier = profile?.id || profile?.email || profile?.user_id || profile?.ambassador_id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
+  const { balance: avuBalance, refetch: refetchWalletBalance } = useWalletBalance(activeIdentifier);
+
   const [hasFunded, setHasFunded] = useState<boolean>(false);
   const [isFundWalletModalOpen, setIsFundWalletModalOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -613,7 +618,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 paystackRef
               );
               if (res.success) {
-                setAvuBalance(res.newBalance);
+                refetchWalletBalance();
                 setProfile(prev => prev ? { ...prev, avu_balance: res.newBalance } : null);
                 showToast("success", "Paystack Payment Verified", "Your wallet has been credited with AVU tokens!");
                 fetchAmbassadorData();
@@ -663,7 +668,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       setAmbassadorName(user.name);
       setAmbassadorRegion(user.city);
       setAmbassadorField(user.field);
-      setAvuBalance(user.avu_balance);
+      refetchWalletBalance();
 
       if (isInitial) {
         setTempName(user.name);
@@ -944,7 +949,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           setAmbassadorName(user.name);
           setAmbassadorRegion(user.city);
           setAmbassadorField(user.field);
-          setAvuBalance(user.avu_balance);
+          refetchWalletBalance();
         }
       } catch (err) {
         console.error("Error polling ambassador status:", err);
@@ -1269,7 +1274,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         setTransferProgressPercent(100);
         setTransferProgressStep("Transfer completed successfully!");
 
-        setAvuBalance(res.senderNewBalance);
+        refetchWalletBalance();
         if (profile) {
           setProfile(prev => prev ? { ...prev, avu_balance: res.senderNewBalance } : null);
         }
@@ -1347,10 +1352,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setIsProcessing(true);
     setTimeout(async () => {
       const newBal = avuBalance - item.avuCost;
-      setAvuBalance(newBal);
       if (profile?.id) {
         await db.updateProfile(profile.id, { avu_balance: newBal });
       }
+      refetchWalletBalance();
       setItemExchangeSuccess(true);
       setIsProcessing(false);
       showToast("success", "Asset Redeemed", `Successfully exchanged ${item.avuCost} AVU for ${item.title}. Resource access dispatched.`);
@@ -2611,7 +2616,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         isOpen={isFundWalletModalOpen}
         onClose={() => setIsFundWalletModalOpen(false)}
         profile={profile}
-        onSuccess={(newBal) => setAvuBalance(newBal)}
+        onSuccess={() => refetchWalletBalance()}
         showToast={showToast}
         fetchAmbassadorData={fetchAmbassadorData}
       />
