@@ -38,14 +38,14 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       // Query ambassadors table directly by id, user_id, ambassador_id, or email
       let { data, error: fetchErr } = await client
         .from("ambassadors")
-        .select("avu_balance, id, email, user_id, ambassador_id")
+        .select("avu_balance, ledger_balance, id, email, user_id, ambassador_id")
         .or(`id.eq.${cleanId},user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.eq.${cleanId}`);
 
       if (fetchErr || !data || data.length === 0) {
         // Try fallback table casing "Ambassadors"
         const fallback = await client
           .from("Ambassadors")
-          .select("avu_balance, id, email, user_id, ambassador_id")
+          .select("avu_balance, ledger_balance, id, email, user_id, ambassador_id")
           .or(`id.eq.${cleanId},user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.eq.${cleanId}`);
 
         if (!fallback.error && fallback.data && fallback.data.length > 0) {
@@ -62,7 +62,8 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       }
 
       if (data && data.length > 0) {
-        const rawBal = data[0].avu_balance;
+        const row = data[0];
+        const rawBal = typeof row.ledger_balance === "number" ? row.ledger_balance : (typeof row.avu_balance === "number" ? row.avu_balance : 0);
         const currentBal = typeof rawBal === "number" && !isNaN(rawBal) ? rawBal : 0;
         setBalance(currentBal);
         setError(null);
