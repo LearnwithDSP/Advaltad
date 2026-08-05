@@ -90,7 +90,7 @@ export const Hero: React.FC<HeroProps> = ({ onDonateClick, onAmbassadorClick }) 
         </div>
 
         {/* 4 Elegant Rounded Stat Cards with soft shadows and white backgrounds */}
-        <div className="mt-16 sm:mt-24 grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="mt-16 sm:mt-24 grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           <motion.div
             initial={{ opacity: 0, y: 25 }}
             animate={{ opacity: 1, y: 0 }}
