@@ -35,24 +35,23 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
 
       const cleanId = identifier.trim().toLowerCase();
 
-      // Query ambassadors table directly by id, user_id, ambassador_id, or email
-      let { data, error: fetchErr } = await client
-        .from("ambassadors")
-        .select("avu_balance, ledger_balance, id, email, user_id, ambassador_id")
-        .or(`id.eq.${cleanId},user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.eq.${cleanId}`);
+      let query = client.from("ambassadors").select("avu_balance, email, id, user_id");
 
-      if (fetchErr || !data || data.length === 0) {
-        // Try fallback table casing "Ambassadors"
-        const fallback = await client
-          .from("Ambassadors")
-          .select("avu_balance, ledger_balance, id, email, user_id, ambassador_id")
-          .or(`id.eq.${cleanId},user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.eq.${cleanId}`);
-
-        if (!fallback.error && fallback.data && fallback.data.length > 0) {
-          data = fallback.data;
-          fetchErr = null;
+      const isStrictUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+      if (isStrictUuid) {
+        query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
+      } else if (cleanId.includes("@")) {
+        query = query.eq("email", cleanId);
+      } else {
+        const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+        if (storedEmail && storedEmail.includes("@")) {
+          query = query.eq("email", storedEmail.trim().toLowerCase());
+        } else {
+          query = query.eq("email", cleanId);
         }
       }
+
+      const { data, error: fetchErr } = await query;
 
       if (fetchErr) {
         console.warn("useWalletBalance fetch error:", fetchErr);
@@ -63,8 +62,7 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
 
       if (data && data.length > 0) {
         const row = data[0];
-        const parsedVal = row.avu_balance !== undefined && row.avu_balance !== null ? row.avu_balance : row.ledger_balance;
-        const currentBal = Number(parsedVal) || 0;
+        const currentBal = Number(row?.avu_balance) || 0;
         setBalance(currentBal);
         setError(null);
         setLoading(false);
