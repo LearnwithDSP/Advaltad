@@ -1861,9 +1861,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         </nav>
 
         {/* Main Content Area */}
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-12 text-left">
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 md:p-6 lg:p-8 pb-24 md:pb-12 text-left">
           {/* TABLET & DESKTOP TOP HEADER BAR (hidden on mobile) */}
-          <div className="hidden md:flex items-center justify-between p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 backdrop-blur-md mb-6 shadow-sm text-left">
+          <div className="hidden md:flex flex-wrap lg:flex-nowrap items-center justify-between p-4 md:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 backdrop-blur-md mb-6 shadow-sm text-left gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
                 <Icon name={navTabs.find(t => t.id === activeTab)?.icon as any || "LayoutDashboard"} size={20} />
@@ -1881,9 +1881,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               </div>
             </div>
 
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 flex-shrink-0 flex-wrap sm:flex-nowrap">
               {/* AVU Balance Pill */}
-              <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2">
+              <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2 min-h-[42px]">
                 <span className="text-[10px] text-slate-400 uppercase font-mono font-bold">Wallet:</span>
                 <span className="text-xs font-mono font-black text-emerald-400">{avuBalance.toLocaleString()} AVU</span>
               </div>
@@ -1892,7 +1892,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <button
                 onClick={() => setIsFundWalletModalOpen(true)}
                 type="button"
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer min-h-[42px]"
               >
                 <Icon name="Plus" size={14} />
                 <span>Fund Wallet</span>
@@ -1902,7 +1902,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               <button
                 onClick={() => setActiveTab("p2p")}
                 type="button"
-                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer min-h-[42px]"
               >
                 <Icon name="ArrowLeftRight" size={14} className="text-emerald-400" />
                 <span>P2P Transfer</span>
@@ -1913,7 +1913,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           {activeTab === "overview" && (
             <motion.div key="overview" variants={containerVariants} initial="hidden" animate="show" exit={{ opacity: 0 }} className="space-y-8">
               {/* Stat Cards */}
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
                 <motion.div variants={itemVariants} className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 relative overflow-hidden">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AVU Token Balance</span>
@@ -2035,7 +2035,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     View All Projects &rarr;
                   </button>
                 </div>
-                <div className="grid sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
                   {projects.map(p => (
                     <div key={p.id} className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
                       <div className="flex items-center justify-between">
@@ -2729,7 +2729,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {projects.map(p => (
                   <div key={p.id} className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 text-left">
                     <div className="flex items-center justify-between">
@@ -2774,18 +2774,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   <p className="text-xs text-slate-400">Impact scoring based on AVU tokens, regional projects, and total funding</p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2.5 flex-wrap w-full sm:w-auto">
                   <input
                     type="text"
                     placeholder="Filter leaders by name or city..."
                     value={leaderSearch}
                     onChange={e => setLeaderSearch(e.target.value)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500"
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 min-h-[44px] outline-none focus:border-emerald-500 transition-colors w-full sm:w-64"
                   />
                   <select
                     value={leaderRegionFilter}
                     onChange={e => setLeaderRegionFilter(e.target.value)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 cursor-pointer"
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 cursor-pointer min-h-[44px] outline-none focus:border-emerald-500 transition-colors w-full sm:w-auto"
                   >
                     <option value="All">All Regions</option>
                     <option value="West Africa">West Africa</option>
