@@ -326,7 +326,54 @@ export async function checkApprovalStatus(email: string): Promise<boolean> {
   return false;
 }
 
+/**
+ * Utility function to fetch an ambassador's wallet balance directly from the `ambassadors` table
+ * by `user_id`, `id`, or `email`, explicitly selecting `avu_balance` and returning a guaranteed `number`.
+ */
+export async function fetchWalletBalance(identifier?: string | null): Promise<number> {
+  if (!identifier) return 0;
+  const cleanId = identifier.trim().toLowerCase();
+  if (!cleanId) return 0;
+
+  if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+    try {
+      const client = supabaseAdmin || supabase;
+      let query = client.from("ambassadors").select("avu_balance");
+
+      const isStrictUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+      if (isStrictUuid) {
+        query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
+      } else if (cleanId.includes("@")) {
+        query = query.ilike("email", cleanId);
+      } else {
+        const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+        if (storedEmail && storedEmail.includes("@")) {
+          query = query.ilike("email", storedEmail.trim().toLowerCase());
+        } else {
+          query = query.ilike("email", cleanId);
+        }
+      }
+
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        return Number(data[0]?.avu_balance || 0);
+      }
+    } catch (err) {
+      console.warn("[fetchWalletBalance] Supabase query error:", err);
+    }
+  }
+
+  const localDb = getLocalDb();
+  const found = localDb.find(a =>
+    a.email?.toLowerCase() === cleanId ||
+    a.id?.toLowerCase() === cleanId ||
+    a.user_id?.toLowerCase() === cleanId
+  );
+  return Number(found?.avu_balance || 0);
+}
+
 export const db = {
+  fetchWalletBalance,
   async getAmbassadors(): Promise<DbAmbassador[]> {
     let resultList: DbAmbassador[] = [];
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
