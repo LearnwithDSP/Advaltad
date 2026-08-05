@@ -120,9 +120,9 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
         )}
       </AnimatePresence>
 
-      <div className="grid md:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 items-start">
         {/* Current Info Cards Display */}
-        <div className="md:col-span-4 space-y-6 text-left">
+        <div className="md:col-span-5 lg:col-span-4 space-y-6 text-left">
           <div className="p-6 rounded-3xl bg-slate-900 text-white border border-slate-800 space-y-4 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
             
@@ -173,8 +173,13 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 text-[9px] font-mono text-slate-500 space-y-0.5">
-              <p>REGISTRY_ID: {profile.id}</p>
+            <div className="pt-2 text-[10px] font-mono text-slate-500 space-y-1">
+              <p className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-slate-400">AMBASSADOR ID:</span>
+                <span className="text-emerald-400 font-bold bg-slate-800 px-2 py-0.5 rounded border border-slate-700/50">
+                  {profile.ambassador_id || profile.user_id || profile.id}
+                </span>
+              </p>
               <p className="flex items-center gap-1">
                 <span>VERIFICATION_STATUS:</span>
                 {profile.status === "approved" ? (
@@ -212,7 +217,7 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
         </div>
 
         {/* Update Profile Form */}
-        <div className="bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-sm md:col-span-8">
+        <div className="bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-sm md:col-span-7 lg:col-span-8">
           <form id="ambassador-profile-update-form" onSubmit={handleSubmit} className="space-y-6">
             <div className="grid sm:grid-cols-2 gap-6">
               <div>
