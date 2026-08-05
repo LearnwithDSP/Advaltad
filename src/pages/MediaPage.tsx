@@ -88,7 +88,7 @@ export const MediaPage: React.FC = () => {
                   setActiveMediaTab(tab.id as any);
                   window.location.hash = `#/media/${tab.id}`;
                 }}
-                className={`px-4.5 py-2 rounded-xl text-xs font-display font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-4.5 py-2.5 min-h-[44px] rounded-xl text-xs font-display font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeMediaTab === tab.id
                     ? "bg-brand-primary text-white"
                     : "bg-white border border-slate-200 text-slate-500 hover:text-brand-charcoal hover:bg-slate-50"
@@ -112,7 +112,7 @@ export const MediaPage: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3"
+              className="grid gap-6 md:gap-8 sm:grid-cols-2 lg:grid-cols-3"
             >
               {PHOTOS.map((p, idx) => (
                 <div
