@@ -242,7 +242,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
   // Assign deterministic static AV- ID that NEVER changes
   const staticId = getStaticAmbassadorId(rawId || rawEmail || row.db_id || nameVal);
 
-  const rawBal = typeof row.avu_balance === "number" ? row.avu_balance : (typeof row.ledger_balance === "number" ? row.ledger_balance : 0);
+  const rawBal = Number(row.avu_balance ?? row.ledger_balance ?? row.balance ?? 0) || 0;
 
   return {
     id: staticId,
@@ -612,8 +612,8 @@ export const db = {
             (ambResult?.db_id && w.ambassador_id === ambResult.db_id) || 
             (w.email || "").toLowerCase() === sanitizedEmail
           );
-          if (wallet && typeof wallet.balance === "number") {
-            ambResult.avu_balance = wallet.balance;
+          if (wallet && wallet.balance !== undefined && wallet.balance !== null) {
+            ambResult.avu_balance = Number(wallet.balance) || 0;
           }
         } catch (wErr) {}
       }
@@ -685,8 +685,8 @@ export const db = {
             (ambResult?.db_id && w.ambassador_id === ambResult.db_id) || 
             (ambResult?.email && (w.email || "").toLowerCase() === ambResult.email.toLowerCase())
           );
-          if (wallet && typeof wallet.balance === "number") {
-            ambResult.avu_balance = wallet.balance;
+          if (wallet && wallet.balance !== undefined && wallet.balance !== null) {
+            ambResult.avu_balance = Number(wallet.balance) || 0;
           }
         } catch (wErr) {}
       }
@@ -1694,19 +1694,46 @@ export const db = {
       return { success: false, message: "Transfer Failed: You cannot transfer points to yourself." };
     }
 
-    if (sender.avu_balance < points) {
-      const localDb = getLocalDb();
-      const match = localDb.find(a => 
-        (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
-        (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase())
-      );
-      if (match && typeof match.avu_balance === "number" && match.avu_balance >= points) {
-        sender.avu_balance = match.avu_balance;
+    let currentSenderBal = Number(sender.avu_balance) || 0;
+
+    if (currentSenderBal < points) {
+      const fetched = await fetchWalletBalance(sender.db_id || sender.id || sender.user_id || sender.email || cleanSender);
+      if (fetched > currentSenderBal) {
+        currentSenderBal = fetched;
       }
     }
 
-    if (sender.avu_balance < points) {
-      return { success: false, message: `Insufficient balance. Available: ${sender.avu_balance} AVU` };
+    if (currentSenderBal < points) {
+      const localDb = getLocalDb();
+      const match = localDb.find(a => 
+        (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
+        (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase()) ||
+        (cleanSender && a.id && a.id.toLowerCase() === cleanSender.toLowerCase()) ||
+        (cleanSender && a.email && a.email.toLowerCase() === cleanSender.toLowerCase())
+      );
+      if (match && Number(match.avu_balance) > currentSenderBal) {
+        currentSenderBal = Number(match.avu_balance);
+      }
+    }
+
+    if (currentSenderBal < points) {
+      try {
+        const wallets = await this.getWallets();
+        const walletMatch = wallets.find(w =>
+          (w.ambassador_id && sender.id && w.ambassador_id.toLowerCase() === sender.id.toLowerCase()) ||
+          (w.email && sender.email && w.email.toLowerCase() === sender.email.toLowerCase()) ||
+          (cleanSender && w.ambassador_id && w.ambassador_id.toLowerCase() === cleanSender.toLowerCase())
+        );
+        if (walletMatch && Number(walletMatch.balance) > currentSenderBal) {
+          currentSenderBal = Number(walletMatch.balance);
+        }
+      } catch (e) {}
+    }
+
+    sender.avu_balance = currentSenderBal;
+
+    if (currentSenderBal < points) {
+      return { success: false, message: `Insufficient balance. Available: ${currentSenderBal} AVU` };
     }
 
     const senderNewBalance = sender.avu_balance - points;
