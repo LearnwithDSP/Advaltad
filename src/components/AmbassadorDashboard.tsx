@@ -664,6 +664,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           user.status = "approved";
         }
       }
+      
+      const parsedAvuBalance = Number(user.avu_balance) || 0;
+      user = {
+        ...user,
+        avu_balance: parsedAvuBalance
+      };
+
       setProfile(user);
       setAmbassadorName(user.name);
       setAmbassadorRegion(user.city);
@@ -681,59 +688,36 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           setCommissionDate(d.toLocaleDateString('en-US', options));
           setTempDate(d.toLocaleDateString('en-US', options));
         }
+
+        // DISMISS PRELOADER IMMEDIATELY once profile is ready
+        setIsLoadingProfile(false);
       }
 
-      try {
-        const allDeposits = await db.getDeposits();
-        const userMatchedDeposits = allDeposits.filter(d => 
-          (d.ambassador_id && user.id && d.ambassador_id.toLowerCase() === user.id.toLowerCase()) ||
-          (d.ambassador_id && user.user_id && d.ambassador_id.toLowerCase() === user.user_id.toLowerCase()) ||
-          (d.ambassador_id && user.ambassador_id && d.ambassador_id.toLowerCase() === user.ambassador_id.toLowerCase()) ||
-          (d.ambassador_id && user.db_id && d.ambassador_id.toLowerCase() === user.db_id.toLowerCase()) ||
-          (d.funding_by_name && user.name && d.funding_by_name.toLowerCase() === user.name.toLowerCase()) ||
-          (user.email && d.ambassador_id && d.ambassador_id.toLowerCase() === user.email.toLowerCase())
-        );
-        const depositsList = userMatchedDeposits;
-        setUserDeposits(depositsList);
+      // Fetch secondary lists in parallel in background without blocking initial load
+      Promise.allSettled([
+        db.getDeposits().then(allDeposits => {
+          const depositsList = allDeposits.filter(d => 
+            (d.ambassador_id && user.id && d.ambassador_id.toLowerCase() === user.id.toLowerCase()) ||
+            (d.ambassador_id && user.user_id && d.ambassador_id.toLowerCase() === user.user_id.toLowerCase()) ||
+            (d.ambassador_id && user.ambassador_id && d.ambassador_id.toLowerCase() === user.ambassador_id.toLowerCase()) ||
+            (d.ambassador_id && user.db_id && d.ambassador_id.toLowerCase() === user.db_id.toLowerCase()) ||
+            (d.funding_by_name && user.name && d.funding_by_name.toLowerCase() === user.name.toLowerCase()) ||
+            (user.email && d.ambassador_id && d.ambassador_id.toLowerCase() === user.email.toLowerCase())
+          );
+          setUserDeposits(depositsList);
+          const matchedSuccessDeposits = depositsList.filter(d => d.status === "success");
+          setHasFunded(matchedSuccessDeposits.length > 0 || (user.avu_balance || 0) > 0);
+        }).catch(err => console.error("Error checking deposits:", err)),
 
-        const matchedSuccessDeposits = depositsList.filter(d => d.status === "success");
-        setHasFunded(matchedSuccessDeposits.length > 0 || (user.avu_balance || 0) > 0);
-      } catch (err) {
-        console.error("Error checking funding status:", err);
-        setHasFunded(false);
-      }
-
-      if (user) {
-        try {
-          const list = await db.getP2PTransactions(user.id);
-          setP2pTxHistory(list);
-        } catch (p2pErr) {
-          console.warn("Failed to load P2P transactions:", p2pErr);
-        }
-      }
-
-      try {
-        const allAmbs = await db.getAmbassadors();
-        setDbAmbassadors(allAmbs || []);
-      } catch (ambErr) {
-        console.warn("Failed to load ambassadors list:", ambErr);
-      }
-
-      try {
-        const allActs = await db.getActivities();
-        setActivities(allActs || []);
-      } catch (actErr) {
-        console.warn("Failed to load activities list:", actErr);
-      }
-
-      // Load live notifications capturing admin transactions and individual ambassador activities
-      await loadLiveNotifications(user);
+        db.getP2PTransactions(user.id).then(list => setP2pTxHistory(list)).catch(err => console.warn("P2P tx error:", err)),
+        db.getAmbassadors().then(allAmbs => setDbAmbassadors(allAmbs || [])).catch(err => console.warn("Ambassadors error:", err)),
+        db.getActivities().then(allActs => setActivities(allActs || [])).catch(err => console.warn("Activities error:", err)),
+        loadLiveNotifications(user).catch(err => console.warn("Notifications error:", err))
+      ]);
     } catch (e) {
       console.error("Error loading ambassador data", e);
     } finally {
-      if (isInitial) {
-        setIsLoadingProfile(false);
-      }
+      setIsLoadingProfile(false);
     }
   };
 
