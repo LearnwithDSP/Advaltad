@@ -11,7 +11,7 @@ import { AmbassadorLogin } from "./components/AmbassadorLogin";
 import { AmbassadorDashboard } from "./components/AmbassadorDashboard";
 import { AdminPortal } from "./components/AdminPortal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { isSupabaseConfigured, supabase, checkApprovalStatus } from "./lib/supabase";
 
 // Import new modular independent page components
 import { HomePage } from "./pages/HomePage";
@@ -27,6 +27,25 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return !!localStorage.getItem("advaltad_session_email");
   });
+  const [isApproved, setIsApproved] = useState<boolean | null>(null);
+  const [isCheckingApproval, setIsCheckingApproval] = useState<boolean>(false);
+
+  useEffect(() => {
+    const verifyUserApproval = async () => {
+      const sessionEmail = localStorage.getItem("advaltad_session_email");
+      if (sessionEmail && isAuthenticated) {
+        setIsCheckingApproval(true);
+        const approved = await checkApprovalStatus(sessionEmail);
+        setIsApproved(approved);
+        setIsCheckingApproval(false);
+      } else {
+        setIsApproved(false);
+        setIsCheckingApproval(false);
+      }
+    };
+
+    verifyUserApproval();
+  }, [isAuthenticated, route]);
 
   useEffect(() => {
     const checkRoute = () => {
@@ -66,8 +85,15 @@ export default function App() {
     window.location.hash = "#/ambassador";
   };
 
-  const handleLoginSuccess = (name: string, region: string) => {
+  const handleLoginSuccess = async (name: string, region: string) => {
     setIsAuthenticated(true);
+    const sessionEmail = localStorage.getItem("advaltad_session_email");
+    if (sessionEmail) {
+      setIsCheckingApproval(true);
+      const approved = await checkApprovalStatus(sessionEmail);
+      setIsApproved(approved);
+      setIsCheckingApproval(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -128,6 +154,17 @@ export default function App() {
               transition={{ duration: 0.25 }}
             >
               <AmbassadorLogin onLoginSuccess={handleLoginSuccess} />
+            </motion.div>
+          ) : isCheckingApproval ? (
+            <motion.div
+              key="checking-approval-subview"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-sans"
+            >
+              <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4" />
+              <p className="text-sm font-bold text-slate-300 animate-pulse">Verifying Account Approval Status...</p>
             </motion.div>
           ) : (
             <motion.div
