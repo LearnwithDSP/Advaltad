@@ -241,7 +241,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
   // Assign deterministic static AV- ID that NEVER changes
   const staticId = getStaticAmbassadorId(rawId || rawEmail || row.db_id || nameVal);
 
-  const rawBal = typeof row.ledger_balance === "number" ? row.ledger_balance : (typeof row.avu_balance === "number" ? row.avu_balance : 0);
+  const rawBal = typeof row.avu_balance === "number" ? row.avu_balance : (typeof row.ledger_balance === "number" ? row.ledger_balance : 0);
 
   return {
     id: staticId,
