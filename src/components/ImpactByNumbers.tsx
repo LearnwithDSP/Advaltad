@@ -20,7 +20,7 @@ export const ImpactByNumbers: React.FC = () => {
         </div>
 
         {/* 4-Column Minimal Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-12 sm:gap-16">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 lg:gap-12">
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             whileInView={{ opacity: 1, y: 0 }}
