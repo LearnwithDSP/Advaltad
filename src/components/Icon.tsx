@@ -68,7 +68,14 @@ import {
   FileCheck,
   BarChart3,
   RefreshCw,
-  FileDown
+  FileDown,
+  Laptop,
+  Sprout,
+  PieChart,
+  Activity,
+  LayoutDashboard,
+  ArrowLeftRight,
+  Plus
 } from "lucide-react";
 
 const iconMap: { [key: string]: React.ComponentType<any> } = {
@@ -140,7 +147,14 @@ const iconMap: { [key: string]: React.ComponentType<any> } = {
   FileCheck,
   BarChart3,
   RefreshCw,
-  FileDown
+  FileDown,
+  Laptop,
+  Sprout,
+  PieChart,
+  Activity,
+  LayoutDashboard,
+  ArrowLeftRight,
+  Plus
 };
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
