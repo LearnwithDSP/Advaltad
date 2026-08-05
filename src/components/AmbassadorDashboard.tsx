@@ -482,10 +482,24 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [ambassadorRegion, setAmbassadorRegion] = useState("Lagos, Nigeria");
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Single Source of Truth for Wallet Balance from Supabase
   const activeIdentifier = profile?.id || profile?.email || profile?.user_id || profile?.ambassador_id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
   const { balance: avuBalance, refetch: refetchWalletBalance } = useWalletBalance(activeIdentifier);
+
+  // Direct DOM binding for Desktop & Mobile Balance Elements
+  useEffect(() => {
+    const formatted = Number(avuBalance || 0).toLocaleString();
+    const desktopEl = document.getElementById("desktop-avu-balance");
+    if (desktopEl) {
+      desktopEl.innerHTML = `${formatted} <span className="text-xs text-emerald-400 font-sans font-bold">AVU</span>`;
+    }
+    const mobileEl = document.getElementById("mobile-avu-balance");
+    if (mobileEl) {
+      mobileEl.innerText = `${formatted} AVU`;
+    }
+  }, [avuBalance]);
 
   const [hasFunded, setHasFunded] = useState<boolean>(false);
   const [isFundWalletModalOpen, setIsFundWalletModalOpen] = useState<boolean>(false);
@@ -1561,42 +1575,70 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         </AnimatePresence>
       </div>
 
-      {/* DESKTOP SIDEBAR NAVIGATION (hidden on mobile, flex on md+) */}
-      <aside className="hidden md:flex flex-col w-64 xl:w-72 bg-slate-900 border-r border-slate-800 sticky top-0 h-screen overflow-y-auto flex-shrink-0 text-left p-5 text-slate-300 z-30 justify-between">
+      {/* DESKTOP & TABLET SIDEBAR NAVIGATION (hidden on mobile, flex on md+) */}
+      <aside className={`hidden md:flex flex-col bg-slate-900 border-r border-slate-800 sticky top-0 h-screen overflow-y-auto flex-shrink-0 text-left text-slate-300 z-30 justify-between transition-all duration-300 relative ${
+        sidebarCollapsed ? "w-20 p-3" : "w-56 md:w-60 lg:w-64 xl:w-72 p-4 lg:p-5"
+      }`}>
+        {/* Toggle Collapse Chevron Button for Tablet / Desktop */}
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          type="button"
+          className="absolute -right-3 top-8 w-6 h-6 bg-slate-900 border border-slate-700 rounded-full flex items-center justify-center text-slate-400 hover:text-white cursor-pointer z-40 shadow-lg"
+          title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+        >
+          <Icon name={sidebarCollapsed ? "ChevronRight" : "ChevronLeft"} size={12} />
+        </button>
+
         <div className="space-y-6">
           {/* Logo & Ambassador Badge */}
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
+          <div className={`flex items-center pb-4 border-b border-slate-800 ${sidebarCollapsed ? "justify-center" : "gap-3"}`}>
             <img src={logoUrl} alt="Advaltad Logo" className="w-10 h-10 rounded-xl object-cover border border-slate-700 shadow-sm flex-shrink-0" />
-            <div className="min-w-0">
-              <h1 className="text-sm font-extrabold text-white tracking-wide truncate">{ambassadorName}</h1>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 inline-block">
-                Fellow Ambassador
-              </span>
-            </div>
+            {!sidebarCollapsed && (
+              <div className="min-w-0">
+                <h1 className="text-sm font-extrabold text-white tracking-wide truncate">{ambassadorName}</h1>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 inline-block">
+                  Fellow Ambassador
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Wallet Summary Card */}
-          <div className="p-4 rounded-2xl bg-slate-850 border border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="font-medium">Wallet Balance</span>
-              <span className="text-[10px] text-emerald-400 font-mono font-bold">₦{totalDepositsNaira.toLocaleString()}</span>
+          {!sidebarCollapsed ? (
+            <div className="p-4 rounded-2xl bg-slate-850 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span className="font-medium">Wallet Balance</span>
+                <span className="text-[10px] text-emerald-400 font-mono font-bold">₦{totalDepositsNaira.toLocaleString()}</span>
+              </div>
+              <div id="desktop-avu-balance" className="text-xl font-black text-white font-mono">
+                {avuBalance.toLocaleString()} <span className="text-xs text-emerald-400 font-sans font-bold">AVU</span>
+              </div>
+              <button
+                onClick={() => setIsFundWalletModalOpen(true)}
+                type="button"
+                className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Icon name="Plus" size={14} />
+                <span>Fund Wallet</span>
+              </button>
             </div>
-            <div className="text-xl font-black text-white font-mono">
-              {avuBalance.toLocaleString()} <span className="text-xs text-emerald-400 font-sans font-bold">AVU</span>
-            </div>
+          ) : (
             <button
               onClick={() => setIsFundWalletModalOpen(true)}
               type="button"
-              className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full p-2.5 rounded-2xl bg-emerald-600/20 border border-emerald-500/30 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all flex flex-col items-center justify-center gap-1 cursor-pointer"
+              title="Fund Wallet"
             >
-              <Icon name="Plus" size={14} />
-              <span>Fund Wallet</span>
+              <Icon name="Coins" size={18} />
+              <span className="text-[9px] font-mono font-bold">{avuBalance.toLocaleString()}</span>
             </button>
-          </div>
+          )}
 
           {/* Sidebar Navigation Links */}
           <nav className="space-y-1.5">
-            <span className="text-[10px] uppercase font-mono font-extrabold text-slate-500 px-3 tracking-wider block mb-2">Navigation</span>
+            {!sidebarCollapsed && (
+              <span className="text-[10px] uppercase font-mono font-extrabold text-slate-500 px-3 tracking-wider block mb-2">Navigation</span>
+            )}
             {navTabs.map(tab => {
               const isActive = activeTab === tab.id;
               return (
@@ -1604,14 +1646,17 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-3 cursor-pointer ${
+                  title={sidebarCollapsed ? tab.label : undefined}
+                  className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-3 cursor-pointer ${
+                    sidebarCollapsed ? "justify-center px-0" : "px-3.5"
+                  } ${
                     isActive
                       ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40"
                       : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
                   }`}
                 >
                   <Icon name={tab.icon as any} size={16} />
-                  <span>{tab.label}</span>
+                  {!sidebarCollapsed && <span>{tab.label}</span>}
                 </button>
               );
             })}
@@ -1620,64 +1665,84 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
         {/* Sidebar Footer Actions */}
         <div className="pt-4 border-t border-slate-800 space-y-3">
-          <div className="flex items-center justify-between px-2 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <Icon name="MapPin" size={12} className="text-emerald-400" />
-              <span className="truncate max-w-[120px]">{ambassadorRegion}</span>
+          {!sidebarCollapsed ? (
+            <div className="flex items-center justify-between px-2 text-xs text-slate-400">
+              <div className="flex items-center gap-1.5">
+                <Icon name="MapPin" size={12} className="text-emerald-400" />
+                <span className="truncate max-w-[120px]">{ambassadorRegion}</span>
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+                  type="button"
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 relative cursor-pointer"
+                >
+                  <Icon name="Bell" size={16} />
+                  {notifications.some(n => n.unread) && (
+                    <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {notifDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute bottom-10 left-0 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">Notifications</span>
+                        <button
+                          onClick={() => setNotifications(prev => prev.map(n => ({ ...n, unread: false })))}
+                          type="button"
+                          className="text-[10px] text-emerald-400 hover:underline cursor-pointer font-bold"
+                        >
+                          Mark all read
+                        </button>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {notifications.map(n => (
+                          <div key={n.id} className={`p-2.5 rounded-xl border text-left space-y-1 ${n.unread ? "bg-slate-800/80 border-slate-700" : "bg-slate-900 border-slate-800/60 opacity-75"}`}>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-200">{n.title}</span>
+                              <span className="text-[9px] text-slate-500">{n.time}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-snug">{n.desc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
-            <div className="relative">
+          ) : (
+            <div className="flex flex-col items-center gap-2">
               <button
                 onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
                 type="button"
                 className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 relative cursor-pointer"
+                title="Notifications"
               >
                 <Icon name="Bell" size={16} />
                 {notifications.some(n => n.unread) && (
                   <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
                 )}
               </button>
-
-              <AnimatePresence>
-                {notifDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute bottom-10 left-0 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 text-xs space-y-3"
-                  >
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                      <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">Notifications</span>
-                      <button
-                        onClick={() => setNotifications(prev => prev.map(n => ({ ...n, unread: false })))}
-                        type="button"
-                        className="text-[10px] text-emerald-400 hover:underline cursor-pointer font-bold"
-                      >
-                        Mark all read
-                      </button>
-                    </div>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {notifications.map(n => (
-                        <div key={n.id} className={`p-2.5 rounded-xl border text-left space-y-1 ${n.unread ? "bg-slate-800/80 border-slate-700" : "bg-slate-900 border-slate-800/60 opacity-75"}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-200">{n.title}</span>
-                            <span className="text-[9px] text-slate-500">{n.time}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-snug">{n.desc}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
-          </div>
+          )}
+
           <button
             onClick={onLogout}
             type="button"
-            className="w-full py-2 rounded-xl bg-slate-800 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-700/50 transition-colors flex items-center justify-center gap-2 text-xs font-bold cursor-pointer"
+            title={sidebarCollapsed ? "Sign Out" : undefined}
+            className={`w-full py-2 rounded-xl bg-slate-800 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-700/50 transition-colors flex items-center gap-2 text-xs font-bold cursor-pointer ${
+              sidebarCollapsed ? "justify-center px-0" : "justify-center px-3"
+            }`}
           >
             <Icon name="LogOut" size={14} />
-            <span>Sign Out</span>
+            {!sidebarCollapsed && <span>Sign Out</span>}
           </button>
         </div>
       </aside>
@@ -1698,7 +1763,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <div className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-mono text-emerald-400 font-bold">
+            <div id="mobile-avu-balance" className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-mono text-emerald-400 font-bold">
               {avuBalance.toLocaleString()} AVU
             </div>
             <button
@@ -1797,6 +1862,53 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
         {/* Main Content Area */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-12 text-left">
+          {/* TABLET & DESKTOP TOP HEADER BAR (hidden on mobile) */}
+          <div className="hidden md:flex items-center justify-between p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 backdrop-blur-md mb-6 shadow-sm text-left">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
+                <Icon name={navTabs.find(t => t.id === activeTab)?.icon as any || "LayoutDashboard"} size={20} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-extrabold text-white tracking-wide uppercase truncate">
+                  {navTabs.find(t => t.id === activeTab)?.label || "Dashboard"}
+                </h2>
+                <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+                  <Icon name="MapPin" size={10} className="text-emerald-400 flex-shrink-0" />
+                  <span className="truncate">{ambassadorRegion}</span>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-emerald-400 font-bold truncate">{ambassadorField}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {/* AVU Balance Pill */}
+              <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 uppercase font-mono font-bold">Wallet:</span>
+                <span className="text-xs font-mono font-black text-emerald-400">{avuBalance.toLocaleString()} AVU</span>
+              </div>
+
+              {/* Fund Wallet Button */}
+              <button
+                onClick={() => setIsFundWalletModalOpen(true)}
+                type="button"
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Icon name="Plus" size={14} />
+                <span>Fund Wallet</span>
+              </button>
+
+              {/* P2P Transfer Button */}
+              <button
+                onClick={() => setActiveTab("p2p")}
+                type="button"
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Icon name="ArrowLeftRight" size={14} className="text-emerald-400" />
+                <span>P2P Transfer</span>
+              </button>
+            </div>
+          </div>
         <AnimatePresence mode="wait">
           {activeTab === "overview" && (
             <motion.div key="overview" variants={containerVariants} initial="hidden" animate="show" exit={{ opacity: 0 }} className="space-y-8">
