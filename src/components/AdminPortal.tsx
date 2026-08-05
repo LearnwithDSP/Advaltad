@@ -2688,7 +2688,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     <div className="flex items-center justify-between py-1.5">
                       <span className="text-slate-400">Ledger Balance</span>
                       <span className="font-mono font-black text-slate-900 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-lg">
-                        {typeof selectedAmbassador.ledger_balance === "number" ? selectedAmbassador.ledger_balance : (selectedAmbassador.avu_balance !== undefined ? selectedAmbassador.avu_balance : 0)} AVU
+                        {typeof selectedAmbassador.avu_balance === "number" ? selectedAmbassador.avu_balance : (typeof selectedAmbassador.ledger_balance === "number" ? selectedAmbassador.ledger_balance : 0)} AVU
                       </span>
                     </div>
                     <div className="flex items-center justify-between py-1.5">
