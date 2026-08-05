@@ -1079,14 +1079,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   });
 
   const selectedRecipient = approvedOtherAmbassadors.find((amb) => {
-    const query = (transferTargetId || recipientSearchQuery).trim().toLowerCase();
-    if (!query) return false;
-    const ambId = (amb.ambassador_id || amb.user_id || amb.id || "").toLowerCase();
-    const ambEmail = (amb.email || "").toLowerCase();
+    if (!transferTargetId) return false;
+    const target = transferTargetId.trim().toLowerCase();
     return (
-      ambId === query ||
-      (amb.id && amb.id.toLowerCase() === query) ||
-      ambEmail === query
+      (amb.id && amb.id.toLowerCase() === target) ||
+      (amb.email && amb.email.toLowerCase() === target)
     );
   });
 
@@ -1219,15 +1216,20 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const handleP2PTransfer = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(transferAmount);
-    const targetId = (transferTargetId || recipientSearchQuery).trim();
-
-    if (!targetId || isNaN(amt) || amt <= 0) {
-      showToast("error", "Invalid Transfer", "Please select a valid recipient ambassador or enter a valid positive amount.");
-      return;
-    }
+    const selectedRecipientId = transferTargetId.trim();
 
     if (!profile?.id) {
       showToast("error", "Session Error", "Could not locate your active ambassador session.");
+      return;
+    }
+
+    if (!selectedRecipientId || selectedRecipientId === profile.id || selectedRecipientId === profile.email) {
+      showToast("error", "Invalid Recipient", "Please select a valid recipient ambassador other than yourself.");
+      return;
+    }
+
+    if (isNaN(amt) || amt <= 0) {
+      showToast("error", "Invalid Amount", "Please enter a valid positive transfer amount.");
       return;
     }
 
@@ -1241,9 +1243,19 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
   const confirmExecuteTransfer = async () => {
     const amt = parseFloat(transferAmount);
-    const targetId = (transferTargetId || recipientSearchQuery).trim();
+    const selectedRecipientId = transferTargetId.trim();
 
-    if (!targetId || isNaN(amt) || amt <= 0 || !profile) return;
+    if (!profile || !profile.id) {
+      showToast("error", "Session Error", "Could not locate your active ambassador session.");
+      return;
+    }
+
+    if (!selectedRecipientId || selectedRecipientId === profile.id || selectedRecipientId === profile.email) {
+      showToast("error", "Invalid Recipient", "Please select a valid recipient ambassador other than yourself.");
+      return;
+    }
+
+    if (isNaN(amt) || amt <= 0) return;
 
     setIsProcessing(true);
     setTransferProgressPercent(20);
@@ -1260,12 +1272,20 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setTransferProgressStep("Executing AVU token transfer across ambassador wallets...");
 
     try {
-      const senderKey = profile.email || profile.ambassador_id || profile.user_id || profile.id;
+      // Explicitly separate sender and recipient payload
+      const payload = {
+        sender_id: profile.id,         // Logged in user UUID
+        sender_email: profile.email,   // Logged in user email
+        recipient_id: selectedRecipientId, // MUST be selected recipient's ID/email
+        amount: Number(amt),
+        note: transferReason || "Peer technical support"
+      };
+
       const res = await db.executeP2PTransfer(
-        senderKey,
-        targetId,
-        amt,
-        transferReason || "Peer technical support"
+        payload.sender_id,
+        payload.recipient_id,
+        payload.amount,
+        payload.note
       );
 
       if (res.success && res.senderNewBalance !== undefined) {
@@ -1279,10 +1299,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         
         setDbAmbassadors(prev => prev.map(a => {
           const matchTarget = 
-            (a.id && targetId && a.id.toLowerCase() === targetId.toLowerCase()) ||
-            (a.email && targetId && a.email.toLowerCase() === targetId.toLowerCase()) ||
-            (a.user_id && targetId && a.user_id.toLowerCase() === targetId.toLowerCase()) ||
-            (a.ambassador_id && targetId && a.ambassador_id.toLowerCase() === targetId.toLowerCase());
+            (a.id && selectedRecipientId && a.id.toLowerCase() === selectedRecipientId.toLowerCase()) ||
+            (a.email && selectedRecipientId && a.email.toLowerCase() === selectedRecipientId.toLowerCase());
           if (matchTarget) {
             return { ...a, avu_balance: (a.avu_balance || 0) + amt };
           }
@@ -2388,13 +2406,42 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </div>
 
                   <form onSubmit={handleP2PTransfer} className="space-y-5">
-                    {/* Searchable Recipient Combobox */}
-                    <div className="space-y-1.5 relative" ref={recipientComboboxRef}>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Select Recipient Ambassador</label>
+                    {/* Recipient Ambassador Select & Combobox */}
+                    <div className="space-y-2 relative" ref={recipientComboboxRef}>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                        Select Recipient Ambassador
+                      </label>
+                      
+                      {/* Direct HTML <select> dropdown */}
+                      <select
+                        value={transferTargetId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTransferTargetId(val);
+                          const match = approvedOtherAmbassadors.find(a => a.id === val || a.email === val);
+                          if (match) {
+                            setRecipientSearchQuery(`${match.name} (${match.city})`);
+                          } else {
+                            setRecipientSearchQuery("");
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                      >
+                        <option value="" className="bg-slate-900 text-slate-400">
+                          -- Choose Recipient Ambassador --
+                        </option>
+                        {approvedOtherAmbassadors.map((amb) => (
+                          <option key={amb.id || amb.email} value={amb.id || amb.email} className="bg-slate-900 text-white">
+                            {amb.name} ({amb.city}) - {amb.email}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Search Combobox Input */}
                       <div className="relative">
                         <input
                           type="text"
-                          placeholder="Search ambassador by name, city, or ID..."
+                          placeholder="Or search ambassador by name, city, or ID..."
                           value={recipientSearchQuery}
                           onChange={(e) => {
                             setRecipientSearchQuery(e.target.value);
@@ -2425,14 +2472,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                               <div className="p-3 text-center text-xs text-slate-500 font-medium">No matching ambassadors found</div>
                             ) : (
                               filteredCandidateAmbassadors.map(amb => {
-                                const ambId = amb.ambassador_id || amb.user_id || amb.id;
-                                const isSelected = transferTargetId === ambId || transferTargetId === amb.id || transferTargetId === amb.email;
+                                const ambVal = amb.id || amb.email;
+                                const isSelected = transferTargetId === ambVal;
                                 return (
                                   <button
-                                    key={amb.id || ambId}
+                                    key={ambVal}
                                     type="button"
                                     onClick={() => {
-                                      setTransferTargetId(ambId);
+                                      setTransferTargetId(ambVal);
                                       setRecipientSearchQuery(`${amb.name} (${amb.city})`);
                                       setIsRecipientDropdownOpen(false);
                                     }}
