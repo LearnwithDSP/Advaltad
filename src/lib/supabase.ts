@@ -981,24 +981,22 @@ export const db = {
   },
 
   async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
-    const cleanId = id.trim().toLowerCase();
+    const cleanId = id.trim();
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        for (const tableName of ["ambassadors", "Ambassadors", "profiles", "Profiles"]) {
-          try {
-            let query = client.from(tableName).update({ avu_balance: newBalance });
-            query = applyAmbassadorFilter(query, cleanId);
-            await query.select();
-          } catch (err) {
-            console.warn(`updateAvuBalance error for ${tableName}:`, err);
-          }
-        }
-        for (const tableName of ["wallet", "Wallet", "wallets", "Wallets", "ambassador_wallet"]) {
-          try {
-            await client.from(tableName).update({ balance: newBalance }).or(`ambassador_id.eq.${cleanId},id.eq.${cleanId},email.eq.${cleanId}`);
-          } catch (err) {
-            console.warn(`updateAvuBalance wallet sync error for ${tableName}:`, err);
+        if (isUuid(cleanId)) {
+          await client.from("ambassadors").update({ avu_balance: newBalance }).eq("id", cleanId);
+        } else if (cleanId.includes("@")) {
+          await client.from("ambassadors").update({ avu_balance: newBalance }).ilike("email", cleanId.toLowerCase());
+        } else {
+          const { data } = await client
+            .from("ambassadors")
+            .select("id")
+            .or(`user_id.eq.${cleanId},email.ilike.${cleanId}`)
+            .maybeSingle();
+          if (data && data.id) {
+            await client.from("ambassadors").update({ avu_balance: newBalance }).eq("id", data.id);
           }
         }
       } catch (err) {
@@ -1010,13 +1008,12 @@ export const db = {
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       if (
-        a.id.toLowerCase() === cleanId ||
-        (a.user_id && a.user_id.toLowerCase() === cleanId) ||
-        (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
-        (a.email && a.email.toLowerCase() === cleanId)
+        a.id.toLowerCase() === cleanId.toLowerCase() ||
+        (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+        (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+        (a.email && a.email.toLowerCase() === cleanId.toLowerCase())
       ) {
         list[i].avu_balance = newBalance;
-        list[i].ledger_balance = newBalance;
         updatedLocal = true;
       }
     }
@@ -1027,12 +1024,12 @@ export const db = {
     if (cachedAmbassadorsMemory.length > 0) {
       cachedAmbassadorsMemory = cachedAmbassadorsMemory.map(a => {
         if (
-          a.id.toLowerCase() === cleanId ||
-          (a.user_id && a.user_id.toLowerCase() === cleanId) ||
-          (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
-          (a.email && a.email.toLowerCase() === cleanId)
+          a.id.toLowerCase() === cleanId.toLowerCase() ||
+          (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+          (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+          (a.email && a.email.toLowerCase() === cleanId.toLowerCase())
         ) {
-          return { ...a, avu_balance: newBalance, ledger_balance: newBalance };
+          return { ...a, avu_balance: newBalance };
         }
         return a;
       });
@@ -1692,96 +1689,64 @@ export const db = {
     const senderNewBalance = sender.avu_balance - points;
     const recipientNewBalance = (recipient.avu_balance || 0) + points;
 
-    // Log the transaction
-    const transactionId = "P2P-" + Math.floor(Math.random() * 89999 + 10000);
-    const timestamp = new Date().toISOString();
-
-    const txRecord: DbP2PTransaction = {
-      id: transactionId,
-      sender_id: sender.ambassador_id || sender.user_id || sender.id,
-      sender_name: sender.name,
-      sender_email: sender.email,
-      recipient_id: recipient.ambassador_id || recipient.user_id || recipient.id,
-      recipient_name: recipient.name,
-      recipient_email: recipient.email,
-      points,
-      reason: reason || "Peer ledger transfer",
-      created_at: timestamp
+    // Helper to resolve valid UUID for ambassadors table
+    const getUuid = async (amb: DbAmbassador): Promise<string | null> => {
+      if (amb.db_id && isUuid(amb.db_id)) return amb.db_id;
+      if (amb.id && isUuid(amb.id)) return amb.id;
+      if (amb.user_id && isUuid(amb.user_id)) return amb.user_id;
+      if (amb.email && isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        try {
+          const client = supabaseAdmin || supabase;
+          const { data } = await client
+            .from("ambassadors")
+            .select("id")
+            .ilike("email", amb.email.trim().toLowerCase())
+            .maybeSingle();
+          if (data && data.id && isUuid(data.id)) return data.id;
+        } catch (e) {}
+      }
+      return null;
     };
+
+    const senderUuid = await getUuid(sender);
+    const recipientUuid = await getUuid(recipient);
 
     // Attempt Supabase writes
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
         
-        // Update AVU balances in Supabase across all potential identifier keys
-        await this.updateAvuBalance(sender.id, senderNewBalance);
-        if (sender.user_id && sender.user_id !== sender.id) await this.updateAvuBalance(sender.user_id, senderNewBalance);
-        if (sender.ambassador_id && sender.ambassador_id !== sender.id) await this.updateAvuBalance(sender.ambassador_id, senderNewBalance);
-        if (sender.email) await this.updateAvuBalance(sender.email, senderNewBalance);
-
-        await this.updateAvuBalance(recipient.id, recipientNewBalance);
-        if (recipient.user_id && recipient.user_id !== recipient.id) await this.updateAvuBalance(recipient.user_id, recipientNewBalance);
-        if (recipient.ambassador_id && recipient.ambassador_id !== recipient.id) await this.updateAvuBalance(recipient.ambassador_id, recipientNewBalance);
-        if (recipient.email) await this.updateAvuBalance(recipient.email, recipientNewBalance);
-
-        // Try inserting into p2p_transactions or P2P_Transactions
-        let { error: txError } = await client.from("p2p_transactions").insert([txRecord]);
-        if (txError) {
-          const fallbackTxRes = await client.from("P2P_Transactions").insert([txRecord]);
-          txError = fallbackTxRes.error;
+        // 1. Deduct amount from sender.avu_balance using PATCH /ambassadors?id=eq.${senderId}
+        if (senderUuid) {
+          await client.from("ambassadors").update({ avu_balance: senderNewBalance }).eq("id", senderUuid);
+        } else if (sender.email) {
+          await client.from("ambassadors").update({ avu_balance: senderNewBalance }).ilike("email", sender.email);
         }
 
+        // 2. Add amount to recipient.avu_balance using PATCH /ambassadors?id=eq.${recipientId}
+        if (recipientUuid) {
+          await client.from("ambassadors").update({ avu_balance: recipientNewBalance }).eq("id", recipientUuid);
+        } else if (recipient.email) {
+          await client.from("ambassadors").update({ avu_balance: recipientNewBalance }).ilike("email", recipient.email);
+        }
+
+        // 3. Insert audit entry into p2p_transactions
+        const p2pPayload = {
+          sender_id: senderUuid || sender.db_id || sender.id,
+          sender_email: sender.email,
+          recipient_id: recipientUuid || recipient.db_id || recipient.id,
+          recipient_email: recipient.email,
+          amount: Number(points),
+          note: reason || "Peer transfer"
+        };
+
+        const { error: txError } = await client.from("p2p_transactions").insert([p2pPayload]);
         if (txError) {
-          console.warn("Error inserting to Supabase p2p_transactions, falling back:", txError);
+          console.warn("Error inserting into p2p_transactions:", txError);
         }
       } catch (err) {
         console.error("Supabase P2P database error:", err);
       }
-    }
-
-    // Top up / update recipient wallet in ambassador_wallets & local wallets store
-    try {
-      const wallets = await this.getWallets();
-      const recWallet = wallets.find(w => 
-        (w.ambassador_id && recipient.id && w.ambassador_id.toLowerCase() === recipient.id.toLowerCase()) ||
-        (w.ambassador_id && recipient.ambassador_id && w.ambassador_id.toLowerCase() === recipient.ambassador_id.toLowerCase()) ||
-        (w.ambassador_id && recipient.user_id && w.ambassador_id.toLowerCase() === recipient.user_id.toLowerCase()) ||
-        (w.email && recipient.email && w.email.toLowerCase() === recipient.email.toLowerCase())
-      );
-
-      if (recWallet) {
-        const newWBal = Number(((recWallet.balance || 0) + points).toFixed(3));
-        await this.updateWalletBalance(recWallet.ambassador_id, newWBal);
-        if (recipient.id) await this.updateWalletBalance(recipient.id, newWBal);
-        if (recipient.ambassador_id) await this.updateWalletBalance(recipient.ambassador_id, newWBal);
-      } else {
-        await this.createWallet({
-          ambassador_id: recipient.ambassador_id || recipient.user_id || recipient.id,
-          email: recipient.email,
-          balance: recipientNewBalance
-        });
-      }
-
-      // Sync sender wallet
-      const sndWallet = wallets.find(w => 
-        (w.ambassador_id && sender.id && w.ambassador_id.toLowerCase() === sender.id.toLowerCase()) ||
-        (w.ambassador_id && sender.ambassador_id && w.ambassador_id.toLowerCase() === sender.ambassador_id.toLowerCase()) ||
-        (w.ambassador_id && sender.user_id && w.ambassador_id.toLowerCase() === sender.user_id.toLowerCase()) ||
-        (w.email && sender.email && w.email.toLowerCase() === sender.email.toLowerCase())
-      );
-      if (sndWallet) {
-        await this.updateWalletBalance(sndWallet.ambassador_id, senderNewBalance);
-        if (sender.id) await this.updateWalletBalance(sender.id, senderNewBalance);
-      } else {
-        await this.createWallet({
-          ambassador_id: sender.ambassador_id || sender.user_id || sender.id,
-          email: sender.email,
-          balance: senderNewBalance
-        });
-      }
-    } catch (wErr) {
-      console.warn("Failed updating ambassador wallet in executeP2PTransfer:", wErr);
     }
 
     // Always keep local storage updated as well
@@ -1824,6 +1789,20 @@ export const db = {
     });
 
     // Save P2P transaction locally
+    const transactionId = "P2P-" + Math.floor(Math.random() * 89999 + 10000);
+    const timestamp = new Date().toISOString();
+    const txRecord: DbP2PTransaction = {
+      id: transactionId,
+      sender_id: senderUuid || sender.id,
+      sender_name: sender.name,
+      sender_email: sender.email,
+      recipient_id: recipientUuid || recipient.id,
+      recipient_name: recipient.name,
+      recipient_email: recipient.email,
+      points,
+      reason: reason || "Peer transfer",
+      created_at: timestamp
+    };
     const p2pTxStr = localStorage.getItem(P2P_TX_LOCAL_STORAGE_KEY);
     const p2pTransactions: DbP2PTransaction[] = p2pTxStr ? JSON.parse(p2pTxStr) : [];
     p2pTransactions.push(txRecord);
@@ -1859,23 +1838,33 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let { data, error } = await client
-          .from("p2p_transactions")
-          .select("*")
-          .or(`sender_id.eq.${clean},sender_email.eq.${clean},recipient_id.eq.${clean},recipient_email.eq.${clean}`)
-          .order("created_at", { ascending: false });
-        
-        if (error || !data) {
-          const fallback = await client
-            .from("P2P_Transactions")
-            .select("*")
-            .or(`sender_id.eq.${clean},sender_email.eq.${clean},recipient_id.eq.${clean},recipient_email.eq.${clean}`)
-            .order("created_at", { ascending: false });
-          data = fallback.data;
-          error = fallback.error;
+        let query = client.from("p2p_transactions").select("*");
+        if (isUuid(clean)) {
+          query = query.or(`sender_id.eq.${clean},recipient_id.eq.${clean}`);
+        } else if (clean.includes("@")) {
+          query = query.or(`sender_email.ilike.${clean},recipient_email.ilike.${clean}`);
+        } else {
+          query = query.or(`sender_id.eq.${clean},sender_email.ilike.${clean},recipient_id.eq.${clean},recipient_email.ilike.${clean}`);
         }
+        const { data, error } = await query.order("created_at", { ascending: false });
 
-        if (!error && data) return data;
+        if (!error && data) {
+          return data.map((row: any) => ({
+            id: row.id || "P2P-" + Math.floor(Math.random() * 89999 + 10000),
+            sender_id: row.sender_id,
+            sender_name: row.sender_name || row.sender_email || "Ambassador",
+            sender_email: row.sender_email,
+            recipient_id: row.recipient_id,
+            recipient_name: row.recipient_name || row.recipient_email || "Ambassador",
+            recipient_email: row.recipient_email,
+            points: Number(row.amount || row.points || 0),
+            amount: Number(row.amount || row.points || 0),
+            amount_avu: Number(row.amount || row.points || 0),
+            reason: row.note || row.reason || "P2P Allocation",
+            note: row.note || row.reason || "P2P Allocation",
+            created_at: row.created_at || new Date().toISOString()
+          })) as any;
+        }
       } catch (err) {
         console.warn("Error getting Supabase P2P transactions:", err);
       }
@@ -1888,6 +1877,12 @@ export const db = {
         (t.sender_email && t.sender_email.toLowerCase() === clean) ||
         (t.recipient_id && t.recipient_id.toLowerCase() === clean) ||
         (t.recipient_email && t.recipient_email.toLowerCase() === clean)
-    ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    ).map((t: any) => ({
+      ...t,
+      amount_avu: Number(t.amount || t.points || 0),
+      amount: Number(t.amount || t.points || 0),
+      note: t.note || t.reason || "P2P Allocation",
+      reason: t.reason || t.note || "P2P Allocation"
+    })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 };
