@@ -1636,30 +1636,53 @@ export const db = {
       return { success: false, message: `Could not find an ambassador with ID or email: "${cleanRecipient}"` };
     }
 
+    // Helper to test equality between two ambassador records
+    const isSameAmbassador = (a: DbAmbassador, b: DbAmbassador): boolean => {
+      if (a.id && b.id && a.id.toLowerCase() === b.id.toLowerCase()) return true;
+      if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) return true;
+      if (a.user_id && b.user_id && a.user_id.toLowerCase() === b.user_id.toLowerCase()) return true;
+      if (a.db_id && b.db_id && a.db_id.toLowerCase() === b.db_id.toLowerCase()) return true;
+      if (a.id && b.user_id && a.id.toLowerCase() === b.user_id.toLowerCase()) return true;
+      if (a.user_id && b.id && a.user_id.toLowerCase() === b.id.toLowerCase()) return true;
+      return false;
+    };
+
     // Find sender with bulletproof multi-stage fallback
-    let sender = await this.findAmbassadorById(cleanSender) || await this.findAmbassadorByEmail(cleanSender);
+    let sender: DbAmbassador | null = null;
+    if (cleanSender) {
+      const found = await this.findAmbassadorById(cleanSender) || await this.findAmbassadorByEmail(cleanSender);
+      if (found && !isSameAmbassador(found, recipient)) {
+        sender = found;
+      }
+    }
     
-    if (!sender) {
+    if (!sender && cleanSender) {
       const cleanSenderId = cleanSender.toLowerCase();
       const allAmbs = await this.getAmbassadors();
-      sender = allAmbs.find(a => 
-        (a.id && a.id.toLowerCase() === cleanSenderId) ||
-        (a.user_id && a.user_id.toLowerCase() === cleanSenderId) ||
-        (a.email && a.email.toLowerCase() === cleanSenderId)
-      ) || null;
+      const found = allAmbs.find(a => 
+        ((a.id && a.id.toLowerCase() === cleanSenderId) ||
+         (a.user_id && a.user_id.toLowerCase() === cleanSenderId) ||
+         (a.email && a.email.toLowerCase() === cleanSenderId)) &&
+        !isSameAmbassador(a, recipient)
+      );
+      if (found) sender = found;
     }
 
     if (!sender) {
       const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
-      if (sessionEmail) {
-        sender = await this.findAmbassadorByEmail(sessionEmail);
+      if (sessionEmail && sessionEmail.toLowerCase() !== recipient.email?.toLowerCase()) {
+        const found = await this.findAmbassadorByEmail(sessionEmail);
+        if (found && !isSameAmbassador(found, recipient)) {
+          sender = found;
+        }
       }
     }
 
     if (!sender) {
       const localDb = getLocalDb();
-      if (localDb.length > 0) {
-        sender = localDb[0];
+      const found = localDb.find(a => !isSameAmbassador(a, recipient));
+      if (found) {
+        sender = found;
       }
     }
 
@@ -1667,7 +1690,7 @@ export const db = {
       return { success: false, message: "Sender ambassador profile not found in database session." };
     }
 
-    if (sender.id === recipient.id || sender.email.toLowerCase() === recipient.email.toLowerCase()) {
+    if (isSameAmbassador(sender, recipient)) {
       return { success: false, message: "Transfer Failed: You cannot transfer points to yourself." };
     }
 
