@@ -63,8 +63,8 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
 
       if (data && data.length > 0) {
         const row = data[0];
-        const rawBal = typeof row.avu_balance === "number" ? row.avu_balance : (typeof row.ledger_balance === "number" ? row.ledger_balance : 0);
-        const currentBal = typeof rawBal === "number" && !isNaN(rawBal) ? rawBal : 0;
+        const parsedVal = row.avu_balance !== undefined && row.avu_balance !== null ? row.avu_balance : row.ledger_balance;
+        const currentBal = Number(parsedVal) || 0;
         setBalance(currentBal);
         setError(null);
         setLoading(false);
