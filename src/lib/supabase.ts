@@ -217,8 +217,13 @@ function saveLocalDb(db: DbAmbassador[]) {
 }
 
 function mapRowToAmbassador(row: any): DbAmbassador {
+  const isApprovedCol = row.is_approved === true || row.is_approved === "true" || row.is_approved === 1;
+  const isDisapprovedCol = row.is_approved === false || row.is_approved === "false" || row.is_approved === 0;
+
   const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
   const mappedStatus: "pending" | "approved" | "disapproved" = 
+    isApprovedCol ? "approved" :
+    isDisapprovedCol ? "disapproved" :
     (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
     (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
 
@@ -254,6 +259,62 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 }
 
 let cachedAmbassadorsMemory: DbAmbassador[] = [];
+
+/**
+ * Queries Supabase database to verify if an ambassador's account has an `is_approved` status set to true.
+ */
+export async function checkApprovalStatus(email: string): Promise<boolean> {
+  const sanitizedEmail = (email || "").replace(/200$/, "").trim().toLowerCase();
+  if (!sanitizedEmail) return false;
+
+  if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+    try {
+      const client = supabaseAdmin || supabase;
+      let { data, error } = await client
+        .from("ambassadors")
+        .select("*")
+        .ilike("email", sanitizedEmail)
+        .maybeSingle();
+
+      if (error || !data) {
+        const fallback = await client
+          .from("Ambassadors")
+          .select("*")
+          .ilike("email", sanitizedEmail)
+          .maybeSingle();
+        data = fallback.data;
+      }
+
+      if (data) {
+        if (data.is_approved === true || data.is_approved === "true" || data.is_approved === 1) {
+          return true;
+        }
+        if (data.is_approved === false || data.is_approved === "false" || data.is_approved === 0) {
+          return false;
+        }
+        const rawStatus = (data.badge_status || data.status || "pending").toString().toLowerCase().trim();
+        return rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified";
+      }
+    } catch (err) {
+      console.warn("[checkApprovalStatus] Error querying Supabase:", err);
+    }
+  }
+
+  const localDb = getLocalDb();
+  const amb = localDb.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail);
+  if (amb) {
+    if ((amb as any).is_approved === true || (amb as any).is_approved === "true") {
+      return true;
+    }
+    if ((amb as any).is_approved === false || (amb as any).is_approved === "false") {
+      return false;
+    }
+    const rawStatus = (amb.badge_status || amb.status || "pending").toString().toLowerCase().trim();
+    return rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified";
+  }
+
+  return false;
+}
 
 export const db = {
   async getAmbassadors(): Promise<DbAmbassador[]> {
@@ -422,6 +483,10 @@ export const db = {
     saveLocalDb(resultList);
     cachedAmbassadorsMemory = [...resultList];
     return resultList;
+  },
+
+  async checkApprovalStatus(email: string): Promise<boolean> {
+    return checkApprovalStatus(email);
   },
 
   async findAmbassadorByEmail(email: string): Promise<DbAmbassador | null> {
