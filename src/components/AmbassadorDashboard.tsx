@@ -1061,11 +1061,24 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     return "Education & Other";
   };
 
-  const approvedOtherAmbassadors = dbAmbassadors.filter(
-    (amb) =>
-      amb.id !== profile?.id &&
-      amb.email?.toLowerCase() !== profile?.email?.toLowerCase()
-  );
+  const approvedOtherAmbassadors = dbAmbassadors.filter((amb) => {
+    const pId = (profile?.id || "").toLowerCase();
+    const pUserId = (profile?.user_id || "").toLowerCase();
+    const pDbId = (profile?.db_id || "").toLowerCase();
+    const pEmail = (profile?.email || "").toLowerCase();
+
+    const aId = (amb.id || "").toLowerCase();
+    const aUserId = (amb.user_id || "").toLowerCase();
+    const aDbId = (amb.db_id || "").toLowerCase();
+    const aEmail = (amb.email || "").toLowerCase();
+
+    if (pEmail && aEmail && pEmail === aEmail) return false;
+    if (pId && (aId === pId || aUserId === pId || aDbId === pId)) return false;
+    if (pUserId && (aId === pUserId || aUserId === pUserId || aDbId === pUserId)) return false;
+    if (pDbId && (aId === pDbId || aUserId === pDbId || aDbId === pDbId)) return false;
+
+    return true;
+  });
 
   const filteredCandidateAmbassadors = approvedOtherAmbassadors.filter((amb) => {
     if (!recipientSearchQuery.trim()) return true;
@@ -1218,13 +1231,22 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const amt = parseFloat(transferAmount);
     const selectedRecipientId = transferTargetId.trim();
 
-    if (!profile?.id) {
+    if (!profile?.id && !profile?.email) {
       showToast("error", "Session Error", "Could not locate your active ambassador session.");
       return;
     }
 
-    if (!selectedRecipientId || selectedRecipientId === profile.id || selectedRecipientId === profile.email) {
-      showToast("error", "Invalid Recipient", "Please select a valid recipient ambassador other than yourself.");
+    const senderIds = [profile?.id, profile?.user_id, profile?.db_id, profile?.email]
+      .filter(Boolean)
+      .map(s => String(s).toLowerCase());
+    const targetRec = selectedRecipient;
+    const recipientIds = [selectedRecipientId, targetRec?.id, targetRec?.user_id, targetRec?.db_id, targetRec?.email]
+      .filter(Boolean)
+      .map(s => String(s).toLowerCase());
+
+    const isSelfTransfer = !selectedRecipientId || senderIds.some(s => recipientIds.includes(s));
+    if (isSelfTransfer) {
+      showToast("error", "Invalid Recipient", "You cannot transfer points to yourself. Please select a different recipient.");
       return;
     }
 
@@ -1245,13 +1267,23 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const amt = parseFloat(transferAmount);
     const selectedRecipientId = transferTargetId.trim();
 
-    if (!profile || !profile.id) {
+    if (!profile || (!profile.id && !profile.email)) {
       showToast("error", "Session Error", "Could not locate your active ambassador session.");
       return;
     }
 
-    if (!selectedRecipientId || selectedRecipientId === profile.id || selectedRecipientId === profile.email) {
-      showToast("error", "Invalid Recipient", "Please select a valid recipient ambassador other than yourself.");
+    const senderIds = [profile.id, profile.user_id, profile.db_id, profile.email]
+      .filter(Boolean)
+      .map(s => String(s).toLowerCase());
+    const targetRec = selectedRecipient;
+    const recipientIds = [selectedRecipientId, targetRec?.id, targetRec?.user_id, targetRec?.db_id, targetRec?.email]
+      .filter(Boolean)
+      .map(s => String(s).toLowerCase());
+
+    const isSelfTransfer = !selectedRecipientId || senderIds.some(s => recipientIds.includes(s));
+    if (isSelfTransfer) {
+      showToast("error", "Invalid Recipient", "You cannot transfer points to yourself. Please select a different recipient.");
+      setIsProcessing(false);
       return;
     }
 
@@ -1274,9 +1306,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     try {
       // Explicitly separate sender and recipient payload
       const payload = {
-        sender_id: profile.id,         // Logged in user UUID
-        sender_email: profile.email,   // Logged in user email
-        recipient_id: selectedRecipientId, // MUST be selected recipient's ID/email
+        sender_id: profile.id || profile.user_id || profile.email,
+        sender_email: profile.email,
+        recipient_id: selectedRecipient?.id || selectedRecipient?.user_id || selectedRecipientId,
+        recipient_email: selectedRecipient?.email || (selectedRecipientId.includes("@") ? selectedRecipientId : ""),
         amount: Number(amt),
         note: transferReason || "Peer technical support"
       };
