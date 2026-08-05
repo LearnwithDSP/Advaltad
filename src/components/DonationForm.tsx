@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { CreditCard, Landmark, Send, Loader2, ArrowRight, ShieldCheck, Mail, User, Phone, Check, Copy } from "lucide-react";
@@ -27,7 +29,16 @@ export const DonationForm: React.FC = () => {
 
   const copyToClipboard = (text: string, field: string) => {
     try {
-      navigator.clipboard.writeText(text.replace(/\s+/g, ''));
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        navigator.clipboard.writeText(text.replace(/\s+/g, ''));
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text.replace(/\s+/g, '');
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
       setCopiedField(field);
       setTimeout(() => setCopiedField(null), 2000);
     } catch (err) {
@@ -74,7 +85,12 @@ export const DonationForm: React.FC = () => {
           }),
         });
 
-        const data = await response.json();
+        let data: any = {};
+        try {
+          data = await response.json();
+        } catch (jsonErr) {
+          throw new Error("Invalid response from server. Please try again.");
+        }
 
         const authorizationUrl = data.authorization_url || data.data?.authorization_url;
 
@@ -82,8 +98,10 @@ export const DonationForm: React.FC = () => {
           throw new Error(data.error || "Failed to initialize Paystack transaction.");
         }
 
-        // Redirect to Paystack
-        window.location.href = authorizationUrl;
+        // Redirect to Paystack securely
+        if (typeof window !== "undefined") {
+          window.location.href = authorizationUrl;
+        }
       } catch (err: any) {
         console.error("Paystack error:", err);
         setError(err?.message || "Something went wrong. Please try again.");
@@ -102,7 +120,9 @@ export const DonationForm: React.FC = () => {
         const encodedMessage = encodeURIComponent(message);
         
         // Open WhatsApp in a new tab securely
-        window.open(`https://wa.me/2349032445174?text=${encodedMessage}`, "_blank", "noopener,noreferrer");
+        if (typeof window !== "undefined") {
+          window.open(`https://wa.me/2349032445174?text=${encodedMessage}`, "_blank", "noopener,noreferrer");
+        }
         setSuccess(true);
         setLoading(false);
       } catch (err: any) {
@@ -144,7 +164,7 @@ export const DonationForm: React.FC = () => {
           </div>
           <h3 className="font-bold text-sm">WhatsApp Confirmation Opened!</h3>
           <p className="text-xs text-emerald-700 mt-1">
-            We have opened WhatsApp to message our support team. Please complete your transfer of <strong className="font-extrabold">₦{parseFloat(amount).toLocaleString()}</strong> to our official GTbank or Opay account and share the receipt.
+            We have opened WhatsApp to message our support team. Please complete your transfer of <strong className="font-extrabold">₦{parseFloat(amount || "0").toLocaleString()}</strong> to our official GTbank or Opay account and share the receipt.
           </p>
         </motion.div>
       )}
@@ -377,3 +397,5 @@ export const DonationForm: React.FC = () => {
     </div>
   );
 };
+
+export default DonationForm;
