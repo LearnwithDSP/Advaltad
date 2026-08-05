@@ -28,6 +28,8 @@ export interface DbAmbassador {
   professional_name?: string;
   city: string;
   base_city?: string;
+  country?: string;
+  base_country?: string;
   field: string;
   focus_interest?: string;
   email: string;
@@ -37,6 +39,7 @@ export interface DbAmbassador {
   status: "pending" | "approved" | "disapproved";
   badge_status?: "pending" | "approved" | "disapproved";
   avu_balance: number;
+  ledger_balance?: number;
   created_at: string;
 }
 
@@ -229,6 +232,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 
   const nameVal = row.professional_name || row.name || "";
   const cityVal = row.base_city || row.city || "";
+  const countryVal = row.base_country || row.country || "Nigeria";
   const fieldVal = row.focus_interest || row.field || "";
   const phoneVal = row.phone_number || row.phone || "";
   const rawEmail = row.email || "";
@@ -236,6 +240,8 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 
   // Assign deterministic static AV- ID that NEVER changes
   const staticId = getStaticAmbassadorId(rawId || rawEmail || row.db_id || nameVal);
+
+  const rawBal = typeof row.ledger_balance === "number" ? row.ledger_balance : (typeof row.avu_balance === "number" ? row.avu_balance : 0);
 
   return {
     id: staticId,
@@ -246,6 +252,8 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     professional_name: nameVal,
     city: cityVal,
     base_city: cityVal,
+    country: countryVal,
+    base_country: countryVal,
     field: fieldVal,
     focus_interest: fieldVal,
     email: rawEmail,
@@ -253,7 +261,8 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     phone_number: phoneVal,
     status: mappedStatus,
     badge_status: mappedStatus,
-    avu_balance: typeof row.avu_balance === "number" ? row.avu_balance : 0,
+    avu_balance: rawBal,
+    ledger_balance: rawBal,
     created_at: row.created_at || new Date().toISOString()
   };
 }
@@ -649,6 +658,7 @@ export const db = {
       ...newAmbassador,
       email: cleanEmail,
       avu_balance: 0,
+      ledger_balance: 0,
       status: "pending",
       created_at: new Date().toISOString()
     };
@@ -660,12 +670,15 @@ export const db = {
           ambassador_id: staticId,
           professional_name: newAmbassador.name,
           base_city: newAmbassador.city,
+          base_country: newAmbassador.country || "Nigeria",
           focus_interest: newAmbassador.field,
           email: cleanEmail,
           phone_number: newAmbassador.phone,
           status: "pending",
           badge_status: "pending", 
-          avu_balance: 0
+          is_approved: false,
+          avu_balance: 0,
+          ledger_balance: 0
         };
         
         const client = supabaseAdmin || supabase;
@@ -876,6 +889,10 @@ export const db = {
           rowData.base_city = updates.city;
           rowData.city = updates.city;
         }
+        if (updates.country !== undefined) {
+          rowData.base_country = updates.country;
+          rowData.country = updates.country;
+        }
         if (updates.field !== undefined) {
           rowData.focus_interest = updates.field;
           rowData.field = updates.field;
@@ -922,7 +939,7 @@ export const db = {
         const client = supabaseAdmin || supabase;
         for (const tableName of ["ambassadors", "Ambassadors", "profiles", "Profiles"]) {
           try {
-            let query = client.from(tableName).update({ avu_balance: newBalance });
+            let query = client.from(tableName).update({ avu_balance: newBalance, ledger_balance: newBalance });
             query = applyAmbassadorFilter(query, cleanId);
             await query.select();
           } catch (err) {
@@ -951,6 +968,7 @@ export const db = {
         (a.email && a.email.toLowerCase() === cleanId)
       ) {
         list[i].avu_balance = newBalance;
+        list[i].ledger_balance = newBalance;
         updatedLocal = true;
       }
     }
@@ -966,10 +984,55 @@ export const db = {
           (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId) ||
           (a.email && a.email.toLowerCase() === cleanId)
         ) {
-          return { ...a, avu_balance: newBalance };
+          return { ...a, avu_balance: newBalance, ledger_balance: newBalance };
         }
         return a;
       });
+    }
+    return true;
+  },
+
+  async logTokenGrant(grantLog: {
+    admin_id: string;
+    admin_name?: string;
+    ambassador_id: string;
+    ambassador_name?: string;
+    grant_amount: number;
+    transaction_type: "DIRECT_GRANT";
+    timestamp: string;
+  }): Promise<boolean> {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const payload = {
+          admin_id: grantLog.admin_id,
+          admin_name: grantLog.admin_name || "Super Admin",
+          ambassador_id: grantLog.ambassador_id,
+          ambassador_name: grantLog.ambassador_name || "Ambassador",
+          grant_amount: grantLog.grant_amount,
+          amount: grantLog.grant_amount,
+          transaction_type: grantLog.transaction_type,
+          type: grantLog.transaction_type,
+          timestamp: grantLog.timestamp,
+          created_at: grantLog.timestamp
+        };
+
+        for (const table of ["token_grants", "token_transactions", "wallet_transactions", "audit_logs"]) {
+          try {
+            await client.from(table).insert([payload]);
+          } catch (err) {
+            console.warn(`logTokenGrant notice for table ${table}:`, err);
+          }
+        }
+      } catch (err) {
+        console.warn("logTokenGrant execution warning:", err);
+      }
+    }
+    const grantsStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_token_grants") : null;
+    const grants = grantsStr ? JSON.parse(grantsStr) : [];
+    grants.push(grantLog);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("advaltad_token_grants", JSON.stringify(grants));
     }
     return true;
   },
