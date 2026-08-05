@@ -131,7 +131,7 @@ export const AboutPage: React.FC = () => {
         {/* 2. MISSION & VISION STATEMENTS */}
         {(activeTab === "all" || activeTab === "mission") && (
           <section id="mission-vision" className="py-24 bg-[#F8FAF9] text-left">
-            <div className="max-w-[1200px] mx-auto px-6 lg:px-8 grid md:grid-cols-2 gap-12 items-stretch">
+            <div className="max-w-[1200px] mx-auto px-6 lg:px-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-12 items-stretch">
               
               <div className="bg-white p-8 sm:p-12 rounded-[32px] border border-slate-100 flex flex-col justify-between h-full shadow-[0_12px_45px_rgba(0,0,0,0.01)]">
                 <div className="space-y-6">
@@ -187,7 +187,7 @@ export const AboutPage: React.FC = () => {
                 </p>
               </div>
 
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
                 {LEADERSHIP_MEMBERS.map((m, idx) => (
                   <motion.div
                     key={idx}
