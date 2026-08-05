@@ -1377,11 +1377,158 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }, 1000);
   };
 
+  const rawProfileStatus = (profile?.badge_status || profile?.status || "pending").toString().toLowerCase().trim();
+  const isPendingApproval = rawProfileStatus === "pending";
+  const isDisapprovedStatus = rawProfileStatus === "disapproved" || rawProfileStatus === "rejected" || rawProfileStatus === "suspended";
+
   if (isLoadingProfile) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans">
         <div className="w-16 h-16 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4" />
         <p className="text-sm font-bold text-slate-300 animate-pulse">Initializing Ambassador Dashboard...</p>
+      </div>
+    );
+  }
+
+  // AWAITING ADMIN APPROVAL SCREEN
+  if (isPendingApproval) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
+        {/* Background Accent Glows */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-10 right-10 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
+
+        {/* Top Branding & Logout Bar */}
+        <div className="w-full max-w-2xl flex items-center justify-between mb-8 z-10">
+          <div className="flex items-center gap-3">
+            <img src={logoUrl} alt="Advaltad Logo" className="w-10 h-10 rounded-xl object-cover border border-slate-800 shadow-md" />
+            <div>
+              <h1 className="text-sm font-black text-white tracking-wide">ADVALTAD FOUNDATION</h1>
+              <span className="text-[10px] text-slate-400 font-mono">Growth Ambassador Fellowship</span>
+            </div>
+          </div>
+          <button
+            onClick={onLogout}
+            type="button"
+            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+          >
+            <Icon name="LogOut" size={14} className="text-rose-400" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+
+        {/* Central Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="w-full max-w-2xl bg-slate-900/90 border border-slate-800/80 rounded-3xl p-6 sm:p-10 shadow-2xl backdrop-blur-xl z-10 text-center space-y-6"
+        >
+          {/* Animated Clock / Shield Icon */}
+          <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-3xl bg-amber-500/20 animate-ping opacity-30" />
+            <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
+              <Icon name="Clock" size={38} className="animate-pulse" />
+            </div>
+          </div>
+
+          {/* Heading */}
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold font-mono uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span>Awaiting Executive Admin Approval</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Application Under Review
+            </h2>
+            <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
+              Hello <strong className="text-white font-semibold">{ambassadorName}</strong>, your Growth Ambassador application has been received and is currently under review by our executive board.
+            </p>
+          </div>
+
+          {/* Applicant Details Summary */}
+          <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 sm:p-5 text-left space-y-3">
+            <div className="text-[11px] uppercase font-mono font-bold text-slate-400 tracking-wider flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <span>Application Reference Profile</span>
+              <span className="text-amber-400 font-bold">Status: Pending Review</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-slate-500 block text-[10px] uppercase font-mono">Full Name</span>
+                <span className="font-bold text-slate-200">{ambassadorName}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[10px] uppercase font-mono">Email Address</span>
+                <span className="font-bold text-slate-200 truncate block">{profile?.email}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[10px] uppercase font-mono">Location / Region</span>
+                <span className="font-bold text-slate-200">{ambassadorRegion}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[10px] uppercase font-mono">Focus Area</span>
+                <span className="font-bold text-slate-200">{ambassadorField}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Real-Time Database Sync Banner */}
+          <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/20 text-emerald-300 text-xs text-left flex items-start gap-3">
+            <Icon name="Radio" size={18} className="text-emerald-400 flex-shrink-0 mt-0.5 animate-pulse" />
+            <div className="space-y-1">
+              <p className="font-bold text-emerald-200">Real-Time Database Listener Active</p>
+              <p className="text-[11px] text-emerald-300/80 leading-relaxed">
+                Your account is linked to the live database. As soon as a Super Admin approves your application in the Admin Portal, this dashboard will automatically refresh and grant access to your AVU Wallet, certified fellowship badge, and P2P tools.
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => fetchAmbassadorData(true)}
+              type="button"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition-all cursor-pointer"
+            >
+              <Icon name="RefreshCw" size={15} />
+              <span>Check Approval Status</span>
+            </button>
+            <button
+              onClick={onLogout}
+              type="button"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Icon name="LogOut" size={15} />
+              <span>Log Out</span>
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // DISAPPROVED SCREEN
+  if (isDisapprovedStatus) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
+        <div className="w-full max-w-2xl bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl z-10 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto">
+            <Icon name="XCircle" size={32} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-white">Application Disapproved</h2>
+            <p className="text-sm text-slate-300 max-w-md mx-auto">
+              Your Growth Ambassador application for <strong className="text-white">{ambassadorName}</strong> has been disapproved by the executive board.
+            </p>
+          </div>
+          <button
+            onClick={onLogout}
+            type="button"
+            className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     );
   }
