@@ -99,10 +99,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   // Manage Portfolio editing form states
   const [editName, setEditName] = useState("");
   const [editCity, setEditCity] = useState("");
+  const [editCountry, setEditCountry] = useState("Nigeria");
   const [editField, setEditField] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [editSuccess, setEditSuccess] = useState(false);
+
+  // Toast Notification state
+  const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
+
+  const addToast = (title: string, message: string, type: "success" | "error" | "info" = "success") => {
+    const id = "toast-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
+    setToasts(prev => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   // Status Action Confirmation Modal State
   const [statusConfirmModal, setStatusConfirmModal] = useState<{
@@ -131,6 +147,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     if (selectedAmbassador) {
       setEditName(selectedAmbassador.name);
       setEditCity(selectedAmbassador.city);
+      setEditCountry(selectedAmbassador.country || selectedAmbassador.base_country || "Nigeria");
       setEditField(selectedAmbassador.field);
       setEditPhone(selectedAmbassador.phone || "");
       setEditSuccess(false);
@@ -802,6 +819,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       const updates = {
         name: editName,
         city: editCity,
+        country: editCountry,
         field: editField,
         phone: editPhone
       };
@@ -826,9 +844,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       setSelectedAmbassador(prev => prev ? { ...prev, ...updates } : null);
       loadDbData();
       setEditSuccess(true);
+      addToast(
+        "Portfolio Updated",
+        `Successfully updated profile details for ${editName}.`,
+        "success"
+      );
       setTimeout(() => setEditSuccess(false), 3000);
     } catch (err) {
       console.error("Error saving portfolio details", err);
+      addToast("Update Failed", "Failed to update portfolio details.", "error");
     } finally {
       setIsSavingDetails(false);
     }
@@ -844,10 +868,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setGrantSuccess(false);
 
     try {
-      const currentBal = typeof selectedAmbassador.avu_balance === "number" ? selectedAmbassador.avu_balance : 0;
-      const newBalance = currentBal + tokens;
+      const currentBal = typeof selectedAmbassador.avu_balance === "number" ? selectedAmbassador.avu_balance : (selectedAmbassador.ledger_balance || 0);
+      const newBalance = Number((currentBal + tokens).toFixed(3));
 
-      // 1. Update AVU balance across all identifier variations
+      // 1. Update AVU and ledger balance across all identifier variations in Supabase & local state
       await db.updateAvuBalance(selectedAmbassador.id, newBalance);
       if (selectedAmbassador.email) await db.updateAvuBalance(selectedAmbassador.email, newBalance);
       if (selectedAmbassador.user_id && selectedAmbassador.user_id !== selectedAmbassador.id) {
@@ -874,7 +898,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         });
       }
 
-      // 3. Log a deposit record for funding history sync
+      // 3. Log direct token grant in Supabase transaction log tables (token_grants, token_transactions, wallet_transactions)
+      await db.logTokenGrant({
+        admin_id: currentAdmin?.id || currentAdmin?.user_id || "admin",
+        admin_name: currentAdmin?.name || "Super Admin",
+        ambassador_id: selectedAmbassador.id,
+        ambassador_name: selectedAmbassador.name,
+        grant_amount: tokens,
+        transaction_type: "DIRECT_GRANT",
+        timestamp: new Date().toISOString()
+      });
+
+      // 4. Log deposit record for funding history sync
       const grantRef = `GRANT-${Date.now()}`;
       try {
         await db.createDeposit({
@@ -891,7 +926,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         console.warn("Error inserting grant deposit:", depErr);
       }
 
-      // 4. Log activity
+      // 5. Log activity
       await db.logActivity({
         ambassador_id: selectedAmbassador.id,
         ambassador_name: selectedAmbassador.name,
@@ -902,12 +937,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       setGrantSuccess(true);
       setGrantAmount("");
+
+      // Optimistically update side drawer and main table list state
+      setSelectedAmbassador(prev => prev ? { ...prev, avu_balance: newBalance, ledger_balance: newBalance } : null);
+      setAmbassadors(prev => prev.map(a => a.id === selectedAmbassador.id ? { ...a, avu_balance: newBalance, ledger_balance: newBalance } : a));
+
+      // Instant Toast Notification feedback
+      addToast(
+        "Token Grant Successful",
+        `Granted ${tokens.toLocaleString()} AVU to ${selectedAmbassador.name}. Updated balance: ${newBalance.toLocaleString()} AVU`,
+        "success"
+      );
+
       await loadWallets();
       await loadDbData();
-      setSelectedAmbassador(prev => prev ? { ...prev, avu_balance: newBalance } : null);
+
       setTimeout(() => setGrantSuccess(false), 3000);
     } catch (err) {
       console.error("Error authorizing AVU grant:", err);
+      addToast(
+        "Token Grant Failed",
+        `Failed to process token grant for ${selectedAmbassador?.name || 'Ambassador'}. Please try again.`,
+        "error"
+      );
     } finally {
       setIsGranting(false);
     }
@@ -1782,65 +1834,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2.5 flex-shrink-0">
+                              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
                                 <button
-                                  onClick={() => handleToggleStatus(amb.id, amb.status)}
-                                  className={`px-3 py-2 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all border flex items-center gap-1.5 cursor-pointer ${
+                                  onClick={() => handleApproveAmbassador(amb.id, amb.name)}
+                                  disabled={amb.status === "approved"}
+                                  className={`px-3 py-2 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer border ${
                                     amb.status === "approved"
-                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80"
-                                      : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80"
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200 opacity-90"
+                                      : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent shadow-sm"
                                   }`}
-                                  title="Quick toggle status between Pending and Approved"
                                 >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${amb.status === "approved" ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`} />
-                                  Quick Toggle
+                                  <CheckCircle size={12} />
+                                  {amb.status === "approved" ? "Approved" : "Approve"}
                                 </button>
 
-                                {amb.status === "pending" && (
-                                  <>
-                                    <button
-                                      onClick={() => handleApproveAmbassador(amb.id, amb.name)}
-                                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <CheckCircle size={12} />
-                                      Approve
-                                    </button>
-                                    <button
-                                      onClick={() => handleDisapproveAmbassador(amb.id, amb.name)}
-                                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <XCircle size={12} />
-                                      Disapprove
-                                    </button>
-                                  </>
-                                )}
-                                {amb.status === "disapproved" && (
-                                  <button
-                                    onClick={() => handleApproveAmbassador(amb.id, amb.name)}
-                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <CheckCircle size={12} />
-                                    Re-Approve
-                                  </button>
-                                )}
-                                {amb.status === "approved" && (
-                                  <button
-                                    onClick={() => handleDisapproveAmbassador(amb.id, amb.name)}
-                                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <XCircle size={12} />
-                                    Disapprove
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => handleDisapproveAmbassador(amb.id, amb.name)}
+                                  disabled={amb.status === "disapproved"}
+                                  className={`px-3 py-2 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer border ${
+                                    amb.status === "disapproved"
+                                      ? "bg-rose-50 text-rose-800 border-rose-200 opacity-90"
+                                      : "bg-rose-600 hover:bg-rose-700 text-white border-transparent shadow-sm"
+                                  }`}
+                                >
+                                  <XCircle size={12} />
+                                  {amb.status === "disapproved" ? "Disapproved" : "Disapprove"}
+                                </button>
 
                                 <button
                                   onClick={() => {
                                     setSelectedAmbassador(amb);
                                     setIsDetailOpen(true);
                                   }}
-                                  className="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                                  className="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer shadow-sm"
                                 >
-                                  <Eye size={12} className="text-slate-400" />
+                                  <Eye size={12} className="text-slate-500" />
                                   Manage Portfolio
                                 </button>
 
@@ -2660,12 +2688,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     <div className="flex items-center justify-between py-1.5">
                       <span className="text-slate-400">Ledger Balance</span>
                       <span className="font-mono font-black text-slate-900 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-lg">
-                        {selectedAmbassador.avu_balance} AVU
+                        {typeof selectedAmbassador.ledger_balance === "number" ? selectedAmbassador.ledger_balance : (selectedAmbassador.avu_balance !== undefined ? selectedAmbassador.avu_balance : 0)} AVU
                       </span>
                     </div>
                     <div className="flex items-center justify-between py-1.5">
                       <span className="text-slate-400">Base City & Country</span>
-                      <span className="font-semibold text-slate-850">{selectedAmbassador.city}</span>
+                      <span className="font-semibold text-slate-850">
+                        {selectedAmbassador.city}{selectedAmbassador.country ? `, ${selectedAmbassador.country}` : (selectedAmbassador.base_country ? `, ${selectedAmbassador.base_country}` : "")}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2712,15 +2742,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                          Telephone Contact
+                          Base Country
                         </label>
                         <input
                           type="text"
-                          value={editPhone}
-                          onChange={(e) => setEditPhone(e.target.value)}
+                          required
+                          value={editCountry}
+                          onChange={(e) => setEditCountry(e.target.value)}
                           className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Telephone Contact
+                      </label>
+                      <input
+                        type="text"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none text-slate-800"
+                      />
                     </div>
 
                     <button
@@ -2975,6 +3018,54 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Floating Toast Notification Container */}
+      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              className={`pointer-events-auto p-4 rounded-2xl shadow-2xl border backdrop-blur-xl flex items-start gap-3 relative overflow-hidden ${
+                toast.type === "success"
+                  ? "bg-slate-900/95 border-emerald-500/30 text-white"
+                  : toast.type === "error"
+                  ? "bg-slate-900/95 border-rose-500/30 text-white"
+                  : "bg-slate-900/95 border-sky-500/30 text-white"
+              }`}
+            >
+              <div className={`p-2 rounded-xl flex-shrink-0 ${
+                toast.type === "success"
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : toast.type === "error"
+                  ? "bg-rose-500/20 text-rose-400"
+                  : "bg-sky-500/20 text-sky-400"
+              }`}>
+                {toast.type === "success" ? (
+                  <CheckCircle size={18} />
+                ) : toast.type === "error" ? (
+                  <AlertCircle size={18} />
+                ) : (
+                  <Coins size={18} />
+                )}
+              </div>
+              <div className="flex-1 min-w-0 pr-4">
+                <h4 className="text-xs font-bold text-white tracking-wide">{toast.title}</h4>
+                <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">{toast.message}</p>
+              </div>
+              <button
+                onClick={() => removeToast(toast.id)}
+                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800 cursor-pointer absolute top-2 right-2"
+              >
+                <XCircle size={14} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
     </div>
   );
