@@ -158,7 +158,7 @@ export const AdminStats: React.FC = () => {
       )}
 
       {/* Main Stats Display */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
         {/* Total Registered */}
         <div className="p-4 bg-slate-950/60 border border-slate-800/60 rounded-2xl space-y-2">
           <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Total Signups</span>
