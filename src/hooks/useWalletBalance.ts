@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase, isSupabaseConfigured, supabaseAdmin } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, fetchWalletBalance } from "../lib/supabase";
 
 export interface UseWalletBalanceResult {
   balance: number;
@@ -27,52 +27,11 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
     }
 
     try {
-      const client = supabaseAdmin || supabase;
-      if (!isSupabaseConfigured || !client) {
-        setLoading(false);
-        return 0;
-      }
-
-      const cleanId = identifier.trim().toLowerCase();
-
-      let query = client.from("ambassadors").select("avu_balance, email, id, user_id");
-
-      const isStrictUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
-      if (isStrictUuid) {
-        query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
-      } else if (cleanId.includes("@")) {
-        query = query.eq("email", cleanId);
-      } else {
-        const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
-        if (storedEmail && storedEmail.includes("@")) {
-          query = query.eq("email", storedEmail.trim().toLowerCase());
-        } else {
-          query = query.eq("email", cleanId);
-        }
-      }
-
-      const { data, error: fetchErr } = await query;
-
-      if (fetchErr) {
-        console.warn("useWalletBalance fetch error:", fetchErr);
-        setError(fetchErr.message);
-        setLoading(false);
-        return balance;
-      }
-
-      if (data && data.length > 0) {
-        const row = data[0];
-        const currentBal = Number(row?.avu_balance) || 0;
-        setBalance(currentBal);
-        setError(null);
-        setLoading(false);
-        return currentBal;
-      } else {
-        setBalance(0);
-        setError(null);
-        setLoading(false);
-        return 0;
-      }
+      const currentBal = await fetchWalletBalance(identifier);
+      setBalance(currentBal);
+      setError(null);
+      setLoading(false);
+      return currentBal;
     } catch (err: any) {
       console.error("useWalletBalance error:", err);
       setError(err?.message || "Failed to fetch wallet balance");
