@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { Clock, RefreshCw, LogOut, ShieldAlert } from "lucide-react";
 import { MegaMenu } from "./components/MegaMenu";
 import { Footer } from "./components/Footer";
 import { AmbassadorLogin } from "./components/AmbassadorLogin";
@@ -96,6 +97,16 @@ export default function App() {
     }
   };
 
+  const handleRecheckApproval = async () => {
+    const sessionEmail = localStorage.getItem("advaltad_session_email");
+    if (sessionEmail) {
+      setIsCheckingApproval(true);
+      const approved = await checkApprovalStatus(sessionEmail);
+      setIsApproved(approved);
+      setIsCheckingApproval(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       if (isSupabaseConfigured && supabase) {
@@ -165,6 +176,69 @@ export default function App() {
             >
               <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4" />
               <p className="text-sm font-bold text-slate-300 animate-pulse">Verifying Account Approval Status...</p>
+            </motion.div>
+          ) : isApproved === false ? (
+            <motion.div
+              key="pending-approval-subview"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+              className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden font-sans"
+            >
+              {/* Background ambient glow */}
+              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[450px] bg-amber-500/10 rounded-full blur-[120px] pointer-events-none" />
+
+              <div className="w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl z-10 text-center space-y-6">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto shadow-inner">
+                  <Clock className="w-8 h-8 animate-pulse" />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold font-mono uppercase tracking-wider">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    <span>Awaiting Admin Approval</span>
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                    Application Pending Approval
+                  </h2>
+                  <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
+                    Your Growth Ambassador application is currently registered and under executive review. Access to the Ambassador Dashboard remains blocked until an admin approves your record.
+                  </p>
+                </div>
+
+                <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-left space-y-2 text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 text-[11px] font-mono font-bold uppercase text-slate-400">
+                    <span>Account Session</span>
+                    <span className="text-amber-400">Pending Review</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase font-mono block">Registered Email</span>
+                    <span className="font-bold text-slate-200 truncate block">
+                      {localStorage.getItem("advaltad_session_email") || "Ambassador User"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={handleRecheckApproval}
+                    type="button"
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-amber-500/20"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Check Again</span>
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    type="button"
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-700"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
             </motion.div>
           ) : (
             <motion.div
