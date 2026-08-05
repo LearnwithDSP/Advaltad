@@ -194,17 +194,18 @@ function isUuid(val: string): boolean {
 function applyAmbassadorFilter(query: any, idOrEmail: string): any {
   const clean = idOrEmail.trim();
   const isStrictUuid = isUuid(clean);
-  const isAvId = clean.toUpperCase().startsWith("AV-");
   const isEmail = clean.includes("@");
 
   if (isStrictUuid) {
     return query.or(`id.eq.${clean},user_id.eq.${clean}`);
-  } else if (isAvId) {
-    return query.or(`ambassador_id.eq.${clean},user_id.eq.${clean}`);
   } else if (isEmail) {
     return query.ilike("email", clean.toLowerCase());
   } else {
-    return query.or(`ambassador_id.eq.${clean},user_id.eq.${clean},email.ilike.${clean.toLowerCase()}`);
+    const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+    if (storedEmail && storedEmail.includes("@")) {
+      return query.ilike("email", storedEmail.trim().toLowerCase());
+    }
+    return query.ilike("email", clean.toLowerCase());
   }
 }
 
@@ -939,7 +940,7 @@ export const db = {
         const client = supabaseAdmin || supabase;
         for (const tableName of ["ambassadors", "Ambassadors", "profiles", "Profiles"]) {
           try {
-            let query = client.from(tableName).update({ avu_balance: newBalance, ledger_balance: newBalance });
+            let query = client.from(tableName).update({ avu_balance: newBalance });
             query = applyAmbassadorFilter(query, cleanId);
             await query.select();
           } catch (err) {
