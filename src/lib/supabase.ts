@@ -1622,24 +1622,32 @@ export const db = {
     points: number,
     reason: string
   ): Promise<{ success: boolean; message: string; senderNewBalance?: number; recipientName?: string }> {
-    const cleanRecipient = recipientEmailOrId.trim();
+    const cleanSender = (senderId || "").trim();
+    const cleanRecipient = (recipientEmailOrId || "").trim();
     
-    // Find recipient by ID/Email/User ID/Ambassador ID
+    if (!cleanRecipient) {
+      return { success: false, message: "Recipient ID or email is required." };
+    }
+
+    if (cleanSender && cleanSender.toLowerCase() === cleanRecipient.toLowerCase()) {
+      return { success: false, message: "Transfer Failed: You cannot transfer points to yourself." };
+    }
+
+    // Find recipient by ID/Email/User ID
     const recipient = await this.findAmbassadorById(cleanRecipient) || await this.findAmbassadorByEmail(cleanRecipient);
     if (!recipient) {
       return { success: false, message: `Could not find an ambassador with ID or email: "${cleanRecipient}"` };
     }
 
     // Find sender with bulletproof multi-stage fallback
-    let sender = await this.findAmbassadorById(senderId) || await this.findAmbassadorByEmail(senderId);
+    let sender = await this.findAmbassadorById(cleanSender) || await this.findAmbassadorByEmail(cleanSender);
     
     if (!sender) {
-      const cleanSenderId = senderId.trim().toLowerCase();
+      const cleanSenderId = cleanSender.toLowerCase();
       const allAmbs = await this.getAmbassadors();
       sender = allAmbs.find(a => 
         (a.id && a.id.toLowerCase() === cleanSenderId) ||
         (a.user_id && a.user_id.toLowerCase() === cleanSenderId) ||
-        (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanSenderId) ||
         (a.email && a.email.toLowerCase() === cleanSenderId)
       ) || null;
     }
@@ -1663,7 +1671,7 @@ export const db = {
     }
 
     if (sender.id === recipient.id || sender.email.toLowerCase() === recipient.email.toLowerCase()) {
-      return { success: false, message: "You cannot transfer points to yourself." };
+      return { success: false, message: "Transfer Failed: You cannot transfer points to yourself." };
     }
 
     if (sender.avu_balance < points) {
