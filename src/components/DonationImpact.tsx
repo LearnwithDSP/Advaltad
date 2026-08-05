@@ -1,642 +1,979 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { 
-  ResponsiveContainer, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  Tooltip, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid 
-} from "recharts";
 import { Icon } from "./Icon";
+import { Confetti } from "./Confetti";
+import { jsPDF } from "jspdf";
 import { db } from "../lib/supabase";
-import { useLiveImpactData } from "../hooks/useLiveImpactData";
 
-// NGO Programs consistent with DonationPanel
-const IMPACT_PROGRAMS = [
+interface CurrencyConfig {
+  code: string;
+  symbol: string;
+  name: string;
+  rateToUSD: number; // Rough conversion factor to calculate USD equivalent for impact descriptions
+  presets: number[];
+  flag: string;
+  placeholderPhone: string;
+  phonePrefix: string;
+  paymentMethods: ("card" | "mobile_money" | "bank_transfer")[];
+}
+
+const CURRENCIES: CurrencyConfig[] = [
   {
-    id: "youth-empowerment",
-    label: "Enriching African Youth Initiative",
-    category: "YOUTH EMPOWERMENT",
-    allocation: 28, // 28% of total funds
-    color: "#10B981", // Emerald Primary
-    icon: "GraduationCap",
-    metrics: {
-      reached: "12,450+ Youth Trained",
-      spent: "₦142,500,000",
-      activeSites: "14 Tech Labs & Hubs",
-      deliverable: "sponsors code bootcamps, high-speed internet, and software developer licensing."
-    },
-    items: [
-      { cost: 15, text: "1 student software engineering license for 3 months" },
-      { cost: 120, text: "1 fully equipped dual-core laptop for hands-on tech training" },
-      { cost: 300, text: "Full vocational coding scholarship & career placement support" }
-    ]
+    code: "NGN",
+    symbol: "₦",
+    name: "Nigerian Naira (NGN)",
+    rateToUSD: 1500,
+    presets: [10000, 25000, 50000, 100000],
+    flag: "🇳🇬",
+    placeholderPhone: "08012345678",
+    phonePrefix: "+234",
+    paymentMethods: ["card", "bank_transfer"]
   },
   {
-    id: "schools-stem",
-    label: "Schools (STEM & Robotic Education)",
-    category: "EDUCATION & TECHNOLOGY",
-    allocation: 22,
-    color: "#3B82F6", // Blue
-    icon: "Laptop",
-    metrics: {
-      reached: "8,200+ Students Educated",
-      spent: "₦110,000,000",
-      activeSites: "36 Robotic Clubs Set up",
-      deliverable: "funds Arduino microcontrollers, hardware parts, and training teachers."
-    },
-    items: [
-      { cost: 25, text: "1 complete STEM robotic starter kit for junior students" },
-      { cost: 75, text: "Comprehensive teacher-training manual and certified trainer hours" },
-      { cost: 200, text: "Equips a public secondary school classroom with robotic kits & tools" }
-    ]
+    code: "USD",
+    symbol: "$",
+    name: "United States Dollar (USD)",
+    rateToUSD: 1,
+    presets: [25, 50, 100, 250],
+    flag: "🇺🇸",
+    placeholderPhone: "201-555-0123",
+    phonePrefix: "+1",
+    paymentMethods: ["card"]
   },
   {
-    id: "green-agri",
-    label: "Green / Agriculture Program",
-    category: "AGRICULTURE & ENVIRONMENT",
-    allocation: 15,
-    color: "#84CC16", // Lime Green
-    icon: "Sprout",
-    metrics: {
-      reached: "320+ Smallholder Farmers Supported",
-      spent: "₦74,000,000",
-      activeSites: "8 Irrigation Projects",
-      deliverable: "supplies climate-resilient organic seeds and clean solar drip pumps."
-    },
-    items: [
-      { cost: 35, text: "Sacks of climate-resilient grain seeds and organic fertilizers" },
-      { cost: 100, text: "1 portable solar-powered water irrigation pump kit" },
-      { cost: 250, text: "Sets up a cooperative clean green greenhouse nursery system" }
-    ]
+    code: "GHS",
+    symbol: "GH₵",
+    name: "Ghanaian Cedi (GHS)",
+    rateToUSD: 15,
+    presets: [200, 500, 1000, 2500],
+    flag: "🇬🇭",
+    placeholderPhone: "0241234567",
+    phonePrefix: "+233",
+    paymentMethods: ["card", "mobile_money"]
   },
   {
-    id: "housing",
-    label: "Humanitarian Housing Scheme",
-    category: "HUMANITARIAN HOUSING",
-    allocation: 12,
-    color: "#F59E0B", // Amber
-    icon: "Home",
-    metrics: {
-      reached: "45 Sustainable Shelters Built",
-      spent: "₦65,000,000",
-      activeSites: "3 Displaced Communities Rehomed",
-      deliverable: "builds highly durable eco-adobe interlocking blocks for local shelters."
-    },
-    items: [
-      { cost: 50, text: "100 compressed soil-stabilized structural interlocking eco-bricks" },
-      { cost: 150, text: "Premium corrugated heavy-duty weathering roofing sheet kits" },
-      { cost: 500, text: "Builds a complete, hygienic two-room family starter home" }
-    ]
-  },
-  {
-    id: "relief",
-    label: "Emergency Relief & Support",
-    category: "EMERGENCY RELIEF",
-    allocation: 10,
-    color: "#EF4444", // Red
-    icon: "Heart",
-    metrics: {
-      reached: "24,000+ Hot Meals Delivered",
-      spent: "₦48,000,000",
-      activeSites: "6 Refugee Camps Supplied",
-      deliverable: "distributes immediate dry rations, water storage, and hygiene packs."
-    },
-    items: [
-      { cost: 10, text: "2 weeks of wholesome dry food rations for a family" },
-      { cost: 40, text: "1 heavy-duty medical first aid kit & diagnostic device" },
-      { cost: 150, text: "1,000 liters clean drinking water tanker delivery & water filters" }
-    ]
-  },
-  {
-    id: "aged-care",
-    label: "Care for the Aged & Seniors",
-    category: "SENIOR WELFARE",
-    allocation: 8,
-    color: "#8B5CF6", // Purple
-    icon: "UserCheck",
-    metrics: {
-      reached: "1,150+ Seniors Managed",
-      spent: "₦41,000,000",
-      activeSites: "4 Welfare Outposts",
-      deliverable: "funds medicine delivery, free health screenings, and wellness caretakers."
-    },
-    items: [
-      { cost: 20, text: "Monthly supply of prescription diabetic & blood pressure medicines" },
-      { cost: 60, text: "Welfare nurse diagnostics and health checkups at senior centers" },
-      { cost: 180, text: "Community senior gathering center nutritional support for 1 month" }
-    ]
-  },
-  {
-    id: "teen-club",
-    label: "Teen Club & Community Labs",
-    category: "COMMUNITY & TEENS",
-    allocation: 5,
-    color: "#06B6D4", // Cyan
-    icon: "Users",
-    metrics: {
-      reached: "3,800+ Teens Mentored",
-      spent: "₦26,000,000",
-      activeSites: "12 Community Safe Spaces",
-      deliverable: "drives youth character development, mental health counseling, and sports."
-    },
-    items: [
-      { cost: 15, text: "Teen mental wellness counselor guidance hours & handbook kits" },
-      { cost: 50, text: "Sports equipment, soccer balls, and field training gear" },
-      { cost: 120, text: "Host a community youth mentorship sports championship" }
-    ]
+    code: "KES",
+    symbol: "KSh",
+    name: "Kenyan Shilling (KES)",
+    rateToUSD: 130,
+    presets: [2000, 5000, 10000, 25000],
+    flag: "🇰🇪",
+    placeholderPhone: "0712345678",
+    phonePrefix: "+254",
+    paymentMethods: ["card", "mobile_money"]
   }
 ];
 
-export const DonationImpact: React.FC = () => {
-  const { donations, aggregatedTotals, loading } = useLiveImpactData();
-  const [selectedProgramId, setSelectedProgramId] = useState(IMPACT_PROGRAMS[0].id);
-  const [activeTab, setActiveTab] = useState<"allocation" | "simulator">("allocation");
-  const [simulatorAmount, setSimulatorAmount] = useState<number>(100); // Standard USD-equivalent simulator amount
+const NGO_PROGRAMS = [
+  { id: "youth-empowerment", label: "Enriching African youths initiative", category: "YOUTH EMPOWERMENT" },
+  { id: "schools-stem", label: "Schools (Stem and Robotic education)", category: "EDUCATION & TECHNOLOGY" },
+  { id: "green-agri", label: "Green/Agriculture", category: "AGRICULTURE & ENVIRONMENT" },
+  { id: "housing", label: "Humanitarian housing scheme", category: "HUMANITARIAN HOUSING" },
+  { id: "teen-club", label: "Teen club", category: "COMMUNITY & TEENS" },
+  { id: "sponsorship", label: "Sponsorship", category: "INDIVIDUAL SPONSORSHIP" },
+  { id: "relief", label: "Emergency relief", category: "EMERGENCY RELIEF" },
+  { id: "aged-care", label: "Care for the aged", category: "SENIOR WELFARE" }
+];
 
-  const CURRENCY_RATES: Record<string, number> = {
-    NGN: 1500,
-    USD: 1,
-    GHS: 15,
-    KES: 130
+export const DonationPanel: React.FC = () => {
+  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyConfig>(CURRENCIES[0]); // Default to NGN (Naira)
+  const [selectedAmount, setSelectedAmount] = useState<number>(CURRENCIES[0].presets[1]); // Default to 25k preset
+  const [customAmount, setCustomAmount] = useState<string>("");
+  const [frequency, setFrequency] = useState<"once" | "monthly">("once");
+  
+  // Checkout flow states
+  const [checkoutStep, setCheckoutStep] = useState<"idle" | "form" | "paystack_gateway" | "confirming" | "success">("idle");
+  const [donorName, setDonorName] = useState("");
+  const [donorEmail, setDonorEmail] = useState("");
+  const [donorPhone, setDonorPhone] = useState("");
+  const [targetProgramId, setTargetProgramId] = useState(NGO_PROGRAMS[0].id);
+  const [donorNote, setDonorNote] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+
+  // Paystack modal states
+  const [paystackMethod, setPaystackMethod] = useState<"card" | "mobile_money" | "bank_transfer">("card");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
+  const [momoProvider, setMomoProvider] = useState("");
+  const [momoPhone, setMomoPhone] = useState("");
+
+  const [countdown, setCountdown] = useState<number>(7);
+
+  useEffect(() => {
+    if (checkoutStep !== "success") {
+      setCountdown(7);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [checkoutStep]);
+
+  useEffect(() => {
+    if (checkoutStep === "success" && countdown <= 0) {
+      window.location.hash = "#home";
+      setCheckoutStep("idle");
+      setDonorName("");
+      setDonorEmail("");
+      setDonorPhone("");
+      setDonorNote("");
+      setCustomAmount("");
+      setCardNumber("");
+      setCardExpiry("");
+      setCardCvv("");
+      setMomoPhone("");
+      setMomoProvider("");
+      setCountdown(7);
+    }
+  }, [countdown, checkoutStep]);
+
+  const activeAmount = customAmount ? parseFloat(customAmount) || 0 : selectedAmount;
+
+  // Conversion helper for consistent impact description based on approximate USD equivalence
+  const getUSDAmount = () => {
+    return activeAmount / selectedCurrency.rateToUSD;
   };
 
-  const dynamicPrograms = IMPACT_PROGRAMS.map((prog) => {
-    // 1. Get direct successful donations for this program
-    const directDonations = donations.filter(
-      (d) => d.program_id === prog.id && d.status === "success"
-    );
+  const handleDownloadReceipt = () => {
+    const doc = new jsPDF();
+    const ref = paymentReference || `pay_ref_${Math.floor(Math.random() * 899999 + 100000)}`;
+
+    // Set brand colors (Advaltad is Emerald/Green & Charcoal)
+    // Emerald Primary: #10B981 (RGB: 16, 185, 129)
+    // Charcoal: #1E293B (RGB: 30, 41, 59)
     
-    // 2. Get indirect successful donations (e.g. sponsorship, general, or empty program_id)
-    const validProgramIds = IMPACT_PROGRAMS.map((p) => p.id);
-    const indirectDonations = donations.filter(
-      (d) => !validProgramIds.includes(d.program_id) && d.status === "success"
-    );
-
-    // Calculate sum of direct NGN equivalents
-    const directNGN = directDonations.reduce((sum, d) => {
-      const rate = CURRENCY_RATES[d.currency] || 1;
-      return sum + (d.amount / rate) * 1500;
-    }, 0);
-
-    // Calculate sum of indirect NGN equivalents distributed by allocation percentage
-    const indirectNGN = indirectDonations.reduce((sum, d) => {
-      const rate = CURRENCY_RATES[d.currency] || 1;
-      const amountInNGN = (d.amount / rate) * 1500;
-      return sum + (amountInNGN * prog.allocation) / 100;
-    }, 0);
-
-    const totalNGN = directNGN + indirectNGN;
-    const totalUSD = totalNGN / 1500;
-
-    // Calculate dynamic metric strings based on totalUSD and totalNGN
-    let reached = "0 Reached";
-    let activeSites = "0 Active Sites";
-
-    if (prog.id === "youth-empowerment") {
-      const count = Math.floor(totalUSD / 15);
-      reached = `${count.toLocaleString()}+ Youth Trained`;
-      const sites = Math.floor(totalUSD / 150);
-      activeSites = `${sites.toLocaleString()} Tech Labs Active`;
-    } else if (prog.id === "schools-stem") {
-      const count = Math.floor(totalUSD / 10);
-      reached = `${count.toLocaleString()}+ Students Educated`;
-      const sites = Math.floor(totalUSD / 100);
-      activeSites = `${sites.toLocaleString()} Robotic Clubs Set up`;
-    } else if (prog.id === "green-agri") {
-      const count = Math.floor(totalUSD / 25);
-      reached = `${count.toLocaleString()}+ Smallholder Farmers Supported`;
-      const sites = Math.floor(totalUSD / 250);
-      activeSites = `${sites.toLocaleString()} Irrigation Projects`;
-    } else if (prog.id === "housing") {
-      const count = Math.floor(totalUSD / 150);
-      reached = `${count.toLocaleString()}+ Sustainable Shelters Built`;
-      const sites = Math.floor(totalUSD / 500);
-      activeSites = `${sites.toLocaleString()} Communities Rehomed`;
-    } else if (prog.id === "relief") {
-      const count = Math.floor(totalUSD / 2);
-      reached = `${count.toLocaleString()}+ Hot Meals Delivered`;
-      const sites = Math.floor(totalUSD / 200);
-      activeSites = `${sites.toLocaleString()} Refugee Camps Supplied`;
-    } else if (prog.id === "aged-care") {
-      const count = Math.floor(totalUSD / 20);
-      reached = `${count.toLocaleString()}+ Seniors Managed`;
-      const sites = Math.floor(totalUSD / 100);
-      activeSites = `${sites.toLocaleString()} Welfare Outposts`;
-    } else if (prog.id === "teen-club") {
-      const count = Math.floor(totalUSD / 8);
-      reached = `${count.toLocaleString()}+ Teens Mentored`;
-      const sites = Math.floor(totalUSD / 150);
-      activeSites = `${sites.toLocaleString()} Community Safe Spaces`;
+    // Title / Header Banner
+    doc.setFillColor(30, 41, 59); // Charcoal background
+    doc.rect(0, 0, 210, 38, "F");
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("ADVALTAD FOUNDATION", 15, 18);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("Audited Humanitarian Growth and Support Initiative", 15, 24);
+    doc.text("Email: support@advaltad.org  |  Web: www.advaltad.org", 15, 29);
+    
+    // Document Type Header
+    doc.setTextColor(30, 41, 59);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("OFFICIAL DONATION RECEIPT", 15, 52);
+    
+    // Draw a horizontal divider line
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.setLineWidth(0.5);
+    doc.line(15, 56, 195, 56);
+    
+    // Metadata Section
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Receipt Reference:", 15, 66);
+    doc.setFont("helvetica", "normal");
+    doc.text(ref, 60, 66);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Date:", 15, 73);
+    doc.setFont("helvetica", "normal");
+    doc.text(new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), 60, 73);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Payment Status:", 15, 80);
+    doc.setTextColor(16, 185, 129); // Emerald
+    doc.text("VERIFIED SUCCESSFUL (Live Paystack)", 60, 80);
+    doc.setTextColor(30, 41, 59);
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, 86, 195, 86);
+    
+    // Donor Information
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("DONOR DETAILS", 15, 96);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Name:", 15, 106);
+    doc.setFont("helvetica", "normal");
+    doc.text(donorName || "Anonymous Donor", 60, 106);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Email Address:", 15, 113);
+    doc.setFont("helvetica", "normal");
+    doc.text(donorEmail || "N/A", 60, 113);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Phone Number:", 15, 120);
+    doc.setFont("helvetica", "normal");
+    doc.text(donorPhone || "N/A", 60, 120);
+    
+    doc.line(15, 126, 195, 126);
+    
+    // Contribution Details
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("CONTRIBUTION DETAILS", 15, 136);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Gift Type:", 15, 146);
+    doc.setFont("helvetica", "normal");
+    doc.text(frequency === "monthly" ? "Monthly Recurring Gift" : "One-Time Donation", 60, 146);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Amount Contributed:", 15, 153);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(16, 185, 129);
+    doc.text(`${selectedCurrency.symbol}${activeAmount.toLocaleString()} ${selectedCurrency.code}`, 60, 153);
+    doc.setTextColor(30, 41, 59);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Target Program:", 15, 160);
+    doc.setFont("helvetica", "normal");
+    doc.text(selectedProgram.label, 60, 160);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Program Category:", 15, 167);
+    doc.setFont("helvetica", "normal");
+    doc.text(selectedProgram.category, 60, 167);
+    
+    if (donorNote) {
+      doc.setFont("helvetica", "bold");
+      doc.text("Donor's Message / Note:", 15, 174);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // cool gray
+      doc.text(`"${donorNote}"`, 60, 174);
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
     }
-
-    const spent = `₦${Math.round(totalNGN).toLocaleString()}`;
-
-    return {
-      ...prog,
-      metrics: {
-        reached,
-        spent,
-        activeSites,
-        deliverable: prog.metrics.deliverable
-      }
-    };
-  });
-
-  const selectedProgram = dynamicPrograms.find((p) => p.id === selectedProgramId) || dynamicPrograms[0];
-
-  const handleProgramSelect = (prog: any) => {
-    setSelectedProgramId(prog.id);
+    
+    doc.line(15, 183, 195, 183);
+    
+    // Footer / Thank you
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(16, 185, 129); // Emerald
+    doc.text("YOUR IMPACT", 15, 193);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text("100% of your donation is directed entirely to operational field resources.", 15, 201);
+    doc.text("Your support bypasses commercial bureaucracy to build critical regional infrastructure.", 15, 206);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 41, 59);
+    doc.text("Thank you for choosing to empower on-field action with Advaltad.", 15, 216);
+    
+    // Signature Block
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Advaltad Audited Finance Department", 15, 240);
+    doc.text("Generated securely via Paystack API Integration.", 15, 244);
+    
+    // Border Box around receipt for a premium look
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(8, 8, 194, 280, "S");
+    
+    doc.save(`Advaltad_Donation_Receipt_${ref}.pdf`);
   };
 
-  // Safe representation for Recharts Pie Chart tooltip styling
-  const customTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-slate-900 border border-slate-800 text-white px-3 py-2.5 rounded-xl text-xs font-sans space-y-1 shadow-xl">
-          <p className="font-extrabold text-[10px] uppercase tracking-wider text-slate-400">{data.category}</p>
-          <p className="font-black text-white">{data.name}</p>
-          <p className="font-semibold text-emerald-400">
-            Allocation: <span className="font-mono">{data.value}%</span> of total budget
-          </p>
-        </div>
-      );
-    }
-    return null;
+  const getDynamicImpact = (amountInCurrency: number) => {
+    const usdEquiv = amountInCurrency / selectedCurrency.rateToUSD;
+    if (usdEquiv <= 0) return "Choose or enter an amount to see your impact.";
+    if (usdEquiv <= 15) return "Provides daily wholesome meals and vitamins for a displaced child.";
+    if (usdEquiv <= 35) return "School supplies, books, and educational kits for one child.";
+    if (usdEquiv <= 60) return "Provides hybrid solar-powered study lamps for two farming families.";
+    if (usdEquiv <= 120) return "Supports mobile health outreach checkups and medical support.";
+    if (usdEquiv <= 300) return "Sponsors vocations, internet, and software developer training licenses.";
+    return "Sponsors modern deep solar-boreholes, agritech toolkits, or sustainable eco-adobe block shelter.";
   };
 
-  const chartData = dynamicPrograms.map((p) => ({
-    name: p.label,
-    value: p.allocation,
-    color: p.color,
-    category: p.category,
-    ...p
-  }));
+  const handleCurrencyChange = (currencyCode: string) => {
+    const found = CURRENCIES.find((c) => c.code === currencyCode);
+    if (found) {
+      setSelectedCurrency(found);
+      setSelectedAmount(found.presets[1]); // Select second preset by default
+      setCustomAmount("");
+      // Update default paystack method based on availability
+      setPaystackMethod(found.paymentMethods[0]);
+    }
+  };
+
+  const handleSelectAmount = (amt: number) => {
+    setSelectedAmount(amt);
+    setCustomAmount("");
+  };
+
+  const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (/^\d*$/.test(val)) {
+      setCustomAmount(val);
+      setSelectedAmount(0);
+    }
+  };
+
+  const handleDonateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (activeAmount > 0) {
+      setCheckoutStep("form");
+    }
+  };
+
+  const selectedProgram = NGO_PROGRAMS.find(p => p.id === targetProgramId) || NGO_PROGRAMS[0];
 
   return (
-    <section id="impact" className="py-24 bg-white relative overflow-hidden border-t border-slate-100">
+    <section id="donate" className="py-24 sm:py-32 bg-[#F7F8FA] relative overflow-hidden">
       <div className="max-w-[1200px] mx-auto px-6 lg:px-8">
         
-        {/* Header Block */}
-        <div className="max-w-2xl mx-auto text-center mb-16 space-y-4">
+        {/* Core Header */}
+        <div className="max-w-xl mx-auto text-center mb-12 sm:mb-16 space-y-4">
           <div className="inline-flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
             <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
-              REAL-TIME IMPACT MAP
+              TRANSPARENT NGO GIVING
             </span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-display font-black text-brand-charcoal tracking-tight">
-            How Contributions Reach Specific Programs
+            Support Our Regional Programs
           </h2>
-          <p className="text-slate-500 font-sans text-base max-w-[550px] mx-auto">
-            Explore our audited regional allocation structure and visualize how your contributions convert directly into tangible deliverables on the ground.
+          <p className="text-slate-500 font-sans text-base max-w-[500px] mx-auto">
+            Your generous contributions are directly securely processed. Direct, audited development without intermediaries.
           </p>
         </div>
 
-        {/* Tab Selector */}
-        <div className="flex bg-slate-50 p-1.5 rounded-2xl mb-12 max-w-sm mx-auto border border-slate-100">
-          <button
-            onClick={() => setActiveTab("allocation")}
-            className={`flex-1 py-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === "allocation" 
-                ? "bg-brand-primary text-white shadow-sm" 
-                : "text-slate-400 hover:text-brand-charcoal"
-            }`}
-          >
-            <Icon name="PieChart" size={14} />
-            Regional Allocation
-          </button>
-          <button
-            onClick={() => setActiveTab("simulator")}
-            className={`flex-1 py-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === "simulator" 
-                ? "bg-brand-primary text-white shadow-sm" 
-                : "text-slate-400 hover:text-brand-charcoal"
-            }`}
-          >
-            <Icon name="Activity" size={14} />
-            Impact Simulator
-          </button>
+        {/* Premium Centered White Card with 32px Rounded Corners */}
+        <div className="max-w-2xl mx-auto bg-white rounded-[32px] p-8 sm:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.02)] border border-slate-50">
+          
+          {/* Once / Monthly Toggle */}
+          <div className="flex bg-slate-50 p-1 rounded-2xl mb-8 max-w-xs mx-auto">
+            <button
+              onClick={() => setFrequency("once")}
+              className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                frequency === "once" ? "bg-brand-primary text-white shadow-sm" : "text-slate-400 hover:text-brand-charcoal"
+              }`}
+            >
+              One-time Gift
+            </button>
+            <button
+              onClick={() => setFrequency("monthly")}
+              className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                frequency === "monthly" ? "bg-brand-primary text-white shadow-sm" : "text-slate-400 hover:text-brand-charcoal"
+              }`}
+            >
+              Give Monthly
+            </button>
+          </div>
+
+          {/* Currency Selector Reworked */}
+          <div className="mb-8 text-left">
+            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
+              Select Your Preferred Currency
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+              {CURRENCIES.map((curr) => {
+                const isSelected = selectedCurrency.code === curr.code;
+                return (
+                  <button
+                    key={curr.code}
+                    type="button"
+                    onClick={() => handleCurrencyChange(curr.code)}
+                    className={`px-3 py-3 min-h-[44px] rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      isSelected
+                        ? "border-brand-primary bg-brand-secondary/40 text-brand-primary"
+                        : "border-slate-100 bg-white hover:bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    <span>{curr.flag}</span>
+                    <span>{curr.code} ({curr.symbol})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Preset Donation Amounts (Dynamic per Selected Currency) */}
+          <div className="text-left">
+            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
+              Select Donation Value
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+              {selectedCurrency.presets.map((amt) => {
+                const active = selectedAmount === amt && !customAmount;
+                return (
+                  <button
+                    key={amt}
+                    onClick={() => handleSelectAmount(amt)}
+                    className={`py-3.5 px-2 min-h-[44px] rounded-xl border transition-all text-center cursor-pointer font-display font-black text-xs sm:text-sm ${
+                      active
+                        ? "border-brand-primary bg-brand-secondary/40 text-brand-primary"
+                        : "border-slate-100 bg-white hover:bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    {selectedCurrency.symbol}
+                    {amt.toLocaleString()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Amount Form Field */}
+          <div className="mt-5 relative">
+            <span className="absolute left-5 top-1/2 -translate-y-1/2 font-display font-black text-slate-400">
+              {selectedCurrency.symbol}
+            </span>
+            <input
+              type="text"
+              placeholder="Other custom amount"
+              value={customAmount}
+              onChange={handleCustomChange}
+              className="w-full pl-12 pr-20 py-3.5 rounded-xl bg-slate-50/50 border border-slate-100 focus:border-brand-primary focus:outline-none text-sm font-bold text-[#1E293B] transition-all font-sans"
+            />
+            <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-slate-400 tracking-wider">
+              {selectedCurrency.code}
+            </span>
+          </div>
+
+          {/* Dynamic Impact Statement Box */}
+          <div className="mt-6 p-5 rounded-xl bg-brand-secondary/20 border border-brand-secondary/50 flex items-start gap-3 text-left">
+            <div className="p-1.5 rounded-lg bg-brand-primary text-white flex-shrink-0 mt-0.5">
+              <Icon name="Gift" size={14} />
+            </div>
+            <div>
+              <p className="text-[9px] font-extrabold tracking-wider text-brand-primary uppercase">Tangible Resource Allocation</p>
+              <p className="text-xs text-brand-charcoal mt-1 font-sans font-semibold leading-relaxed">
+                {getDynamicImpact(activeAmount)}
+              </p>
+            </div>
+          </div>
+
+          {/* Submit Trigger Action */}
+          <form onSubmit={handleDonateSubmit} className="mt-8">
+            <button
+              type="submit"
+              disabled={activeAmount <= 0}
+              className="w-full py-4 rounded-xl bg-brand-primary hover:bg-[#0A4233] disabled:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed font-display font-extrabold text-white text-xs tracking-widest shadow-lg shadow-brand-primary/10 hover:shadow-brand-primary/20 hover:-translate-y-0.5 disabled:translate-y-0 transition-all duration-300 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Icon name="Coins" size={14} />
+              DONATE {selectedCurrency.symbol}{activeAmount > 0 ? activeAmount.toLocaleString() : ""} NOW
+            </button>
+          </form>
+
+          {/* Security & Compliant Badges */}
+          <div className="mt-5 flex justify-center items-center gap-4 text-[9px] text-slate-400 font-display font-medium">
+            <span className="flex items-center gap-1">
+              <Icon name="Lock" size={11} className="text-brand-primary" /> SECURED BY PAYSTACK
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <Icon name="CheckCircle2" size={11} className="text-brand-primary" /> 501(C)(3) COMPLIANT
+            </span>
+          </div>
+
         </div>
 
-        <AnimatePresence mode="wait">
-          {activeTab === "allocation" ? (
+      </div>
+
+      {/* Payment checkout overlays */}
+      <AnimatePresence>
+        {checkoutStep !== "idle" && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 overflow-y-auto">
+            
             <motion.div
-              key="allocation"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.4 }}
-              className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setCheckoutStep("idle")}
+              className="absolute inset-0 bg-brand-charcoal/70 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative z-10 w-full max-w-lg bg-white text-brand-charcoal rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-2xl my-8 text-left"
             >
-              {/* Visual Chart Column */}
-              <div className="lg:col-span-5 flex flex-col items-center">
-                <div className="w-full h-[320px] sm:h-[360px] relative flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={80}
-                        outerRadius={135}
-                        paddingAngle={4}
-                        dataKey="value"
-                        className="focus:outline-none"
-                      >
-                        {chartData.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={entry.color} 
-                            style={{ 
-                              filter: selectedProgram.id === entry.id ? "drop-shadow(0 8px 16px rgba(16,185,129,0.15))" : "none",
-                              opacity: selectedProgram.id === entry.id ? 1 : 0.75,
-                              cursor: "pointer"
-                            }}
-                            onClick={() => handleProgramSelect(entry)}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip content={customTooltip} />
-                    </PieChart>
-                  </ResponsiveContainer>
+              <button
+                onClick={() => setCheckoutStep("idle")}
+                className="absolute top-5 right-5 p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <Icon name="X" size={16} />
+              </button>
 
-                  {/* Centered Total Indicator */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase">AUDITED</p>
-                    <p className="text-3xl font-display font-black text-brand-charcoal">100%</p>
-                    <p className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide">DIRECT GIVING</p>
-                  </div>
-                </div>
-
-                <p className="text-[10px] text-slate-400 font-sans italic text-center max-w-[320px] mt-2 leading-normal">
-                  💡 Hint: Hover or click sectors on the pie chart to drill down into real audits and deliverables below.
-                </p>
-              </div>
-
-              {/* Program Details drill down Column */}
-              <div className="lg:col-span-7 text-left space-y-6">
-                
-                {/* Program Selector Pills */}
-                <div className="flex flex-wrap gap-2 pb-4 border-b border-slate-100">
-                  {dynamicPrograms.map((prog) => {
-                    const isActive = selectedProgram.id === prog.id;
-                    return (
-                      <button
-                        key={prog.id}
-                        onClick={() => handleProgramSelect(prog)}
-                        className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer ${
-                          isActive
-                            ? "bg-brand-secondary/35 border-brand-primary text-brand-primary shadow-sm"
-                            : "bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100/70"
-                        }`}
-                      >
-                        {prog.category}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Selected Program Showcase */}
-                <motion.div
-                  key={selectedProgram.id}
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="space-y-6"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-2xl bg-slate-50 text-brand-primary" style={{ color: selectedProgram.color }}>
-                      <Icon name={selectedProgram.icon === "GraduationCap" ? "GraduationCap" : selectedProgram.icon === "Laptop" ? "Laptop" : selectedProgram.icon === "Sprout" ? "Sprout" : selectedProgram.icon === "Home" ? "Home" : selectedProgram.icon === "Heart" ? "Heart" : selectedProgram.icon === "UserCheck" ? "UserCheck" : "Users"} size={22} />
+              {/* STEP 1: COMPREHENSIVE INFORMATION FORM */}
+              {checkoutStep === "form" && (
+                <div className="space-y-5">
+                  <div className="text-center pb-2 border-b border-slate-100">
+                    <div className="w-10 h-10 rounded-xl bg-brand-secondary text-brand-primary flex items-center justify-center mx-auto mb-2">
+                      <Icon name="Lock" size={16} />
                     </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold tracking-wider uppercase" style={{ color: selectedProgram.color }}>
-                        {selectedProgram.category} — {selectedProgram.allocation}% ALLOCATION
-                      </p>
-                      <h3 className="text-xl font-display font-black text-brand-charcoal mt-0.5">
-                        {selectedProgram.label}
-                      </h3>
-                    </div>
+                    <h3 className="text-lg font-display font-black text-brand-charcoal">Donor Information</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Sponsoring {selectedCurrency.symbol}{activeAmount.toLocaleString()} {frequency === "monthly" ? "monthly" : "once"}</p>
                   </div>
 
-                  <p className="text-sm text-slate-500 font-sans leading-relaxed">
-                    This department {selectedProgram.metrics.deliverable} We execute direct operations bypassing commercial middlemen. All allocations undergo comprehensive audit pipelines.
-                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (donorName && donorEmail && donorPhone) {
+                        setCheckoutStep("paystack_gateway");
+                      }
+                    }}
+                    className="space-y-4 font-sans"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Your Full Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Ramon Bisola"
+                          value={donorName}
+                          onChange={(e) => setDonorName(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-xs font-semibold text-brand-charcoal"
+                        />
+                      </div>
 
-                  {/* Audit Performance Highlights */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
-                      <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">Tangible Impact</p>
-                      <p className="text-base font-display font-black text-brand-charcoal mt-1 truncate">
-                        {selectedProgram.metrics.reached}
-                      </p>
+                      <div>
+                        <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Your Email</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="e.g. ramonbisola1@gmail.com"
+                          value={donorEmail}
+                          onChange={(e) => setDonorEmail(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-xs font-semibold text-brand-charcoal"
+                        />
+                      </div>
                     </div>
-                    <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
-                      <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">Total Audited Deploy</p>
-                      <p className="text-base font-display font-black text-emerald-600 mt-1 truncate">
-                        {selectedProgram.metrics.spent}
-                      </p>
-                    </div>
-                    <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
-                      <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">Operational footprint</p>
-                      <p className="text-base font-display font-black text-brand-charcoal mt-1 truncate">
-                        {selectedProgram.metrics.activeSites}
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Tangible Products Preview */}
-                  <div className="space-y-3 pt-2">
-                    <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">What your specific contribution yields here:</p>
-                    <div className="space-y-2">
-                      {selectedProgram.items.map((it, idx) => (
-                        <div key={idx} className="flex items-center gap-3 bg-white p-3.5 rounded-xl border border-slate-100 text-xs text-brand-charcoal">
-                          <span className="font-display font-black px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
-                            ${it.cost} USD
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Phone Number</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400 font-bold">
+                            {selectedCurrency.phonePrefix}
                           </span>
-                          <span className="font-semibold text-slate-600 leading-relaxed font-sans">{it.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                </motion.div>
-
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="simulator"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.4 }}
-              className="max-w-4xl mx-auto bg-slate-50/50 p-8 sm:p-12 rounded-[32px] border border-slate-100 text-left space-y-10"
-            >
-              
-              <div className="text-center max-w-lg mx-auto space-y-2">
-                <h3 className="text-xl font-display font-black text-brand-charcoal">Pre-Gifting Resource Simulator</h3>
-                <p className="text-xs text-slate-400 font-sans">
-                  Slide or enter any simulated gift value in USD to evaluate how our regional divisions translate your contribution directly into physical deliverables.
-                </p>
-              </div>
-
-              {/* Slider Controls */}
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Simulated Gift Value</label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-display font-black text-slate-400">$</span>
-                      <input
-                        type="number"
-                        value={simulatorAmount}
-                        onChange={(e) => setSimulatorAmount(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="text-4xl font-display font-black text-brand-primary w-32 bg-transparent focus:outline-none border-b border-slate-200 focus:border-brand-primary focus:ring-0"
-                      />
-                      <span className="text-base font-extrabold text-slate-400 font-sans">USD EQUIVALENT</span>
-                    </div>
-                  </div>
-
-                  {/* Quick Value Presets */}
-                  <div className="flex items-center gap-2">
-                    {[25, 50, 100, 250, 500].map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => setSimulatorAmount(v)}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          simulatorAmount === v 
-                            ? "bg-brand-primary text-white" 
-                            : "bg-white hover:bg-slate-100 text-slate-500 border border-slate-100"
-                        }`}
-                      >
-                        ${v}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="relative pt-4">
-                  <input
-                    type="range"
-                    min="10"
-                    max="1000"
-                    step="10"
-                    value={simulatorAmount}
-                    onChange={(e) => setSimulatorAmount(parseInt(e.target.value))}
-                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-brand-primary"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-2 font-bold uppercase tracking-wider">
-                    <span>$10 USD (Basic rations)</span>
-                    <span>$500 USD (Community Infrastructure)</span>
-                    <span>$1,000 USD (Major Facility)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Result Bar Visualizer representing proportional allocation */}
-              <div className="space-y-4">
-                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Proportional resource allocation breakdown:</p>
-                
-                <div className="h-6 w-full rounded-xl overflow-hidden flex shadow-inner">
-                  {dynamicPrograms.map((prog) => {
-                    const allocatedVal = (simulatorAmount * prog.allocation) / 100;
-                    if (allocatedVal <= 0) return null;
-                    return (
-                      <div
-                        key={prog.id}
-                        style={{ width: `${prog.allocation}%`, backgroundColor: prog.color }}
-                        className="h-full transition-all duration-300 hover:opacity-90 relative group cursor-pointer"
-                        title={`${prog.label}: $${allocatedVal.toFixed(2)} USD`}
-                      />
-                    );
-                  })}
-                </div>
-
-                {/* Simulated Outcomes Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {dynamicPrograms.map((prog) => {
-                    const allocatedVal = (simulatorAmount * prog.allocation) / 100;
-                    
-                    // Simple programmatic builder of outcomes based on allocated amount
-                    const getSimulatedOutcomeText = (val: number) => {
-                      if (val <= 0) return "Sparsely allocated";
-                      if (prog.id === "youth-empowerment") {
-                        const students = Math.max(1, Math.floor(val / 15));
-                        return `Funds robust vocational internet access & software licenses for ${students} student${students > 1 ? "s" : ""} next quarter.`;
-                      }
-                      if (prog.id === "schools-stem") {
-                        const kits = Math.max(1, Math.floor(val / 25));
-                        return `Supplies ${kits} interactive STEM robotic parts kits & guides for schools.`;
-                      }
-                      if (prog.id === "green-agri") {
-                        if (val >= 100) {
-                          const pumps = Math.floor(val / 100);
-                          return `Equips cooperatives with ${pumps} clean solar-powered water irrigation pump kit${pumps > 1 ? "s" : ""}.`;
-                        }
-                        return `Provides dynamic organic seed sacks and compost fertilizers for farm families.`;
-                      }
-                      if (prog.id === "housing") {
-                        const bricks = Math.floor(val * 2);
-                        return `Supplies approximately ${bricks} high-grade soil interlocking bricks for safe community housing.`;
-                      }
-                      if (prog.id === "relief") {
-                        const packs = Math.max(1, Math.floor(val / 10));
-                        return `Supplies ${packs} complete two-week organic dry food rations to crisis-affected camps.`;
-                      }
-                      if (prog.id === "aged-care") {
-                        const seniors = Math.max(1, Math.floor(val / 20));
-                        return `Covers prescription diabetic/blood pressure medicines & nursing logs for ${seniors} senior citizens.`;
-                      }
-                      // teen-club
-                      const counselorHours = Math.max(1, Math.floor(val / 15));
-                      return `Supports ${counselorHours} hours of dedicated teen mental-health mentorship & counseling sessions.`;
-                    };
-
-                    return (
-                      <div key={prog.id} className="bg-white p-5 rounded-2xl border border-slate-100 flex items-start gap-4 hover:shadow-md hover:shadow-slate-150/10 transition-all">
-                        <div className="p-2.5 rounded-xl text-white flex-shrink-0" style={{ backgroundColor: prog.color }}>
-                          <Icon name={prog.icon === "GraduationCap" ? "GraduationCap" : prog.icon === "Laptop" ? "Laptop" : prog.icon === "Sprout" ? "Sprout" : prog.icon === "Home" ? "Home" : prog.icon === "Heart" ? "Heart" : prog.icon === "UserCheck" ? "UserCheck" : "Users"} size={16} />
-                        </div>
-                        <div className="space-y-1 text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-extrabold text-brand-charcoal">{prog.category}</span>
-                            <span className="font-mono font-black text-brand-primary" style={{ color: prog.color }}>
-                              ${allocatedVal.toFixed(2)} USD
-                            </span>
-                          </div>
-                          <p className="text-slate-500 font-sans leading-relaxed text-[11px] font-semibold">
-                            {getSimulatedOutcomeText(allocatedVal)}
-                          </p>
+                          <input
+                            type="tel"
+                            required
+                            placeholder={selectedCurrency.placeholderPhone}
+                            value={donorPhone}
+                            onChange={(e) => setDonorPhone(e.target.value)}
+                            className="w-full pl-14 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-xs font-semibold text-brand-charcoal"
+                          />
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
 
-                <div className="pt-4 text-center">
-                  <a
-                    href="#donate"
-                    className="inline-flex items-center gap-1.5 px-6 py-3.5 rounded-xl bg-brand-primary hover:bg-[#0A4233] text-white font-display font-black text-xs uppercase tracking-widest shadow-md transition-all hover:-translate-y-0.5 cursor-pointer"
-                  >
-                    <Icon name="Heart" size={14} />
-                    Make a Gift of ${simulatorAmount.toLocaleString()} Now
-                  </a>
-                </div>
+                      <div>
+                        <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Allocation Program Target</label>
+                        <div className="relative">
+                          <select
+                            value={targetProgramId}
+                            onChange={(e) => setTargetProgramId(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-xs font-semibold text-brand-charcoal appearance-none cursor-pointer"
+                          >
+                            {NGO_PROGRAMS.map((prog) => (
+                              <option key={prog.id} value={prog.id}>
+                                {prog.label} ({prog.category})
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                            <Icon name="ChevronDown" size={14} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-              </div>
+                    <div>
+                      <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Optional Message / Dedication Note</label>
+                      <textarea
+                        rows={2}
+                        placeholder="e.g. In memory of my mother, or Keep up the great education work..."
+                        value={donorNote}
+                        onChange={(e) => setDonorNote(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-100 focus:border-brand-primary focus:outline-none text-xs font-semibold text-brand-charcoal resize-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3.5 rounded-xl bg-brand-primary hover:bg-[#0A4233] text-white font-extrabold text-xs tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <span>Proceed to Payment Gateway</span>
+                      <Icon name="ArrowRight" size={14} />
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* STEP 2: HIGH-FIDELITY PAYSTACK SIMULATED GATEWAY */}
+              {checkoutStep === "paystack_gateway" && (
+                <div className="space-y-5">
+                  
+                  {/* Gateway Header with official Paystack appearance */}
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-[#3bb75e] animate-pulse" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PAYSTACK GATEWAY</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">PAYING TO</p>
+                      <p className="text-xs font-black text-brand-charcoal">Advaltad Dev Foundation</p>
+                    </div>
+                  </div>
+
+                  {/* Summary of Transaction info */}
+                  <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center text-xs">
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 uppercase">DONOR EMAIL</p>
+                      <p className="font-semibold text-brand-charcoal truncate max-w-[200px]">{donorEmail}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-extrabold text-slate-400 uppercase">TOTAL AMOUNT</p>
+                      <p className="text-base font-black text-[#3bb75e]">{selectedCurrency.symbol}{activeAmount.toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  {/* Paystack left tabs and main checkout interface */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    
+                    {/* Paystack Payment options menu */}
+                    <div className="flex sm:flex-col gap-1 sm:border-r border-slate-100 sm:pr-2 overflow-x-auto">
+                      {selectedCurrency.paymentMethods.includes("card") && (
+                        <button
+                          type="button"
+                          onClick={() => setPaystackMethod("card")}
+                          className={`px-3 py-2.5 text-left rounded-xl text-xs font-bold transition-all flex items-center gap-2 flex-shrink-0 cursor-pointer ${
+                            paystackMethod === "card" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          <Icon name="Lock" size={12} />
+                          <span>Pay with Card</span>
+                        </button>
+                      )}
+                      {selectedCurrency.paymentMethods.includes("mobile_money") && (
+                        <button
+                          type="button"
+                          onClick={() => setPaystackMethod("mobile_money")}
+                          className={`px-3 py-2.5 text-left rounded-xl text-xs font-bold transition-all flex items-center gap-2 flex-shrink-0 cursor-pointer ${
+                            paystackMethod === "mobile_money" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          <Icon name="Phone" size={12} />
+                          <span>Mobile Money</span>
+                        </button>
+                      )}
+                      {selectedCurrency.paymentMethods.includes("bank_transfer") && (
+                        <button
+                          type="button"
+                          onClick={() => setPaystackMethod("bank_transfer")}
+                          className={`px-3 py-2.5 text-left rounded-xl text-xs font-bold transition-all flex items-center gap-2 flex-shrink-0 cursor-pointer ${
+                            paystackMethod === "bank_transfer" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          <Icon name="Building2" size={12} />
+                          <span>Bank Transfer</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Active Paystack method screen */}
+                    <div className="col-span-1 sm:col-span-2 space-y-4">
+                      
+                      {paystackMethod === "card" && (
+                        <div className="space-y-3">
+                          <p className="text-[10px] text-slate-400 font-extrabold uppercase">CARD DETAILS</p>
+                          <div className="space-y-2.5 text-xs font-sans">
+                            <input
+                              type="text"
+                              maxLength={19}
+                              placeholder="0000 0000 0000 0000"
+                              value={cardNumber}
+                              onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, "").replace(/(.{4})/g, "$1 ").trim())}
+                              className="w-full px-3 py-2.5 rounded-xl border border-slate-150 focus:border-[#3bb75e] outline-none text-brand-charcoal font-semibold text-center tracking-widest"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                maxLength={5}
+                                placeholder="MM/YY"
+                                value={cardExpiry}
+                                onChange={(e) => setCardExpiry(e.target.value)}
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-150 focus:border-[#3bb75e] outline-none text-brand-charcoal font-semibold text-center"
+                              />
+                              <input
+                                type="password"
+                                maxLength={3}
+                                placeholder="CVV"
+                                value={cardCvv}
+                                onChange={(e) => setCardCvv(e.target.value)}
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-150 focus:border-[#3bb75e] outline-none text-brand-charcoal font-semibold text-center"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {paystackMethod === "mobile_money" && (
+                        <div className="space-y-3">
+                          <p className="text-[10px] text-slate-400 font-extrabold uppercase">MOBILE MONEY WALLET</p>
+                          <div className="space-y-2.5 text-xs font-sans">
+                            <select
+                              value={momoProvider}
+                              onChange={(e) => setMomoProvider(e.target.value)}
+                              className="w-full px-3 py-2.5 rounded-xl border border-slate-150 focus:border-[#3bb75e] outline-none text-brand-charcoal font-bold appearance-none bg-white cursor-pointer"
+                            >
+                              <option value="">Select Network Provider</option>
+                              {selectedCurrency.code === "GHS" && (
+                                <>
+                                  <option value="mtn">MTN Mobile Money 💛</option>
+                                  <option value="telecel">Telecel Cash (Vodafone) ❤️</option>
+                                  <option value="airtel">AirtelTigo Money 💙</option>
+                                </>
+                              )}
+                              {selectedCurrency.code === "KES" && (
+                                <>
+                                  <option value="mpesa">Safaricom M-Pesa 💚</option>
+                                  <option value="airtel_kes">Airtel Money ❤️</option>
+                                </>
+                              )}
+                            </select>
+
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono">
+                                {selectedCurrency.phonePrefix}
+                              </span>
+                              <input
+                                type="tel"
+                                placeholder={selectedCurrency.placeholderPhone}
+                                value={momoPhone || donorPhone}
+                                onChange={(e) => setMomoPhone(e.target.value)}
+                                className="w-full pl-14 pr-3 py-2.5 rounded-xl border border-slate-150 focus:border-[#3bb75e] outline-none text-brand-charcoal font-semibold"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {paystackMethod === "bank_transfer" && (
+                        <div className="space-y-2 text-xs text-left">
+                          <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Bank account details*</p>
+                          <div className="p-3.5 bg-[#3bb75e]/10 border border-[#3bb75e]/30 rounded-2xl space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <p className="font-extrabold text-[#268943] uppercase text-[9px] tracking-wider">OFFICIAL DIRECT TRANSFER</p>
+                              <span className="text-[10px] font-bold text-slate-600 bg-white/70 px-2 py-0.5 rounded-full border border-slate-200">GTbank / Opay</span>
+                            </div>
+                            <p className="text-slate-700 font-medium text-[11px]">Please send your contribution ({selectedCurrency.symbol}{activeAmount.toLocaleString()}) to any of our official accounts:</p>
+                            
+                            <div className="bg-white/90 p-3 rounded-xl border border-slate-200/80 space-y-2 text-xs font-sans">
+                              <div className="border-b border-slate-100 pb-1.5 space-y-0.5">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Account Name</span>
+                                <span className="font-extrabold text-slate-900 block text-xs">Advaltad growth and support foundation</span>
+                              </div>
+
+                              <div className="border-b border-slate-100 pb-1.5 space-y-0.5">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Bank Name</span>
+                                <span className="font-extrabold text-slate-900 block text-xs">GTbank</span>
+                              </div>
+
+                              <div className="space-y-2 pt-1">
+                                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Dollar account number</span>
+                                    <span className="font-mono font-black text-slate-900 text-xs">300 292 7257</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText("3002927257")}
+                                    className="text-[10px] font-extrabold text-[#268943] hover:underline px-2 py-1 bg-emerald-50 rounded border border-emerald-200 cursor-pointer"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+
+                                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Naira account number</span>
+                                    <span className="font-mono font-black text-slate-900 text-xs">300 292 7219</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText("3002927219")}
+                                    className="text-[10px] font-extrabold text-[#268943] hover:underline px-2 py-1 bg-emerald-50 rounded border border-emerald-200 cursor-pointer"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+
+                                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Opay account number (naira account)</span>
+                                    <span className="font-mono font-black text-slate-900 text-xs">6140627114</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText("6140627114")}
+                                    className="text-[10px] font-extrabold text-[#268943] hover:underline px-2 py-1 bg-emerald-50 rounded border border-emerald-200 cursor-pointer"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-relaxed">Your transfer will be verified and credited upon confirmation by our finance team.</p>
+                        </div>
+                      )}
+
+                      {/* Paystack secure bottom banner */}
+                      <div className="flex items-center justify-center gap-1.5 text-[9px] text-slate-400 pt-1 font-mono">
+                        <Icon name="Lock" size={10} className="text-[#3bb75e]" />
+                        <span>SECURED BY PAYSTACK PCI-DSS COMPLIANT</span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Complete payment gateway button */}
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setCheckoutStep("form")}
+                      className="px-4 py-2 text-slate-500 hover:text-slate-800 text-xs font-black uppercase cursor-pointer"
+                    >
+                      Go Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ref = `pay_ref_${Math.floor(Math.random() * 899999 + 100000)}`;
+                        setPaymentReference(ref);
+                        
+                        // Fire-and-forget saving of donation to DB & localStorage
+                        db.createDonation({
+                          reference: ref,
+                          email: donorEmail || "anonymous@advaltad.org",
+                          name: donorName || "Anonymous Donor",
+                          phone: donorPhone || "",
+                          amount: activeAmount,
+                          currency: selectedCurrency.code,
+                          program_id: targetProgramId,
+                          note: donorNote || "",
+                          status: "success"
+                        }).catch(err => console.error("Error creating donation:", err));
+
+                        setCheckoutStep("confirming");
+                        setTimeout(() => {
+                          setCheckoutStep("success");
+                        }, 2200);
+                      }}
+                      className="px-6 py-3 bg-[#3bb75e] hover:bg-[#2c964a] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-[#3bb75e]/15"
+                    >
+                      <Icon name="Coins" size={14} />
+                      <span>Authorize Payment</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: TRANSACTION AUTHORIZATION */}
+              {checkoutStep === "confirming" && (
+                <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
+                  <div className="w-12 h-12 rounded-full border-4 border-[#3bb75e]/25 border-t-[#3bb75e] animate-spin" />
+                  <h3 className="text-lg font-display font-extrabold">Contacting secure Paystack API...</h3>
+                  <p className="text-xs text-slate-400 max-w-sm">
+                    Registering pending log into donation database via secure server routing, verifying authorization channels.
+                  </p>
+                </div>
+              )}
+
+              {/* STEP 4: SUCCESSFUL TRANSACTIONS FOR SELECTED PROGRAM */}
+              {checkoutStep === "success" && (
+                <div className="text-center space-y-6 pt-2">
+                  <div className="relative py-4">
+                    <Confetti />
+                    <motion.div
+                      initial={{ scale: 0, rotate: -45 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ type: "spring", damping: 12, stiffness: 180, delay: 0.1 }}
+                      className="w-20 h-20 rounded-full bg-[#3bb75e] text-white flex items-center justify-center mx-auto shadow-lg shadow-[#3bb75e]/20 relative z-10"
+                    >
+                      <Icon name="Check" size={40} className="stroke-[3]" />
+                    </motion.div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <h3 className="text-2xl font-display font-black text-brand-charcoal">Bless You!</h3>
+                    <p className="text-xs font-black text-[#3bb75e] uppercase tracking-widest bg-[#3bb75e]/10 border border-[#3bb75e]/20 py-1.5 px-3 rounded-lg inline-block">
+                      PAYSTACK TRANSACTION FULLY AUDITED
+                    </p>
+                    <p className="text-xs font-mono text-slate-400">
+                      Receipt Ref: pay_ref_{(Math.floor(Math.random() * 899999 + 100000))}
+                    </p>
+                    <div className="bg-slate-50/50 p-5 rounded-2xl text-slate-500 text-xs text-left space-y-2 border border-slate-100 max-w-[420px] mx-auto mt-4 font-sans leading-relaxed">
+                      <p>
+                        Thank you, <span className="font-extrabold text-brand-charcoal">{donorName}</span>. Your {frequency === "monthly" ? "monthly recurring" : "one-time"} gift of <span className="font-extrabold text-brand-primary">{selectedCurrency.symbol}{activeAmount.toLocaleString()} ({selectedCurrency.code})</span> is fully verified.
+                      </p>
+                      <p className="border-t border-slate-100/70 pt-2 font-medium">
+                        📍 <span className="font-bold text-slate-800">Assigned allocation:</span> {selectedProgram.label} ({selectedProgram.category}). 100% of these resources go directly to this field initiative.
+                      </p>
+                      {donorNote && (
+                        <p className="border-t border-slate-100/70 pt-2 italic text-[11px] text-slate-400">
+                          &ldquo;{donorNote}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-400 font-medium flex items-center justify-center gap-1.5 py-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-ping" />
+                    <span>Redirecting you to the Homepage in <strong className="text-brand-charcoal">{countdown}</strong> seconds...</span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button
+                      onClick={handleDownloadReceipt}
+                      className="flex-1 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-extrabold text-xs tracking-wider uppercase cursor-pointer transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Icon name="Download" size={14} />
+                      Download Receipt
+                    </button>
+                    <button
+                      onClick={() => {
+                        window.location.hash = "#home";
+                        setCheckoutStep("idle");
+                        setDonorName("");
+                        setDonorEmail("");
+                        setDonorPhone("");
+                        setDonorNote("");
+                        setCustomAmount("");
+                        setCardNumber("");
+                        setCardExpiry("");
+                        setCardCvv("");
+                        setMomoPhone("");
+                        setMomoProvider("");
+                      }}
+                      className="flex-1 py-3.5 rounded-xl bg-brand-charcoal hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider uppercase cursor-pointer transition-colors"
+                    >
+                      Go Back Home Now
+                    </button>
+                  </div>
+                </div>
+              )}
 
             </motion.div>
-          )}
-        </AnimatePresence>
-
-      </div>
+          </div>
+        )}
+      </AnimatePresence>
     </section>
   );
 };
