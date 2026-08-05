@@ -33,43 +33,6 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
     setIsLoggingIn(true);
 
     try {
-      // PRE-CHECK: Query the database using the sanitized email to check for a 'pending' state case-insensitively
-      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-        const client = supabaseAdmin || supabase;
-        let preQuery = client.from("ambassadors").select("*").ilike("email", sanitizedEmail);
-        let preRes = await preQuery;
-        if (preRes.error || !preRes.data || preRes.data.length === 0) {
-          const fallbackPre = await client.from("Ambassadors").select("*").ilike("email", sanitizedEmail);
-          if (!fallbackPre.error && fallbackPre.data && fallbackPre.data.length > 0) {
-            preRes = fallbackPre;
-          }
-        }
-        if (preRes.data && preRes.data.length > 0) {
-          const amb = preRes.data[0];
-          const badgeStatus = amb.badge_status ? amb.badge_status.toString().toLowerCase().trim() : "";
-          const status = amb.status ? amb.status.toString().toLowerCase().trim() : "";
-          if (badgeStatus === "pending" || status === "pending") {
-            const pendingMsg = "Awaiting Admin Approval: Your growth ambassador application is currently under review by our executive board. You will receive access details once approved.";
-            setErrorMsg(pendingMsg);
-            setIsLoggingIn(false);
-            return;
-          }
-        }
-      } else {
-        // Fallback local DB check for pending status
-        const localAmb = await db.findAmbassadorByEmail(sanitizedEmail);
-        if (localAmb) {
-          const badgeStatus = localAmb.badge_status ? localAmb.badge_status.toString().toLowerCase().trim() : "";
-          const status = localAmb.status ? localAmb.status.toString().toLowerCase().trim() : "";
-          if (badgeStatus === "pending" || status === "pending") {
-            const pendingMsg = "Awaiting Admin Approval: Your growth ambassador application is currently under review by our executive board. You will receive access details once approved.";
-            setErrorMsg(pendingMsg);
-            setIsLoggingIn(false);
-            return;
-          }
-        }
-      }
-
       let authUserId: string | null = null;
       let authEmail = sanitizedEmail;
 
@@ -243,13 +206,11 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
       const explicitBadgeStatus = dbProfile.badge_status ? dbProfile.badge_status.toString().toLowerCase().trim() : null;
       const rawStatus = (dbProfile.badge_status || dbProfile.status || "pending").toString().toLowerCase().trim();
       
-      if (explicitBadgeStatus === "pending") {
-        console.log("[AMBASSADOR LOGIN] Detected 'pending' badge_status explicitly.");
-        const pendingMsg = "Awaiting Admin Approval: Your growth ambassador application is currently under review by our executive board. You will receive access details once approved.";
-        logDbOperation("Ambassador Account Pending via badge_status", { email: sanitizedEmail, badge_status: dbProfile.badge_status }, null);
-        setErrorMsg(pendingMsg);
-        if (supabase) await supabase.auth.signOut();
-        setIsLoggingIn(false);
+      if (explicitBadgeStatus === "pending" || rawStatus === "pending") {
+        console.log("[AMBASSADOR LOGIN] Detected 'pending' status. Navigating to pending ambassador dashboard state.");
+        logDbOperation("Ambassador Login Pending Session State", { email: sanitizedEmail, status: rawStatus }, null);
+        localStorage.setItem("advaltad_session_email", sanitizedEmail);
+        onLoginSuccess(sanitizedEmail);
         return;
       }
       
@@ -257,15 +218,6 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         const disapprovedErr = new Error("Your ambassador account application has been disapproved by the executive board.");
         logDbOperation("Ambassador Account Disapproved", { email: sanitizedEmail, status: rawStatus }, disapprovedErr);
         setErrorMsg(disapprovedErr.message);
-        if (supabase) await supabase.auth.signOut();
-        setIsLoggingIn(false);
-        return;
-      }
-
-      if (rawStatus === "pending") {
-        const pendingErr = new Error("Awaiting Admin Approval: Your application is currently under review by our executive board. You will receive access once approved.");
-        logDbOperation("Ambassador Account Pending Approval", { email: sanitizedEmail, status: rawStatus }, pendingErr);
-        setErrorMsg(pendingErr.message);
         if (supabase) await supabase.auth.signOut();
         setIsLoggingIn(false);
         return;
