@@ -63,7 +63,7 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
 
       if (data && data.length > 0) {
         const row = data[0];
-        const rawBal = typeof row.ledger_balance === "number" ? row.ledger_balance : (typeof row.avu_balance === "number" ? row.avu_balance : 0);
+        const rawBal = typeof row.avu_balance === "number" ? row.avu_balance : (typeof row.ledger_balance === "number" ? row.ledger_balance : 0);
         const currentBal = typeof rawBal === "number" && !isNaN(rawBal) ? rawBal : 0;
         setBalance(currentBal);
         setError(null);
@@ -117,8 +117,29 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       )
       .subscribe();
 
+    // Periodic polling as a fallback when realtime web-sockets are delayed or inactive in iframe previews
+    const pollInterval = setInterval(() => {
+      if (active) {
+        fetchBalance();
+      }
+    }, 5000);
+
+    const handleFocus = () => {
+      if (active) {
+        fetchBalance();
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", handleFocus);
+    }
+
     return () => {
       active = false;
+      clearInterval(pollInterval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", handleFocus);
+      }
       if (supabase) {
         supabase.removeChannel(channel);
       }
