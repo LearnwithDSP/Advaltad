@@ -1527,10 +1527,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               </div>
             </header>
 
-            <div className="p-6 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
+            <div className="p-4 sm:p-6 md:p-6 lg:p-8 space-y-8 max-w-6xl w-full mx-auto">
               
               {/* Quick statistics panels cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
                 <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-3">
                   <div className="flex items-center justify-between text-slate-400">
                     <span className="text-[10px] font-extrabold uppercase tracking-wider">Active Fellows</span>
