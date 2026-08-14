@@ -20,6 +20,19 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [ambassadorName, setAmbassadorName] = useState<string | null>(null);
 
+  const getSafeInitials = (nameStr?: string | null): string => {
+    if (!nameStr || typeof nameStr !== "string") return "AM";
+    const parts = nameStr.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "AM";
+    return parts.map(n => n[0]).join("").slice(0, 2).toUpperCase() || "AM";
+  };
+
+  const getSafeFirstName = (nameStr?: string | null): string => {
+    if (!nameStr || typeof nameStr !== "string") return "Ambassador";
+    const parts = nameStr.trim().split(/\s+/).filter(Boolean);
+    return parts[0] || "Ambassador";
+  };
+
   useEffect(() => {
     const checkSession = async () => {
       const email = localStorage.getItem("advaltad_session_email");
@@ -197,7 +210,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                                 {col.items.map((item, iIdx) => {
                                   const isAmbassadorLink = item.href === "#ambassador" && item.label === "Become Ambassador";
                                   const displayLabel = isAmbassadorLink && sessionEmail 
-                                    ? `Welcome Back, ${ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}`
+                                    ? `Welcome Back, ${getSafeFirstName(ambassadorName)}`
                                     : item.label;
                                   const displayDesc = isAmbassadorLink && sessionEmail
                                     ? "Access your Growth Ambassador dashboard."
@@ -226,7 +239,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                                         {isAmbassadorLink && sessionEmail ? (
                                           <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[9px] overflow-hidden -m-1">
                                             {ambassadorName ? (
-                                              ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                                              getSafeInitials(ambassadorName)
                                             ) : (
                                               <Icon name="User" size={10} className="text-white" />
                                             )}
@@ -290,7 +303,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
               >
                 <div className="w-6.5 h-6.5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[10px] shadow-sm border border-emerald-500/30 overflow-hidden">
                   {ambassadorName ? (
-                    ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                    getSafeInitials(ambassadorName)
                   ) : (
                     <Icon name="User" size={12} className="text-white" />
                   )}
@@ -298,7 +311,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                 <div className="flex flex-col text-left">
                   <span className="text-[8px] font-sans font-black tracking-wider leading-none text-emerald-600/75 uppercase">AMBASSADOR</span>
                   <span className="text-[10.5px] font-black leading-tight text-emerald-950 mt-0.5">
-                    {ambassadorName ? `Welcome back, ${ambassadorName.split(" ")[0]}` : "Welcome back"}
+                    {ambassadorName ? `Welcome back, ${getSafeFirstName(ambassadorName)}` : "Welcome back"}
                   </span>
                 </div>
               </button>
@@ -420,7 +433,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                                     {col.items.map((item, iIdx) => {
                                       const isAmbassadorLink = item.href === "#ambassador" && item.label === "Become Ambassador";
                                       const displayLabel = isAmbassadorLink && sessionEmail 
-                                        ? `Welcome Back, ${ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}`
+                                        ? `Welcome Back, ${getSafeFirstName(ambassadorName)}`
                                         : item.label;
                                       const displayHref = isAmbassadorLink && sessionEmail
                                         ? "#/ambassador/dashboard"
@@ -445,7 +458,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                                             {isAmbassadorLink && sessionEmail ? (
                                               <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[9px] overflow-hidden">
                                                 {ambassadorName ? (
-                                                  ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                                                  getSafeInitials(ambassadorName)
                                                 ) : (
                                                   <Icon name="User" size={8} className="text-white" />
                                                 )}
@@ -508,12 +521,12 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ onDonateClick, onAmbassadorC
                   >
                     <div className="w-5.5 h-5.5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[9px] shadow-sm border border-emerald-500/30 overflow-hidden">
                       {ambassadorName ? (
-                        ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                        getSafeInitials(ambassadorName)
                       ) : (
                         <Icon name="User" size={10} className="text-white" />
                       )}
                     </div>
-                    <span>Welcome back, {ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}</span>
+                    <span>Welcome back, {getSafeFirstName(ambassadorName)}</span>
                   </button>
                 ) : (
                   <button
