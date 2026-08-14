@@ -17,6 +17,19 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [ambassadorName, setAmbassadorName] = useState<string | null>(null);
 
+  const getSafeInitials = (nameStr?: string | null): string => {
+    if (!nameStr || typeof nameStr !== "string") return "AM";
+    const parts = nameStr.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "AM";
+    return parts.map(n => n[0]).join("").slice(0, 2).toUpperCase() || "AM";
+  };
+
+  const getSafeFirstName = (nameStr?: string | null): string => {
+    if (!nameStr || typeof nameStr !== "string") return "Ambassador";
+    const parts = nameStr.trim().split(/\s+/).filter(Boolean);
+    return parts[0] || "Ambassador";
+  };
+
   useEffect(() => {
     const checkSession = async () => {
       const emailVal = localStorage.getItem("advaltad_session_email");
@@ -91,12 +104,12 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                 >
                   <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-display font-black text-[10px] shadow-sm border border-emerald-500/30 overflow-hidden">
                     {ambassadorName ? (
-                      ambassadorName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                      getSafeInitials(ambassadorName)
                     ) : (
                       <Icon name="User" size={11} className="text-white" />
                     )}
                   </div>
-                  <span>Welcome back, {ambassadorName ? ambassadorName.split(" ")[0] : "Ambassador"}</span>
+                  <span>Welcome back, {getSafeFirstName(ambassadorName)}</span>
                 </button>
               ) : (
                 <button
