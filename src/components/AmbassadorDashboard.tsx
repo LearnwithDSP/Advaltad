@@ -1239,17 +1239,39 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     );
   });
 
+  // Safe helper to extract initials without throwing
+  const getSafeInitials = (nameStr?: any, fallback = "RB"): string => {
+    if (!nameStr || typeof nameStr !== "string") return fallback;
+    const trimmed = nameStr.trim();
+    if (!trimmed) return fallback;
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return fallback;
+    return parts.map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() || fallback;
+  };
+
+  // Safe helper to extract ISO date strings without throwing
+  const getSafeIsoDateKey = (dateVal: any): string | null => {
+    try {
+      if (!dateVal) return null;
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString().split("T")[0];
+    } catch {
+      return null;
+    }
+  };
+
   // Calculate Leaderboard entries
   const currentUserEntry = {
     id: profile?.id || "AV-ME",
-    name: profile?.name || ambassadorName,
-    city: profile?.city || ambassadorRegion,
-    field: profile?.field || ambassadorField,
+    name: profile?.name || ambassadorName || "Ramon Bisola",
+    city: profile?.city || ambassadorRegion || "Lagos, Nigeria",
+    field: profile?.field || ambassadorField || "Growth Ambassador",
     avu_balance: avuBalance,
     totalDeposits: totalDepositsNaira,
     projects: 3,
     avatarBg: "from-emerald-600 to-teal-700",
-    initials: (profile?.name || ambassadorName).split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() || "RB",
+    initials: getSafeInitials(profile?.name || ambassadorName, "RB"),
     isCurrentUser: true,
   };
 
@@ -1265,10 +1287,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         "from-yellow-500 to-amber-600"
       ];
       const avatarBg = colors[idx % colors.length];
-      const initials = a.name ? a.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() : "AM";
+      const initials = getSafeInitials(a.name, "AM");
       return {
         id: a.id || a.ambassador_id || `AV-DB-${idx}`,
-        name: a.name,
+        name: a.name || "Ambassador",
         city: a.city || "Lagos, Nigeria",
         field: a.field || "Growth Ambassador",
         avu_balance: a.avu_balance || 0,
@@ -1329,107 +1351,116 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // 30-DAY AVU BALANCE TREND CALCULATION (RECHARTS)
   // ==========================================
   const avuBalanceTrend30Days = useMemo(() => {
-    const today = new Date();
-    const daysCount = 30;
-    const history: Array<{
-      dayNumber: number;
-      date: string;
-      fullDate: string;
-      balance: number;
-      change: number;
-      nairaValue: number;
-      deposits: number;
-      transfers: number;
-    }> = [];
+    try {
+      const today = new Date();
+      const daysCount = 30;
+      const history: Array<{
+        dayNumber: number;
+        date: string;
+        fullDate: string;
+        balance: number;
+        change: number;
+        nairaValue: number;
+        deposits: number;
+        transfers: number;
+      }> = [];
 
-    const currentBal = Number(avuBalance || 0);
-    const thirtyDaysAgoTime = today.getTime() - (daysCount * 24 * 60 * 60 * 1000);
+      const currentBal = Number(avuBalance || 0);
+      const thirtyDaysAgoTime = today.getTime() - (daysCount * 24 * 60 * 60 * 1000);
 
-    const dailyEventsMap = new Map<string, { deposits: number; p2pIn: number; p2pOut: number }>();
+      const dailyEventsMap = new Map<string, { deposits: number; p2pIn: number; p2pOut: number }>();
 
-    userDeposits.forEach((dep) => {
-      if (dep.status === "success" && dep.created_at) {
-        const d = new Date(dep.created_at);
-        if (d.getTime() >= thirtyDaysAgoTime) {
-          const key = d.toISOString().split("T")[0];
-          const existing = dailyEventsMap.get(key) || { deposits: 0, p2pIn: 0, p2pOut: 0 };
-          existing.deposits += (Number(dep.avu_earned) || 0);
-          dailyEventsMap.set(key, existing);
-        }
-      }
-    });
-
-    p2pTxHistory.forEach((tx) => {
-      if (tx.created_at) {
-        const d = new Date(tx.created_at);
-        if (d.getTime() >= thirtyDaysAgoTime) {
-          const key = d.toISOString().split("T")[0];
-          const existing = dailyEventsMap.get(key) || { deposits: 0, p2pIn: 0, p2pOut: 0 };
-          if (tx.recipient_id === profile?.id) {
-            existing.p2pIn += (Number(tx.amount_avu) || 0);
-          } else if (tx.sender_id === profile?.id) {
-            existing.p2pOut += (Number(tx.amount_avu) || 0);
+      (Array.isArray(userDeposits) ? userDeposits : []).forEach((dep) => {
+        if (dep && dep.status === "success" && dep.created_at) {
+          const key = getSafeIsoDateKey(dep.created_at);
+          if (key) {
+            const d = new Date(dep.created_at);
+            if (!isNaN(d.getTime()) && d.getTime() >= thirtyDaysAgoTime) {
+              const existing = dailyEventsMap.get(key) || { deposits: 0, p2pIn: 0, p2pOut: 0 };
+              existing.deposits += (Number(dep.avu_earned) || 0);
+              dailyEventsMap.set(key, existing);
+            }
           }
-          dailyEventsMap.set(key, existing);
         }
-      }
-    });
-
-    let runningBalance = Math.max(0, currentBal * 0.45);
-
-    for (let i = daysCount - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dateKey = d.toISOString().split("T")[0];
-      const shortDate = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const fullDate = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-
-      const events = dailyEventsMap.get(dateKey);
-      let dayDeposits = 0;
-      let dayTransfers = 0;
-      let dayDelta = 0;
-
-      if (events) {
-        dayDeposits = events.deposits;
-        dayTransfers = events.p2pIn - events.p2pOut;
-        dayDelta = dayDeposits + dayTransfers;
-      }
-
-      if (i === 0) {
-        runningBalance = currentBal;
-      } else {
-        const stepProgress = (daysCount - i) / daysCount;
-        const targetForDay = currentBal * (0.45 + (0.55 * Math.pow(stepProgress, 1.25)));
-        if (dayDelta !== 0) {
-          runningBalance = Math.max(0, runningBalance + dayDelta);
-        } else {
-          const pseudoNoise = Math.sin((daysCount - i) * 0.8) * (currentBal > 0 ? (currentBal * 0.012) : 0);
-          runningBalance = Math.max(0, targetForDay + pseudoNoise);
-        }
-      }
-
-      const roundedBal = Number(runningBalance.toFixed(2));
-      const prevBal = history.length > 0 ? history[history.length - 1].balance : roundedBal;
-      const change = Number((roundedBal - prevBal).toFixed(2));
-
-      history.push({
-        dayNumber: daysCount - i,
-        date: shortDate,
-        fullDate,
-        balance: roundedBal,
-        change,
-        nairaValue: convertAvuToNaira(roundedBal),
-        deposits: dayDeposits,
-        transfers: dayTransfers,
       });
-    }
 
-    if (history.length > 0) {
-      history[history.length - 1].balance = currentBal;
-      history[history.length - 1].nairaValue = totalDepositsNaira;
-    }
+      (Array.isArray(p2pTxHistory) ? p2pTxHistory : []).forEach((tx) => {
+        if (tx && tx.created_at) {
+          const key = getSafeIsoDateKey(tx.created_at);
+          if (key) {
+            const d = new Date(tx.created_at);
+            if (!isNaN(d.getTime()) && d.getTime() >= thirtyDaysAgoTime) {
+              const existing = dailyEventsMap.get(key) || { deposits: 0, p2pIn: 0, p2pOut: 0 };
+              if (tx.recipient_id === profile?.id) {
+                existing.p2pIn += (Number(tx.amount_avu) || 0);
+              } else if (tx.sender_id === profile?.id) {
+                existing.p2pOut += (Number(tx.amount_avu) || 0);
+              }
+              dailyEventsMap.set(key, existing);
+            }
+          }
+        }
+      });
 
-    return history;
+      let runningBalance = Math.max(0, currentBal * 0.45);
+
+      for (let i = daysCount - 1; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dateKey = getSafeIsoDateKey(d) || `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        const shortDate = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const fullDate = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+        const events = dailyEventsMap.get(dateKey);
+        let dayDeposits = 0;
+        let dayTransfers = 0;
+        let dayDelta = 0;
+
+        if (events) {
+          dayDeposits = events.deposits;
+          dayTransfers = events.p2pIn - events.p2pOut;
+          dayDelta = dayDeposits + dayTransfers;
+        }
+
+        if (i === 0) {
+          runningBalance = currentBal;
+        } else {
+          const stepProgress = (daysCount - i) / daysCount;
+          const targetForDay = currentBal * (0.45 + (0.55 * Math.pow(stepProgress, 1.25)));
+          if (dayDelta !== 0) {
+            runningBalance = Math.max(0, runningBalance + dayDelta);
+          } else {
+            const pseudoNoise = Math.sin((daysCount - i) * 0.8) * (currentBal > 0 ? (currentBal * 0.012) : 0);
+            runningBalance = Math.max(0, targetForDay + pseudoNoise);
+          }
+        }
+
+        const roundedBal = Number(runningBalance.toFixed(2));
+        const prevBal = history.length > 0 ? history[history.length - 1].balance : roundedBal;
+        const change = Number((roundedBal - prevBal).toFixed(2));
+
+        history.push({
+          dayNumber: daysCount - i,
+          date: shortDate,
+          fullDate,
+          balance: roundedBal,
+          change,
+          nairaValue: convertAvuToNaira(roundedBal),
+          deposits: dayDeposits,
+          transfers: dayTransfers,
+        });
+      }
+
+      if (history.length > 0) {
+        history[history.length - 1].balance = currentBal;
+        history[history.length - 1].nairaValue = totalDepositsNaira;
+      }
+
+      return history;
+    } catch (err) {
+      console.warn("[avuBalanceTrend30Days] calculation error:", err);
+      return [];
+    }
   }, [avuBalance, userDeposits, p2pTxHistory, profile?.id, totalDepositsNaira]);
 
   // Derived 30-Day Trend Metrics
