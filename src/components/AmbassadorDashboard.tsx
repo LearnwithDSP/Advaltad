@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase, supabaseAdmin } from "../lib/supabase";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
@@ -485,7 +485,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Single Source of Truth for Wallet Balance from Supabase
-  const activeIdentifier = profile?.id || profile?.email || profile?.user_id || profile?.ambassador_id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
+  const activeIdentifier = profile?.user_id || profile?.db_id || profile?.email || profile?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
   const { balance: avuBalance, refetch: refetchWalletBalance } = useWalletBalance(activeIdentifier);
 
   // Direct DOM binding for Desktop & Mobile Balance Elements
@@ -1226,7 +1226,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setNotifications([newNotif, ...notifications]);
   };
 
-  const handleP2PTransfer = (e: React.FormEvent) => {
+  const handleP2PTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(transferAmount);
     const selectedRecipientId = transferTargetId.trim();
@@ -1255,8 +1255,58 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       return;
     }
 
-    if (amt > avuBalance) {
-      showToast("error", "Insufficient Balance", `You only have ${avuBalance} AVU points available.`);
+    // Dynamic fetch of sender's current avu_balance using user_id and email from ambassadors table
+    let currentAvuBal = Math.max(Number(avuBalance) || 0, Number(profile?.avu_balance) || 0);
+
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const senderUuid = [profile?.user_id, profile?.db_id, profile?.id].find(
+          x => x && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(x).trim())
+        );
+        const senderEmail = profile?.email || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
+
+        const conditions: string[] = [];
+        if (senderUuid) {
+          conditions.push(`user_id.eq.${senderUuid}`, `id.eq.${senderUuid}`);
+        }
+        if (senderEmail) {
+          conditions.push(`email.eq.${senderEmail.trim().toLowerCase()}`, `email.ilike.${senderEmail.trim().toLowerCase()}`);
+        }
+
+        if (conditions.length > 0) {
+          const { data: senderData, error: fetchErr } = await client!
+            .from("ambassadors")
+            .select("id, user_id, email, avu_balance")
+            .or(conditions.join(","))
+            .maybeSingle();
+
+          if (!fetchErr && senderData && typeof senderData.avu_balance !== "undefined" && senderData.avu_balance !== null) {
+            const fetchedBal = Number(senderData.avu_balance) || 0;
+            currentAvuBal = fetchedBal;
+            setProfile(prev => prev ? { 
+              ...prev, 
+              avu_balance: fetchedBal, 
+              db_id: senderData.id || prev.db_id,
+              user_id: senderData.user_id || prev.user_id 
+            } : null);
+          }
+        }
+      } catch (queryErr) {
+        console.warn("[handleP2PTransfer] Dynamic Supabase sender balance fetch error:", queryErr);
+      }
+    }
+
+    if (currentAvuBal === 0) {
+      const liveBal = await db.fetchWalletBalance(activeIdentifier);
+      if (liveBal > currentAvuBal) {
+        currentAvuBal = liveBal;
+        setProfile(prev => prev ? { ...prev, avu_balance: liveBal } : null);
+      }
+    }
+
+    if (amt > currentAvuBal) {
+      showToast("error", "Insufficient Balance", `You only have ${currentAvuBal} AVU points available.`);
       return;
     }
 
@@ -1304,11 +1354,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     setTransferProgressStep("Executing AVU token transfer across ambassador wallets...");
 
     try {
-      // Explicitly separate sender and recipient payload
+      // Explicitly separate sender and recipient payload using UUID / email fallbacks
       const payload = {
-        sender_id: profile.id || profile.user_id || profile.email,
+        sender_id: profile.user_id || profile.db_id || profile.id || profile.email,
         sender_email: profile.email,
-        recipient_id: selectedRecipient?.id || selectedRecipient?.user_id || selectedRecipientId,
+        recipient_id: selectedRecipient?.user_id || selectedRecipient?.db_id || selectedRecipient?.id || selectedRecipientId,
         recipient_email: selectedRecipient?.email || (selectedRecipientId.includes("@") ? selectedRecipientId : ""),
         amount: Number(amt),
         note: transferReason || "Peer technical support"
@@ -2553,7 +2603,21 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                     )}
 
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Transfer Amount (AVU)</label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Transfer Amount (AVU)</label>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-bold">
+                            Available: <span className="text-emerald-400 font-mono font-black">{Math.max(Number(avuBalance) || 0, Number(profile?.avu_balance) || 0).toLocaleString()} AVU</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTransferAmount(String(Math.max(Number(avuBalance) || 0, Number(profile?.avu_balance) || 0)))}
+                            className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-[9px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+                          >
+                            Max
+                          </button>
+                        </div>
+                      </div>
                       <input
                         type="number"
                         step="any"
