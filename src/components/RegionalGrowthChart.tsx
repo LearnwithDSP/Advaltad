@@ -21,12 +21,15 @@ interface CityData {
   count: number;
 }
 
-export const RegionalGrowthChart: React.FC<RegionalGrowthChartProps> = ({ ambassadors }) => {
-  // Aggregate ambassadors by base_city/city
-  const regionalData = ambassadors.reduce((acc, amb) => {
-    const rawCity = amb.base_city || amb.city || "Unknown Location";
-    // Standardize naming
-    const city = rawCity.trim().split(",")[0].trim();
+export const RegionalGrowthChart: React.FC<RegionalGrowthChartProps> = ({ ambassadors = [] }) => {
+  // Aggregate ambassadors by base_city/city safely
+  const regionalData = (Array.isArray(ambassadors) ? ambassadors : []).reduce((acc, amb) => {
+    if (!amb) return acc;
+    const rawCity = (typeof amb.base_city === "string" && amb.base_city) 
+      || (typeof amb.city === "string" && amb.city) 
+      || "Unknown Location";
+    // Standardize naming safely
+    const city = String(rawCity).trim().split(",")[0]?.trim() || "Unknown Location";
     if (city) {
       acc[city] = (acc[city] || 0) + 1;
     }
