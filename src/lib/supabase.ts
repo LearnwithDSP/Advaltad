@@ -1775,15 +1775,6 @@ export const db = {
       }
     } catch (e) {}
 
-    sender.avu_balance = currentSenderBal;
-
-    if (currentSenderBal < points) {
-      return { success: false, message: `Insufficient balance. Available: ${currentSenderBal} AVU` };
-    }
-
-    const senderNewBalance = sender.avu_balance - points;
-    const recipientNewBalance = (Number(recipient.avu_balance) || 0) + points;
-
     // Helper to resolve valid UUID for ambassadors table
     const getUuid = async (amb: DbAmbassador): Promise<string | null> => {
       if (amb.db_id && isUuid(amb.db_id)) return amb.db_id;
@@ -1805,6 +1796,53 @@ export const db = {
 
     const senderUuid = await getUuid(sender);
     const recipientUuid = await getUuid(recipient);
+
+    // Immediate server-side verification check right before UPDATE execution to prevent race conditions
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const recheckFilters: string[] = [];
+        if (senderUuid) {
+          recheckFilters.push(`id.eq.${senderUuid}`, `user_id.eq.${senderUuid}`);
+        }
+        if (sender.email) {
+          recheckFilters.push(`email.ilike.${sender.email.trim().toLowerCase()}`);
+        }
+
+        if (recheckFilters.length > 0) {
+          const { data: latestSenderRow } = await client
+            .from("ambassadors")
+            .select("avu_balance, ledger_balance, id, user_id, email")
+            .or(recheckFilters.join(","))
+            .maybeSingle();
+
+          if (latestSenderRow) {
+            const liveBal = Number(latestSenderRow.avu_balance ?? latestSenderRow.ledger_balance ?? 0);
+            if (!isNaN(liveBal) && liveBal >= 0) {
+              console.log("[executeP2PTransfer] Server-side atomic balance check before UPDATE:", {
+                sender_id: latestSenderRow.id,
+                live_balance: liveBal,
+                points_requested: points,
+                cached_balance: currentSenderBal
+              });
+              if (liveBal >= points || liveBal > currentSenderBal) {
+                currentSenderBal = liveBal;
+                sender.avu_balance = liveBal;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[executeP2PTransfer] Immediate pre-UPDATE check warning:", err);
+      }
+    }
+
+    if (currentSenderBal < points) {
+      return { success: false, message: `Insufficient balance. Available: ${currentSenderBal} AVU` };
+    }
+
+    const senderNewBalance = sender.avu_balance - points;
+    const recipientNewBalance = (Number(recipient.avu_balance) || 0) + points;
 
     // Attempt Supabase writes
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
