@@ -201,8 +201,23 @@ function applyAmbassadorFilter(query: any, idOrEmail: string): any {
   } else if (isEmail) {
     return query.ilike("email", clean.toLowerCase());
   } else {
-    return query.or(`user_id.eq.${clean},id.eq.${clean},ambassador_id.eq.${clean},email.ilike.${clean.toLowerCase()}`);
+    return query.or(`user_id.eq.${clean},ambassador_id.eq.${clean},email.ilike.${clean.toLowerCase()}`);
   }
+}
+
+export function extractExactAvuBalance(row: any): number {
+  if (!row) return 0;
+  const candidate =
+    row.avu_balance !== undefined && row.avu_balance !== null ? row.avu_balance :
+    row.ledger_balance !== undefined && row.ledger_balance !== null ? row.ledger_balance :
+    row.balance !== undefined && row.balance !== null ? row.balance :
+    row.wallet_balance !== undefined && row.wallet_balance !== null ? row.wallet_balance :
+    row.avu_tokens !== undefined && row.avu_tokens !== null ? row.avu_tokens :
+    row.tokens !== undefined && row.tokens !== null ? row.tokens :
+    row.points !== undefined && row.points !== null ? row.points :
+    0;
+  const num = typeof candidate === "number" ? candidate : parseFloat(String(candidate).replace(/[^0-9.-]/g, ""));
+  return isNaN(num) ? 0 : num;
 }
 
 function getLocalDb(): DbAmbassador[] {
@@ -238,7 +253,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
   // Assign deterministic static AV- ID that NEVER changes
   const staticId = getStaticAmbassadorId(rawId || rawEmail || row.db_id || nameVal);
 
-  const rawBal = Number(row.avu_balance ?? row.ledger_balance ?? row.balance ?? 0) || 0;
+  const exactBal = extractExactAvuBalance(row);
 
   return {
     id: staticId,
@@ -258,8 +273,8 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     phone_number: phoneVal,
     status: mappedStatus,
     badge_status: mappedStatus,
-    avu_balance: rawBal,
-    ledger_balance: rawBal,
+    avu_balance: exactBal,
+    ledger_balance: exactBal,
     created_at: row.created_at || new Date().toISOString()
   };
 }
@@ -324,14 +339,12 @@ export async function checkApprovalStatus(email: string): Promise<boolean> {
 
 /**
  * Utility function to fetch an ambassador's wallet balance directly from the `ambassadors` table
- * by `user_id`, `id`, or `email`, explicitly selecting `avu_balance` and returning a guaranteed `number`.
+ * by `user_id`, `id`, `ambassador_id`, or `email`, returning the exact database balance.
  */
 export async function fetchWalletBalance(identifier?: string | null): Promise<number> {
   if (!identifier) return 0;
   const cleanId = identifier.trim();
   if (!cleanId) return 0;
-
-  let balance = 0;
 
   if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
     try {
@@ -339,20 +352,44 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
       const isStrictUuid = isUuid(cleanId);
       const isEmail = cleanId.includes("@");
       
-      let query = client.from("ambassadors").select("avu_balance, ledger_balance");
-      if (isStrictUuid) {
-        query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
-      } else if (isEmail) {
-        query = query.ilike("email", cleanId.toLowerCase());
-      } else {
-        query = query.or(`user_id.eq.${cleanId},id.eq.${cleanId},ambassador_id.eq.${cleanId},email.ilike.${cleanId.toLowerCase()}`);
+      for (const tableName of ["ambassadors", "Ambassadors"]) {
+        let query = client.from(tableName).select("*");
+        if (isStrictUuid) {
+          query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
+        } else if (isEmail) {
+          query = query.ilike("email", cleanId.toLowerCase());
+        } else {
+          query = query.or(`user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.ilike.${cleanId.toLowerCase()}`);
+        }
+
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          const exactVal = extractExactAvuBalance(data[0]);
+          return exactVal;
+        }
       }
 
-      const { data, error } = await query;
-      if (!error && data && data.length > 0) {
-        const foundVal = Number(data[0]?.avu_balance ?? data[0]?.ledger_balance ?? 0);
-        if (!isNaN(foundVal) && foundVal > 0) {
-          balance = foundVal;
+      // Check if identifier corresponds to a known ambassador to query by their direct database id/email
+      const localDb = getLocalDb();
+      const localMatch = localDb.find(a =>
+        a.id?.toLowerCase() === cleanId.toLowerCase() ||
+        a.user_id?.toLowerCase() === cleanId.toLowerCase() ||
+        a.ambassador_id?.toLowerCase() === cleanId.toLowerCase() ||
+        a.email?.toLowerCase() === cleanId.toLowerCase()
+      );
+      if (localMatch && (localMatch.email || localMatch.db_id)) {
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          let query = client.from(tableName).select("*");
+          const clauses: string[] = [];
+          if (localMatch.db_id && isUuid(localMatch.db_id)) clauses.push(`id.eq.${localMatch.db_id}`);
+          if (localMatch.email) clauses.push(`email.ilike.${localMatch.email.toLowerCase()}`);
+          if (clauses.length > 0) {
+            query = query.or(clauses.join(","));
+            const { data, error } = await query;
+            if (!error && data && data.length > 0) {
+              return extractExactAvuBalance(data[0]);
+            }
+          }
         }
       }
     } catch (err) {
@@ -360,6 +397,7 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
     }
   }
 
+  // Fallback to local storage if offline
   const localDb = getLocalDb();
   const cleanLower = cleanId.toLowerCase();
   const found = localDb.find(a =>
@@ -368,11 +406,11 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
     a.user_id?.toLowerCase() === cleanLower ||
     (a.db_id && a.db_id.toLowerCase() === cleanLower)
   );
-  if (found && Number(found.avu_balance) > balance) {
-    balance = Number(found.avu_balance);
+  if (found) {
+    return extractExactAvuBalance(found);
   }
 
-  return balance;
+  return 0;
 }
 
 export const db = {
@@ -399,37 +437,7 @@ export const db = {
         }
 
         if (!error && data) {
-          const mapped = data.map(mapRowToAmbassador);
-
-          // Sync wallet balances from ambassador_wallet / ambassador_wallets / wallets
-          let walletList: DbAmbassadorWallet[] = [];
-          try {
-            walletList = await this.getWallets();
-          } catch (wErr) {}
-
-          for (const amb of mapped) {
-            const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
-            amb.id = staticId;
-            amb.user_id = staticId;
-            amb.ambassador_id = staticId;
-
-            const matchedWallet = walletList.find(w => 
-              w.ambassador_id === staticId || 
-              (amb.db_id && w.ambassador_id === amb.db_id) || 
-              (amb.email && w.email && w.email.toLowerCase() === amb.email.toLowerCase()) ||
-              (amb.email && w.ambassador_id && w.ambassador_id.toLowerCase() === amb.email.toLowerCase())
-            );
-            if (matchedWallet && typeof matchedWallet.balance === "number") {
-              amb.avu_balance = matchedWallet.balance;
-            }
-
-            if (amb.db_id) {
-              try {
-                await client.from(tableToUse).update({ user_id: staticId, ambassador_id: staticId }).eq("id", amb.db_id);
-              } catch (updateErr) {}
-            }
-          }
-          resultList = mapped;
+          resultList = data.map(mapRowToAmbassador);
         }
       } catch (err) {
         console.error("Supabase fetch exception:", err);
@@ -484,20 +492,6 @@ export const db = {
         }
       ];
     }
-
-    // Guarantee EVERY ambassador has valid static AV- user_id and ambassador_id
-    // and wipe default balances to 0 if no funding deposit or received transfer exists
-    let localDepositsList: DbDeposit[] = [];
-    try {
-      const depData = localStorage.getItem(DEPOSITS_LOCAL_STORAGE_KEY);
-      if (depData) localDepositsList = JSON.parse(depData);
-    } catch (e) {}
-
-    let localP2PList: any[] = [];
-    try {
-      const p2pData = localStorage.getItem(P2P_TX_LOCAL_STORAGE_KEY);
-      if (p2pData) localP2PList = JSON.parse(p2pData);
-    } catch (e) {}
 
     for (const amb of resultList) {
       const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
@@ -575,21 +569,6 @@ export const db = {
       ambResult.id = staticId;
       ambResult.user_id = staticId;
       ambResult.ambassador_id = staticId;
-
-      // Sync wallet balance from ambassador_wallet / ambassador_wallets / wallets in Supabase
-      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-        try {
-          const wallets = await this.getWallets();
-          const wallet = wallets.find(w => 
-            w.ambassador_id === staticId || 
-            (ambResult?.db_id && w.ambassador_id === ambResult.db_id) || 
-            (w.email || "").toLowerCase() === sanitizedEmail
-          );
-          if (wallet && wallet.balance !== undefined && wallet.balance !== null) {
-            ambResult.avu_balance = Number(wallet.balance) || 0;
-          }
-        } catch (wErr) {}
-      }
     }
 
     return ambResult;
@@ -649,20 +628,6 @@ export const db = {
       ambResult.id = staticId;
       ambResult.user_id = staticId;
       ambResult.ambassador_id = staticId;
-
-      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-        try {
-          const wallets = await this.getWallets();
-          const wallet = wallets.find(w => 
-            w.ambassador_id === staticId || 
-            (ambResult?.db_id && w.ambassador_id === ambResult.db_id) || 
-            (ambResult?.email && (w.email || "").toLowerCase() === ambResult.email.toLowerCase())
-          );
-          if (wallet && wallet.balance !== undefined && wallet.balance !== null) {
-            ambResult.avu_balance = Number(wallet.balance) || 0;
-          }
-        } catch (wErr) {}
-      }
     }
 
     return ambResult;
@@ -955,21 +920,17 @@ export const db = {
 
   async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
     const cleanId = id.trim();
+    const numericBal = Number(newBalance) || 0;
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        if (isUuid(cleanId)) {
-          await client.from("ambassadors").update({ avu_balance: newBalance }).eq("id", cleanId);
-        } else if (cleanId.includes("@")) {
-          await client.from("ambassadors").update({ avu_balance: newBalance }).ilike("email", cleanId.toLowerCase());
-        } else {
-          const { data } = await client
-            .from("ambassadors")
-            .select("id")
-            .or(`user_id.eq.${cleanId},email.ilike.${cleanId}`)
-            .maybeSingle();
-          if (data && data.id) {
-            await client.from("ambassadors").update({ avu_balance: newBalance }).eq("id", data.id);
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          if (isUuid(cleanId)) {
+            await client.from(tableName).update({ avu_balance: numericBal, ledger_balance: numericBal }).eq("id", cleanId);
+          } else if (cleanId.includes("@")) {
+            await client.from(tableName).update({ avu_balance: numericBal, ledger_balance: numericBal }).ilike("email", cleanId.toLowerCase());
+          } else {
+            await client.from(tableName).update({ avu_balance: numericBal, ledger_balance: numericBal }).or(`user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.ilike.${cleanId.toLowerCase()}`);
           }
         }
       } catch (err) {
@@ -986,7 +947,8 @@ export const db = {
         (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
         (a.email && a.email.toLowerCase() === cleanId.toLowerCase())
       ) {
-        list[i].avu_balance = newBalance;
+        list[i].avu_balance = numericBal;
+        list[i].ledger_balance = numericBal;
         updatedLocal = true;
       }
     }
@@ -1002,7 +964,7 @@ export const db = {
           (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
           (a.email && a.email.toLowerCase() === cleanId.toLowerCase())
         ) {
-          return { ...a, avu_balance: newBalance };
+          return { ...a, avu_balance: numericBal, ledger_balance: numericBal };
         }
         return a;
       });
