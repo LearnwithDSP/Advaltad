@@ -332,7 +332,7 @@ export async function checkApprovalStatus(email: string): Promise<boolean> {
  */
 export async function fetchWalletBalance(identifier?: string | null): Promise<number> {
   if (!identifier) return 0;
-  const cleanId = identifier.trim().toLowerCase();
+  const cleanId = identifier.trim();
   if (!cleanId) return 0;
 
   if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
@@ -340,18 +340,18 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
       const client = supabaseAdmin || supabase;
       let query = client.from("ambassadors").select("avu_balance");
 
-      const isStrictUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+      const isStrictUuid = isUuid(cleanId);
       if (isStrictUuid) {
         query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
       } else if (cleanId.includes("@")) {
-        query = query.ilike("email", cleanId);
+        query = query.ilike("email", cleanId.toLowerCase());
       } else {
         const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+        const conds: string[] = [`email.ilike.${cleanId.toLowerCase()}`];
         if (storedEmail && storedEmail.includes("@")) {
-          query = query.ilike("email", storedEmail.trim().toLowerCase());
-        } else {
-          query = query.ilike("email", cleanId);
+          conds.push(`email.ilike.${storedEmail.trim().toLowerCase()}`);
         }
+        query = query.or(conds.join(","));
       }
 
       const { data, error } = await query;
@@ -364,10 +364,13 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
   }
 
   const localDb = getLocalDb();
+  const cleanLower = cleanId.toLowerCase();
+  const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email")?.toLowerCase() : null;
   const found = localDb.find(a =>
-    a.email?.toLowerCase() === cleanId ||
-    a.id?.toLowerCase() === cleanId ||
-    a.user_id?.toLowerCase() === cleanId
+    a.email?.toLowerCase() === cleanLower ||
+    a.id?.toLowerCase() === cleanLower ||
+    a.user_id?.toLowerCase() === cleanLower ||
+    (sessionEmail && a.email?.toLowerCase() === sessionEmail)
   );
   return Number(found?.avu_balance || 0);
 }
@@ -1619,6 +1622,7 @@ export const db = {
     points: number,
     reason: string
   ): Promise<{ success: boolean; message: string; senderNewBalance?: number; recipientName?: string }> {
+    const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
     const cleanSender = (senderId || "").trim();
     const cleanRecipient = (recipientEmailOrId || "").trim();
     
@@ -1669,7 +1673,6 @@ export const db = {
     }
 
     if (!sender) {
-      const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
       if (sessionEmail && sessionEmail.toLowerCase() !== recipient.email?.toLowerCase()) {
         const found = await this.findAmbassadorByEmail(sessionEmail);
         if (found && !isSameAmbassador(found, recipient)) {
@@ -1696,8 +1699,42 @@ export const db = {
 
     let currentSenderBal = Number(sender.avu_balance) || 0;
 
+    // Fetch sender record and current balance dynamically using user_id and email fallbacks from ambassadors table
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const sUuid = [sender.db_id, sender.user_id, sender.id, cleanSender].find(x => x && isUuid(x));
+        const sEmail = sender.email || (cleanSender.includes("@") ? cleanSender : (sessionEmail || ""));
+        
+        const conditions: string[] = [];
+        if (sUuid) {
+          conditions.push(`user_id.eq.${sUuid}`, `id.eq.${sUuid}`);
+        }
+        if (sEmail) {
+          conditions.push(`email.eq.${sEmail.toLowerCase()}`, `email.ilike.${sEmail.toLowerCase()}`);
+        }
+
+        if (conditions.length > 0) {
+          const { data: senderData } = await client
+            .from("ambassadors")
+            .select("id, user_id, email, avu_balance")
+            .or(conditions.join(","))
+            .maybeSingle();
+
+          if (senderData && typeof senderData.avu_balance !== "undefined" && senderData.avu_balance !== null) {
+            currentSenderBal = Number(senderData.avu_balance) || 0;
+            if (senderData.id && isUuid(senderData.id)) {
+              sender.db_id = senderData.id;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[executeP2PTransfer] Dynamic balance fetch error:", e);
+      }
+    }
+
     if (currentSenderBal < points) {
-      const fetched = await fetchWalletBalance(sender.db_id || sender.id || sender.user_id || sender.email || cleanSender);
+      const fetched = await fetchWalletBalance(sender.db_id || sender.user_id || sender.id || sender.email || cleanSender);
       if (fetched > currentSenderBal) {
         currentSenderBal = fetched;
       }
