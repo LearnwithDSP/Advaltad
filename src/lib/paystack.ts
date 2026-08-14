@@ -1,3 +1,35 @@
+export const PAYSTACK_PUBLIC_KEY: string =
+  ((import.meta as any)?.env?.VITE_PAYSTACK_PUBLIC_KEY as string) ||
+  "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb";
+
+/**
+ * Ensures the Paystack inline popup JS library is loaded into the window DOM.
+ */
+export function loadPaystackScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve(false);
+      return;
+    }
+    if ((window as any).PaystackPop) {
+      resolve(true);
+      return;
+    }
+    const existing = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true));
+      existing.addEventListener("error", () => resolve(false));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://js.paystack.co/v1/inline.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+}
+
 export function convertNairaToAvu(nairaAmount: number): number {
   const computed = (nairaAmount / 1000) * 1.002;
   return Number(computed.toFixed(3));
@@ -33,7 +65,7 @@ export function initializePaystackTransaction(config: PaystackTransactionConfig)
 
   try {
     const handler = paystackPop.setup({
-      key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
+      key: PAYSTACK_PUBLIC_KEY,
       email: config.email,
       amount: Math.round(config.amountNaira * 100), // convert to Kobo
       ref: config.reference,
@@ -61,7 +93,9 @@ export function initializePaystackTransaction(config: PaystackTransactionConfig)
  * Processes a Paystack payment by returning a Promise that resolves upon successful transaction setup/completion
  * or rejects when the modal is closed or fails.
  */
-export function processPayment(amountNaira: number, email: string, metadata?: any): Promise<{ reference: string; status: string }> {
+export async function processPayment(amountNaira: number, email: string, metadata?: any): Promise<{ reference: string; status: string }> {
+  await loadPaystackScript();
+
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
       reject(new Error("Cannot process payment outside window context"));
@@ -78,7 +112,7 @@ export function processPayment(amountNaira: number, email: string, metadata?: an
 
     try {
       const handler = paystackPop.setup({
-        key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
+        key: PAYSTACK_PUBLIC_KEY,
         email: email,
         amount: Math.round(amountNaira * 100), // convert to Kobo
         ref: reference,
@@ -104,7 +138,9 @@ export function processPayment(amountNaira: number, email: string, metadata?: an
 /**
  * Initializes a Paystack transaction with currency-to-AVU conversion and reference generation.
  */
-export function initializePayment(amountNaira: number, email: string, metadata?: any, customRef?: string): Promise<{ reference: string; status: string; avuEarned: number }> {
+export async function initializePayment(amountNaira: number, email: string, metadata?: any, customRef?: string): Promise<{ reference: string; status: string; avuEarned: number }> {
+  await loadPaystackScript();
+
   const avuEarned = convertNairaToAvu(amountNaira);
   const reference = customRef || `WAL-${Date.now()}`;
   
@@ -134,7 +170,7 @@ export function initializePayment(amountNaira: number, email: string, metadata?:
 
     try {
       const handler = paystackPop.setup({
-        key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
+        key: PAYSTACK_PUBLIC_KEY,
         email: email,
         amount: Math.round(amountNaira * 100), // convert to Kobo
         ref: reference,
