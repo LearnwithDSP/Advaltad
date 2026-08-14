@@ -87,8 +87,18 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       }
     };
 
+    const handleWalletUpdated = (e: any) => {
+      if (active) {
+        if (e.detail?.senderNewBalance !== undefined) {
+          setBalance(e.detail.senderNewBalance);
+        }
+        fetchBalance();
+      }
+    };
+
     if (typeof window !== "undefined") {
       window.addEventListener("focus", handleFocus);
+      window.addEventListener("advaltad_wallet_updated", handleWalletUpdated);
     }
 
     return () => {
@@ -96,6 +106,7 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       clearInterval(pollInterval);
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", handleFocus);
+        window.removeEventListener("advaltad_wallet_updated", handleWalletUpdated);
       }
       if (supabase) {
         supabase.removeChannel(channel);
