@@ -1368,7 +1368,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         payload.sender_id,
         payload.recipient_id,
         payload.amount,
-        payload.note
+        payload.note,
+        payload.sender_email,
+        payload.recipient_email
       );
 
       if (res.success && res.senderNewBalance !== undefined) {
