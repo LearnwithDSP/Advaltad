@@ -1,9 +1,32 @@
-export const PAYSTACK_PUBLIC_KEY: string =
-  ((import.meta as any)?.env?.VITE_PAYSTACK_PUBLIC_KEY as string) ||
-  "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb";
+export const DEFAULT_PAYSTACK_PUBLIC_KEY = "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb";
+
+/**
+ * Dynamically retrieves the active Paystack Public Key from local config or environment.
+ */
+export function getPaystackPublicKey(): string {
+  if (typeof window !== "undefined") {
+    const local = localStorage.getItem("PAYSTACK_PUBLIC_KEY") || localStorage.getItem("VITE_PAYSTACK_PUBLIC_KEY");
+    if (local && local.trim()) return local.trim();
+  }
+  const envKey = (import.meta as any)?.env?.VITE_PAYSTACK_PUBLIC_KEY;
+  if (envKey && typeof envKey === "string" && envKey.trim()) return envKey.trim();
+  return DEFAULT_PAYSTACK_PUBLIC_KEY;
+}
+
+/**
+ * Saves a custom Paystack public key to localStorage.
+ */
+export function setPaystackPublicKey(key: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("PAYSTACK_PUBLIC_KEY", key.trim());
+  }
+}
+
+export const PAYSTACK_PUBLIC_KEY: string = getPaystackPublicKey();
 
 /**
  * Ensures the Paystack inline popup JS library is loaded into the window DOM.
+ * Guaranteed never to hang or reject.
  */
 export function loadPaystackScript(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -15,18 +38,40 @@ export function loadPaystackScript(): Promise<boolean> {
       resolve(true);
       return;
     }
+
     const existing = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
     if (existing) {
-      existing.addEventListener("load", () => resolve(true));
-      existing.addEventListener("error", () => resolve(false));
+      let checks = 0;
+      const interval = setInterval(() => {
+        if ((window as any).PaystackPop) {
+          clearInterval(interval);
+          resolve(true);
+        } else if (++checks > 30) {
+          clearInterval(interval);
+          resolve(Boolean((window as any).PaystackPop));
+        }
+      }, 100);
+      existing.addEventListener("load", () => {
+        clearInterval(interval);
+        resolve(true);
+      });
       return;
     }
+
     const script = document.createElement("script");
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
     script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
+    script.onerror = () => {
+      console.warn("Could not load Paystack inline JS from CDN.");
+      resolve(false);
+    };
     document.head.appendChild(script);
+
+    // Timeout safety fallback
+    setTimeout(() => {
+      resolve(Boolean((window as any).PaystackPop));
+    }, 3500);
   });
 }
 
@@ -65,7 +110,7 @@ export function initializePaystackTransaction(config: PaystackTransactionConfig)
 
   try {
     const handler = paystackPop.setup({
-      key: PAYSTACK_PUBLIC_KEY,
+      key: getPaystackPublicKey(),
       email: config.email,
       amount: Math.round(config.amountNaira * 100), // convert to Kobo
       ref: config.reference,
@@ -112,7 +157,7 @@ export async function processPayment(amountNaira: number, email: string, metadat
 
     try {
       const handler = paystackPop.setup({
-        key: PAYSTACK_PUBLIC_KEY,
+        key: getPaystackPublicKey(),
         email: email,
         amount: Math.round(amountNaira * 100), // convert to Kobo
         ref: reference,
@@ -170,7 +215,7 @@ export async function initializePayment(amountNaira: number, email: string, meta
 
     try {
       const handler = paystackPop.setup({
-        key: PAYSTACK_PUBLIC_KEY,
+        key: getPaystackPublicKey(),
         email: email,
         amount: Math.round(amountNaira * 100), // convert to Kobo
         ref: reference,
