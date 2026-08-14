@@ -27,6 +27,7 @@ import {
   MapPin
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
+import { PAYSTACK_PUBLIC_KEY, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
@@ -2550,7 +2551,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             </div>
 
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 if (!selectedAmbId) {
                                   alert("Please select an ambassador to receive credit.");
                                   return;
@@ -2564,13 +2565,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 const ambassadorObj = ambassadors.find(a => a.id === selectedAmbId);
                                 const ambName = ambassadorObj ? ambassadorObj.name : "Ambassador";
 
+                                await loadPaystackScript();
                                 const paystackPop = (window as any).PaystackPop;
                                 if (paystackPop) {
                                   const handler = paystackPop.setup({
-                                    key: "pk_live_e7fddb22eb7063991306bc82bd907a0be7a1a3fb",
+                                    key: PAYSTACK_PUBLIC_KEY,
                                     email: "admin-deposit@advaltad.org",
-                                    amount: depAmt * 100,
+                                    amount: Math.round(depAmt * 100),
                                     currency: "NGN",
+                                    ref: `DIR-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                                     metadata: {
                                       ambassador_id: selectedAmbId,
                                       ambassador_name: ambName,
