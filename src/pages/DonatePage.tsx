@@ -2,7 +2,9 @@ import React, { useState, useEffect } from "react";
 import { DonationForm } from "../components/DonationForm";
 import { DonationImpact } from "../components/DonationImpact";
 import { Icon } from "../components/Icon";
-import { ShieldCheck, User, Mail, Phone, CreditCard, ArrowRight, Award } from "lucide-react";
+import { ShieldCheck, User, Mail, Phone, CreditCard, ArrowRight, Award, DollarSign, CheckCircle2 } from "lucide-react";
+import { PAYSTACK_PUBLIC_KEY, loadPaystackScript } from "../lib/paystack";
+import { db } from "../lib/supabase";
 
 export const DonatePage: React.FC = () => {
   const [params, setParams] = useState<Record<string, string>>({});
@@ -10,6 +12,9 @@ export const DonatePage: React.FC = () => {
   const [donorEmail, setDonorEmail] = useState("");
   const [donorPhone, setDonorPhone] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
+  const [currency, setCurrency] = useState<"USD" | "NGN">("USD");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [successReceipt, setSuccessReceipt] = useState<{ ref: string; amount: string; date: string } | null>(null);
 
   useEffect(() => {
     const parseHash = () => {
@@ -35,19 +40,9 @@ export const DonatePage: React.FC = () => {
 
     parseHash();
     window.addEventListener("hashchange", parseHash);
-    return () => window.removeEventListener("hashchange", parseHash);
-  }, []);
+    loadPaystackScript().catch(console.warn);
 
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://js.paystack.co/v1/inline.js";
-    script.async = true;
-    document.head.appendChild(script);
-    return () => {
-      try {
-        document.head.removeChild(script);
-      } catch (err) {}
-    };
+    return () => window.removeEventListener("hashchange", parseHash);
   }, []);
 
   const handlePaystackCheckout = async (e: React.FormEvent) => {
@@ -62,32 +57,74 @@ export const DonatePage: React.FC = () => {
       return;
     }
 
-    const paystackPop = (window as any).PaystackPop;
-    const amountInKobo = amt * 100 * 1500; // standard mock NGN conversion rate
+    setIsProcessing(true);
 
-    if (paystackPop) {
-      const handler = paystackPop.setup({
-        key: "pk_test_placeholder",
-        email: donorEmail,
-        amount: amountInKobo,
-        currency: "NGN",
-        metadata: {
-          ambassador_id: params.ambassador_id,
-          ambassador_name: params.ambassador_name,
-          project: params.project,
-          donor_name: donorName,
-          donor_phone: donorPhone
-        },
-        callback: function(res: any) {
-          alert(`Thank you, ${donorName}! Your payment of $${amt} USD (Ref: ${res.reference}) was successfully processed via Paystack. Campaign credit has been allocated to Ambassador ${params.ambassador_name}.`);
-          window.location.hash = "#home";
-        }
-      });
-      handler.openIframe();
-    } else {
-      // Simulate fallback
-      alert(`[SIMULATION] Paystack Inline Popup Activated!\n\nDonor: ${donorName}\nEmail: ${donorEmail}\nAmount: $${amt} USD (₦${(amt * 1500).toLocaleString()})\nInitiative: ${params.project}\nCredit attributed to Ambassador: ${params.ambassador_name} (ID: ${params.ambassador_id})\n\nThank you for your generous sponsorship!`);
-      window.location.hash = "#home";
+    try {
+      await loadPaystackScript();
+      const paystackPop = (window as any).PaystackPop;
+
+      // Calculate amount in kobo (Paystack uses NGN kobo)
+      const amountNaira = currency === "USD" ? Math.round(amt * 1500) : Math.round(amt);
+      const amountInKobo = amountNaira * 100;
+      const transactionRef = `DON-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+      if (paystackPop) {
+        const handler = paystackPop.setup({
+          key: PAYSTACK_PUBLIC_KEY,
+          email: donorEmail.trim(),
+          amount: amountInKobo,
+          currency: "NGN",
+          ref: transactionRef,
+          metadata: {
+            ambassador_id: params.ambassador_id || "",
+            ambassador_name: params.ambassador_name || "",
+            project: params.project || "General Initiative",
+            donor_name: donorName.trim(),
+            donor_phone: donorPhone.trim(),
+            original_currency: currency,
+            original_amount: amt,
+            amount_naira: amountNaira
+          },
+          callback: async function(res: any) {
+            const confirmedRef = res.reference || transactionRef;
+            setIsProcessing(false);
+            
+            try {
+              if (params.ambassador_id) {
+                await db.logActivity({
+                  type: "donation_logged",
+                  desc: `Public Campaign Sponsorship received: ₦${amountNaira.toLocaleString()} for initiative "${params.project || 'Community Initiative'}" from ${donorName} (Ref: ${confirmedRef})`,
+                  ambassador_id: params.ambassador_id,
+                  ambassador_name: params.ambassador_name || "Ambassador",
+                  amount: `₦${amountNaira.toLocaleString()}`
+                });
+              }
+            } catch (err) {
+              console.warn("Could not log public donation activity:", err);
+            }
+
+            setSuccessReceipt({
+              ref: confirmedRef,
+              amount: currency === "USD" ? `$${amt.toLocaleString()} USD (₦${amountNaira.toLocaleString()})` : `₦${amt.toLocaleString()} NGN`,
+              date: new Date().toLocaleString()
+            });
+          },
+          onClose: function() {
+            setIsProcessing(false);
+            console.log("Paystack donation checkout modal closed.");
+          }
+        });
+
+        handler.openIframe();
+      } else {
+        setIsProcessing(false);
+        alert(`[Simulation Mode] Paystack Gateway Initialized\n\nDonor: ${donorName}\nAmount: ₦${amountNaira.toLocaleString()} (${currency === 'USD' ? `$${amt} USD` : `₦${amt} NGN`})\nInitiative: ${params.project}\nCredit attributed to: ${params.ambassador_name || 'Project'}\n\nTransaction processed.`);
+        window.location.hash = "#home";
+      }
+    } catch (err: any) {
+      setIsProcessing(false);
+      console.error("Paystack checkout execution error:", err);
+      alert("Failed to initialize Paystack checkout. Please check your network and try again.");
     }
   };
 
@@ -113,7 +150,7 @@ export const DonatePage: React.FC = () => {
           </h1>
           <p className="text-slate-500 font-sans text-base max-w-[620px] leading-relaxed">
             {isCampaignLink 
-              ? `You have accessed a direct public fundraising link sponsored by our approved fellowship ambassador, ${params.ambassador_name}. Your donation will directly fund this local project.`
+              ? `You have accessed a direct public fundraising link sponsored by our approved fellowship ambassador, ${params.ambassador_name || 'an authorized leader'}. Your donation will directly fund this local project.`
               : "Every donation, no matter the amount, directly funds tangible assets on the ground. We completely bypass middle-men bureaucracy to deliver infrastructure."
             }
           </p>
@@ -123,114 +160,211 @@ export const DonatePage: React.FC = () => {
       <div className="bg-white py-12 px-4">
         {isCampaignLink ? (
           <div className="max-w-xl mx-auto bg-white rounded-3xl border border-slate-150 shadow-xl shadow-slate-100/50 p-6 md:p-8 space-y-6">
-            <div className="text-center">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold tracking-wide uppercase mb-3">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Audited & Secure Campaign
-              </span>
-              <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Sponsor this Initiative</h2>
-              <p className="text-xs text-slate-500 mt-1.5">Directly credited to Ambassador: <strong className="font-extrabold text-slate-800">{params.ambassador_name}</strong></p>
-            </div>
+            
+            {successReceipt ? (
+              <div className="text-center space-y-5 py-6">
+                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-10 h-10" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-bold text-slate-900">Payment Successful!</h3>
+                  <p className="text-xs text-slate-500">Thank you, <strong className="text-slate-800">{donorName}</strong>! Your sponsorship has been confirmed and credited to this initiative.</p>
+                </div>
 
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-150 space-y-2 text-xs">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Initiative:</span>
-                <span className="font-bold text-slate-800">{params.project}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Sponsor ID:</span>
-                <span className="font-mono font-bold text-slate-800">{params.ambassador_id}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Target Funding Milestone:</span>
-                <span className="font-mono font-extrabold text-emerald-600">${parseFloat(params.needed || "0").toLocaleString()} USD</span>
-              </div>
-            </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-left space-y-2 text-xs font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Payment Reference:</span>
+                    <span className="font-bold text-slate-800">{successReceipt.ref}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Amount Paid:</span>
+                    <span className="font-bold text-emerald-600">{successReceipt.amount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Initiative:</span>
+                    <span className="font-bold text-slate-800">{params.project}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Ambassador:</span>
+                    <span className="font-bold text-slate-800">{params.ambassador_name || "General"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Timestamp:</span>
+                    <span className="text-slate-700">{successReceipt.date}</span>
+                  </div>
+                </div>
 
-            <form onSubmit={handlePaystackCheckout} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Full Name</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <User className="w-4 h-4" />
-                  </span>
-                  <input
-                    type="text"
-                    required
-                    value={donorName}
-                    onChange={(e) => setDonorName(e.target.value)}
-                    placeholder="e.g. Samuel Okon"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                  />
+                <div className="pt-2 flex gap-3">
+                  <button
+                    onClick={() => {
+                      setSuccessReceipt(null);
+                      setDonorAmount("");
+                    }}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-all"
+                  >
+                    Donate Again
+                  </button>
+                  <a
+                    href="#home"
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all inline-flex items-center justify-center"
+                  >
+                    Return Home
+                  </a>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Email Address</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Mail className="w-4 h-4" />
+            ) : (
+              <>
+                <div className="text-center">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold tracking-wide uppercase mb-3">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Audited & Secure Campaign
                   </span>
-                  <input
-                    type="email"
-                    required
-                    value={donorEmail}
-                    onChange={(e) => setDonorEmail(e.target.value)}
-                    placeholder="e.g. samuel@example.com"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                  />
+                  <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Sponsor this Initiative</h2>
+                  <p className="text-xs text-slate-500 mt-1.5">Directly credited to Ambassador: <strong className="font-extrabold text-slate-800">{params.ambassador_name || 'Authorized Ambassador'}</strong></p>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Phone Number</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Phone className="w-4 h-4" />
-                  </span>
-                  <input
-                    type="tel"
-                    required
-                    value={donorPhone}
-                    onChange={(e) => setDonorPhone(e.target.value)}
-                    placeholder="e.g. +234 803 111 2222"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                  />
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-150 space-y-2 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">Initiative:</span>
+                    <span className="font-bold text-slate-800">{params.project}</span>
+                  </div>
+                  {params.ambassador_id && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Sponsor ID:</span>
+                      <span className="font-mono font-bold text-slate-800">{params.ambassador_id}</span>
+                    </div>
+                  )}
+                  {params.needed && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Target Funding Milestone:</span>
+                      <span className="font-mono font-extrabold text-emerald-600">${parseFloat(params.needed || "0").toLocaleString()} USD</span>
+                    </div>
+                  )}
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Donation Amount (USD)</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-800 font-extrabold text-xs">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    required
-                    value={donorAmount}
-                    onChange={(e) => setDonorAmount(e.target.value)}
-                    className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-slate-800 outline-none transition-all"
-                  />
-                </div>
-              </div>
+                <form onSubmit={handlePaystackCheckout} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Your Full Name</label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <User className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        required
+                        value={donorName}
+                        onChange={(e) => setDonorName(e.target.value)}
+                        placeholder="e.g. Samuel Okon"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                      />
+                    </div>
+                  </div>
 
-              <button
-                type="submit"
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <CreditCard className="w-4 h-4 text-emerald-300" />
-                Sponsor Initiative via Paystack
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </form>
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Email Address</label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Mail className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="email"
+                        required
+                        value={donorEmail}
+                        onChange={(e) => setDonorEmail(e.target.value)}
+                        placeholder="e.g. samuel@example.com"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Phone Number</label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Phone className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="tel"
+                        required
+                        value={donorPhone}
+                        onChange={(e) => setDonorPhone(e.target.value)}
+                        placeholder="e.g. +234 803 111 2222"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
+                        Donation Amount ({currency})
+                      </label>
+                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setCurrency("USD")}
+                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${
+                            currency === "USD" ? "bg-white text-emerald-700 shadow-xs" : "text-slate-400 hover:text-slate-600"
+                          }`}
+                        >
+                          USD ($)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCurrency("NGN")}
+                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${
+                            currency === "NGN" ? "bg-white text-emerald-700 shadow-xs" : "text-slate-400 hover:text-slate-600"
+                          }`}
+                        >
+                          NGN (₦)
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-800 font-extrabold text-xs">
+                        {currency === "USD" ? "$" : "₦"}
+                      </span>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        step="any"
+                        value={donorAmount}
+                        onChange={(e) => setDonorAmount(e.target.value)}
+                        className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-slate-800 outline-none transition-all"
+                        placeholder={currency === "USD" ? "e.g. 50" : "e.g. 75000"}
+                      />
+                    </div>
+
+                    {donorAmount && !isNaN(parseFloat(donorAmount)) && (
+                      <p className="text-[10px] text-slate-400 font-mono mt-1 text-right">
+                        {currency === "USD"
+                          ? `≈ ₦${(parseFloat(donorAmount) * 1500).toLocaleString()} NGN via Paystack`
+                          : `≈ $${(parseFloat(donorAmount) / 1500).toFixed(2)} USD`}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isProcessing}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <CreditCard className="w-4 h-4 text-emerald-300" />
+                    {isProcessing ? "Opening Paystack Secure Gateway..." : "Sponsor Initiative via Paystack"}
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </form>
+              </>
+            )}
           </div>
         ) : (
           <DonationForm />
         )}
       </div>
 
-      {/* Renders the magnificent interactive Donation Impact visualization component */}
+      {/* Renders the interactive Donation Impact visualization component */}
       <DonationImpact />
 
       {/* Financial Accountability & Auditing indicators */}
