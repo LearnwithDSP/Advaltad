@@ -201,11 +201,7 @@ function applyAmbassadorFilter(query: any, idOrEmail: string): any {
   } else if (isEmail) {
     return query.ilike("email", clean.toLowerCase());
   } else {
-    const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
-    if (storedEmail && storedEmail.includes("@")) {
-      return query.ilike("email", storedEmail.trim().toLowerCase());
-    }
-    return query.ilike("email", clean.toLowerCase());
+    return query.or(`user_id.eq.${clean},id.eq.${clean},ambassador_id.eq.${clean},email.ilike.${clean.toLowerCase()}`);
   }
 }
 
@@ -246,7 +242,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
 
   return {
     id: staticId,
-    user_id: staticId,
+    user_id: row.user_id || staticId,
     db_id: row.id || undefined,
     ambassador_id: staticId,
     name: nameVal,
@@ -335,28 +331,29 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
   const cleanId = identifier.trim();
   if (!cleanId) return 0;
 
+  let balance = 0;
+
   if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
     try {
       const client = supabaseAdmin || supabase;
-      let query = client.from("ambassadors").select("avu_balance");
-
       const isStrictUuid = isUuid(cleanId);
+      const isEmail = cleanId.includes("@");
+      
+      let query = client.from("ambassadors").select("avu_balance, ledger_balance");
       if (isStrictUuid) {
         query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
-      } else if (cleanId.includes("@")) {
+      } else if (isEmail) {
         query = query.ilike("email", cleanId.toLowerCase());
       } else {
-        const storedEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
-        const conds: string[] = [`email.ilike.${cleanId.toLowerCase()}`];
-        if (storedEmail && storedEmail.includes("@")) {
-          conds.push(`email.ilike.${storedEmail.trim().toLowerCase()}`);
-        }
-        query = query.or(conds.join(","));
+        query = query.or(`user_id.eq.${cleanId},id.eq.${cleanId},ambassador_id.eq.${cleanId},email.ilike.${cleanId.toLowerCase()}`);
       }
 
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return Number(data[0]?.avu_balance || 0);
+        const foundVal = Number(data[0]?.avu_balance ?? data[0]?.ledger_balance ?? 0);
+        if (!isNaN(foundVal) && foundVal > 0) {
+          balance = foundVal;
+        }
       }
     } catch (err) {
       console.warn("[fetchWalletBalance] Supabase query error:", err);
@@ -365,14 +362,17 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
 
   const localDb = getLocalDb();
   const cleanLower = cleanId.toLowerCase();
-  const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email")?.toLowerCase() : null;
   const found = localDb.find(a =>
     a.email?.toLowerCase() === cleanLower ||
     a.id?.toLowerCase() === cleanLower ||
     a.user_id?.toLowerCase() === cleanLower ||
-    (sessionEmail && a.email?.toLowerCase() === sessionEmail)
+    (a.db_id && a.db_id.toLowerCase() === cleanLower)
   );
-  return Number(found?.avu_balance || 0);
+  if (found && Number(found.avu_balance) > balance) {
+    balance = Number(found.avu_balance);
+  }
+
+  return balance;
 }
 
 export const db = {
@@ -505,37 +505,7 @@ export const db = {
       amb.user_id = staticId;
       amb.ambassador_id = staticId;
 
-      const hasSuccessDeposit = localDepositsList.some(d => 
-        d.status === "success" && (
-          (d.ambassador_id && d.ambassador_id.toLowerCase() === staticId.toLowerCase()) ||
-          (amb.db_id && d.ambassador_id && d.ambassador_id.toLowerCase() === amb.db_id.toLowerCase()) ||
-          (amb.email && d.ambassador_id && d.ambassador_id.toLowerCase() === amb.email.toLowerCase())
-        )
-      );
-
-      const hasReceivedP2P = localP2PList.some(p => 
-        (p.recipient_id && p.recipient_id.toLowerCase() === staticId.toLowerCase()) ||
-        (amb.email && p.recipient_email && p.recipient_email.toLowerCase() === amb.email.toLowerCase())
-      );
-
-      if (!hasSuccessDeposit && !hasReceivedP2P) {
-        // Also verify if a wallet record with balance exists
-        let hasWalletEntry = false;
-        try {
-          const wallets = await this.getWallets();
-          hasWalletEntry = wallets.some(w => 
-            (w.ambassador_id && w.ambassador_id.toLowerCase() === staticId.toLowerCase()) ||
-            (amb.db_id && w.ambassador_id && w.ambassador_id.toLowerCase() === amb.db_id.toLowerCase()) ||
-            (amb.email && w.email && w.email.toLowerCase() === amb.email.toLowerCase())
-          );
-        } catch (e) {}
-
-        if (!hasWalletEntry) {
-          amb.avu_balance = 0;
-        }
-      }
-
-      if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance)) {
+      if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance) || amb.avu_balance < 0) {
         amb.avu_balance = 0;
       }
     }
@@ -1620,24 +1590,22 @@ export const db = {
     senderId: string,
     recipientEmailOrId: string,
     points: number,
-    reason: string
+    reason: string,
+    senderEmailParam?: string,
+    recipientEmailParam?: string
   ): Promise<{ success: boolean; message: string; senderNewBalance?: number; recipientName?: string }> {
     const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
     const cleanSender = (senderId || "").trim();
     const cleanRecipient = (recipientEmailOrId || "").trim();
+    const cleanSenderEmail = (senderEmailParam || (cleanSender.includes("@") ? cleanSender : (sessionEmail || ""))).trim().toLowerCase();
+    const cleanRecipientEmail = (recipientEmailParam || (cleanRecipient.includes("@") ? cleanRecipient : "")).trim().toLowerCase();
     
-    if (!cleanRecipient) {
+    if (isNaN(points) || points <= 0) {
+      return { success: false, message: "Please specify a valid positive transfer amount." };
+    }
+
+    if (!cleanRecipient && !cleanRecipientEmail) {
       return { success: false, message: "Recipient ID or email is required." };
-    }
-
-    if (cleanSender && cleanSender.toLowerCase() === cleanRecipient.toLowerCase()) {
-      return { success: false, message: "Transfer Failed: You cannot transfer points to yourself." };
-    }
-
-    // Find recipient by ID/Email/User ID
-    const recipient = await this.findAmbassadorById(cleanRecipient) || await this.findAmbassadorByEmail(cleanRecipient);
-    if (!recipient) {
-      return { success: false, message: `Could not find an ambassador with ID or email: "${cleanRecipient}"` };
     }
 
     // Helper to test equality between two ambassador records
@@ -1651,42 +1619,78 @@ export const db = {
       return false;
     };
 
-    // Find sender with bulletproof multi-stage fallback
+    // 1. Find recipient accurately
+    let recipient: DbAmbassador | null = null;
+    if (cleanRecipientEmail) {
+      recipient = await this.findAmbassadorByEmail(cleanRecipientEmail);
+    }
+    if (!recipient && cleanRecipient) {
+      recipient = await this.findAmbassadorById(cleanRecipient) || await this.findAmbassadorByEmail(cleanRecipient);
+    }
+    if (!recipient && cleanRecipient) {
+      const allAmbs = await this.getAmbassadors();
+      const cLow = cleanRecipient.toLowerCase();
+      recipient = allAmbs.find(a => 
+        (a.id && a.id.toLowerCase() === cLow) ||
+        (a.user_id && a.user_id.toLowerCase() === cLow) ||
+        (a.ambassador_id && a.ambassador_id.toLowerCase() === cLow) ||
+        (a.db_id && a.db_id.toLowerCase() === cLow) ||
+        (a.email && a.email.toLowerCase() === cLow)
+      ) || null;
+    }
+    if (!recipient && cleanRecipient) {
+      const localDb = getLocalDb();
+      const cLow = cleanRecipient.toLowerCase();
+      recipient = localDb.find(a => 
+        (a.id && a.id.toLowerCase() === cLow) ||
+        (a.user_id && a.user_id.toLowerCase() === cLow) ||
+        (a.ambassador_id && a.ambassador_id.toLowerCase() === cLow) ||
+        (a.db_id && a.db_id.toLowerCase() === cLow) ||
+        (a.email && a.email.toLowerCase() === cLow)
+      ) || null;
+    }
+
+    if (!recipient) {
+      return { success: false, message: `Could not find an ambassador with ID or email: "${cleanRecipient || cleanRecipientEmail}"` };
+    }
+
+    // 2. Find sender accurately
     let sender: DbAmbassador | null = null;
-    if (cleanSender) {
-      const found = await this.findAmbassadorById(cleanSender) || await this.findAmbassadorByEmail(cleanSender);
+    if (cleanSenderEmail) {
+      const found = await this.findAmbassadorByEmail(cleanSenderEmail);
       if (found && !isSameAmbassador(found, recipient)) {
         sender = found;
       }
     }
-    
     if (!sender && cleanSender) {
-      const cleanSenderId = cleanSender.toLowerCase();
+      const found = await this.findAmbassadorById(cleanSender);
+      if (found && !isSameAmbassador(found, recipient)) {
+        sender = found;
+      }
+    }
+    if (!sender && cleanSender) {
       const allAmbs = await this.getAmbassadors();
+      const sLow = cleanSender.toLowerCase();
       const found = allAmbs.find(a => 
-        ((a.id && a.id.toLowerCase() === cleanSenderId) ||
-         (a.user_id && a.user_id.toLowerCase() === cleanSenderId) ||
-         (a.email && a.email.toLowerCase() === cleanSenderId)) &&
+        ((a.id && a.id.toLowerCase() === sLow) ||
+         (a.user_id && a.user_id.toLowerCase() === sLow) ||
+         (a.ambassador_id && a.ambassador_id.toLowerCase() === sLow) ||
+         (a.db_id && a.db_id.toLowerCase() === sLow) ||
+         (a.email && a.email.toLowerCase() === sLow)) &&
         !isSameAmbassador(a, recipient)
       );
       if (found) sender = found;
     }
-
-    if (!sender) {
-      if (sessionEmail && sessionEmail.toLowerCase() !== recipient.email?.toLowerCase()) {
-        const found = await this.findAmbassadorByEmail(sessionEmail);
-        if (found && !isSameAmbassador(found, recipient)) {
-          sender = found;
-        }
+    if (!sender && sessionEmail) {
+      const found = await this.findAmbassadorByEmail(sessionEmail);
+      if (found && !isSameAmbassador(found, recipient)) {
+        sender = found;
       }
     }
-
     if (!sender) {
       const localDb = getLocalDb();
       const found = localDb.find(a => !isSameAmbassador(a, recipient));
-      if (found) {
-        sender = found;
-      }
+      if (found) sender = found;
     }
 
     if (!sender) {
@@ -1697,14 +1701,14 @@ export const db = {
       return { success: false, message: "Transfer Failed: You cannot transfer points to yourself." };
     }
 
+    // 3. Resolve sender balance comprehensively from all live & local sources
     let currentSenderBal = Number(sender.avu_balance) || 0;
 
-    // Fetch sender record and current balance dynamically using user_id and email fallbacks from ambassadors table
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
         const sUuid = [sender.db_id, sender.user_id, sender.id, cleanSender].find(x => x && isUuid(x));
-        const sEmail = sender.email || (cleanSender.includes("@") ? cleanSender : (sessionEmail || ""));
+        const sEmail = sender.email || cleanSenderEmail;
         
         const conditions: string[] = [];
         if (sUuid) {
@@ -1717,14 +1721,20 @@ export const db = {
         if (conditions.length > 0) {
           const { data: senderData } = await client
             .from("ambassadors")
-            .select("id, user_id, email, avu_balance")
+            .select("id, user_id, email, avu_balance, ledger_balance")
             .or(conditions.join(","))
             .maybeSingle();
 
-          if (senderData && typeof senderData.avu_balance !== "undefined" && senderData.avu_balance !== null) {
-            currentSenderBal = Number(senderData.avu_balance) || 0;
+          if (senderData) {
+            const fetchedBal = Number(senderData.avu_balance ?? senderData.ledger_balance ?? 0);
+            if (!isNaN(fetchedBal) && fetchedBal > currentSenderBal) {
+              currentSenderBal = fetchedBal;
+            }
             if (senderData.id && isUuid(senderData.id)) {
               sender.db_id = senderData.id;
+            }
+            if (senderData.user_id && isUuid(senderData.user_id)) {
+              sender.user_id = senderData.user_id;
             }
           }
         }
@@ -1733,39 +1743,37 @@ export const db = {
       }
     }
 
-    if (currentSenderBal < points) {
-      const fetched = await fetchWalletBalance(sender.db_id || sender.user_id || sender.id || sender.email || cleanSender);
-      if (fetched > currentSenderBal) {
-        currentSenderBal = fetched;
-      }
+    // Check fetchWalletBalance
+    const liveBal = await fetchWalletBalance(sender.email || cleanSenderEmail || sender.db_id || sender.user_id || cleanSender);
+    if (liveBal > currentSenderBal) {
+      currentSenderBal = liveBal;
     }
 
-    if (currentSenderBal < points) {
-      const localDb = getLocalDb();
-      const match = localDb.find(a => 
-        (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
-        (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase()) ||
-        (cleanSender && a.id && a.id.toLowerCase() === cleanSender.toLowerCase()) ||
-        (cleanSender && a.email && a.email.toLowerCase() === cleanSender.toLowerCase())
+    // Check local database
+    const localDb = getLocalDb();
+    const localMatch = localDb.find(a => 
+      (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
+      (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase()) ||
+      (cleanSender && a.id && a.id.toLowerCase() === cleanSender.toLowerCase()) ||
+      (cleanSenderEmail && a.email && a.email.toLowerCase() === cleanSenderEmail.toLowerCase())
+    );
+    if (localMatch && Number(localMatch.avu_balance) > currentSenderBal) {
+      currentSenderBal = Number(localMatch.avu_balance);
+    }
+
+    // Check wallets table
+    try {
+      const wallets = await this.getWallets();
+      const walletMatch = wallets.find(w =>
+        (w.ambassador_id && sender.id && w.ambassador_id.toLowerCase() === sender.id.toLowerCase()) ||
+        (w.email && sender.email && w.email.toLowerCase() === sender.email.toLowerCase()) ||
+        (cleanSenderEmail && w.email && w.email.toLowerCase() === cleanSenderEmail.toLowerCase()) ||
+        (cleanSender && w.ambassador_id && w.ambassador_id.toLowerCase() === cleanSender.toLowerCase())
       );
-      if (match && Number(match.avu_balance) > currentSenderBal) {
-        currentSenderBal = Number(match.avu_balance);
+      if (walletMatch && Number(walletMatch.balance) > currentSenderBal) {
+        currentSenderBal = Number(walletMatch.balance);
       }
-    }
-
-    if (currentSenderBal < points) {
-      try {
-        const wallets = await this.getWallets();
-        const walletMatch = wallets.find(w =>
-          (w.ambassador_id && sender.id && w.ambassador_id.toLowerCase() === sender.id.toLowerCase()) ||
-          (w.email && sender.email && w.email.toLowerCase() === sender.email.toLowerCase()) ||
-          (cleanSender && w.ambassador_id && w.ambassador_id.toLowerCase() === cleanSender.toLowerCase())
-        );
-        if (walletMatch && Number(walletMatch.balance) > currentSenderBal) {
-          currentSenderBal = Number(walletMatch.balance);
-        }
-      } catch (e) {}
-    }
+    } catch (e) {}
 
     sender.avu_balance = currentSenderBal;
 
@@ -1774,7 +1782,7 @@ export const db = {
     }
 
     const senderNewBalance = sender.avu_balance - points;
-    const recipientNewBalance = (recipient.avu_balance || 0) + points;
+    const recipientNewBalance = (Number(recipient.avu_balance) || 0) + points;
 
     // Helper to resolve valid UUID for ambassadors table
     const getUuid = async (amb: DbAmbassador): Promise<string | null> => {
@@ -1803,26 +1811,28 @@ export const db = {
       try {
         const client = supabaseAdmin || supabase;
         
-        // 1. Deduct amount from sender.avu_balance using PATCH /ambassadors?id=eq.${senderId}
+        // 1. Deduct amount from sender.avu_balance
         if (senderUuid) {
           await client.from("ambassadors").update({ avu_balance: senderNewBalance }).eq("id", senderUuid);
-        } else if (sender.email) {
-          await client.from("ambassadors").update({ avu_balance: senderNewBalance }).ilike("email", sender.email);
+        }
+        if (sender.email) {
+          await client.from("ambassadors").update({ avu_balance: senderNewBalance }).ilike("email", sender.email.trim().toLowerCase());
         }
 
-        // 2. Add amount to recipient.avu_balance using PATCH /ambassadors?id=eq.${recipientId}
+        // 2. Add amount to recipient.avu_balance
         if (recipientUuid) {
           await client.from("ambassadors").update({ avu_balance: recipientNewBalance }).eq("id", recipientUuid);
-        } else if (recipient.email) {
-          await client.from("ambassadors").update({ avu_balance: recipientNewBalance }).ilike("email", recipient.email);
+        }
+        if (recipient.email) {
+          await client.from("ambassadors").update({ avu_balance: recipientNewBalance }).ilike("email", recipient.email.trim().toLowerCase());
         }
 
         // 3. Insert audit entry into p2p_transactions
         const p2pPayload = {
           sender_id: senderUuid || sender.db_id || sender.id,
-          sender_email: sender.email,
+          sender_email: sender.email || cleanSenderEmail,
           recipient_id: recipientUuid || recipient.db_id || recipient.id,
-          recipient_email: recipient.email,
+          recipient_email: recipient.email || cleanRecipientEmail,
           amount: Number(points),
           note: reason || "Peer transfer"
         };
@@ -1837,8 +1847,8 @@ export const db = {
     }
 
     // Always keep local storage updated as well
-    const localDb = getLocalDb();
-    const localSender = localDb.find(a => 
+    const updatedLocalDb = getLocalDb();
+    const localSender = updatedLocalDb.find(a => 
       (a.id && sender.id && a.id.toLowerCase() === sender.id.toLowerCase()) || 
       (a.email && sender.email && a.email.toLowerCase() === sender.email.toLowerCase()) ||
       (a.user_id && sender.user_id && a.user_id.toLowerCase() === sender.user_id.toLowerCase()) ||
@@ -1848,7 +1858,7 @@ export const db = {
       localSender.avu_balance = senderNewBalance;
     }
 
-    const localRecipient = localDb.find(a => 
+    const localRecipient = updatedLocalDb.find(a => 
       (a.id && recipient.id && a.id.toLowerCase() === recipient.id.toLowerCase()) || 
       (a.email && recipient.email && a.email.toLowerCase() === recipient.email.toLowerCase()) ||
       (a.user_id && recipient.user_id && a.user_id.toLowerCase() === recipient.user_id.toLowerCase()) ||
@@ -1857,12 +1867,12 @@ export const db = {
     if (localRecipient) {
       localRecipient.avu_balance = recipientNewBalance;
     } else {
-      localDb.push({
+      updatedLocalDb.push({
         ...recipient,
         avu_balance: recipientNewBalance
       });
     }
-    saveLocalDb(localDb);
+    saveLocalDb(updatedLocalDb);
 
     // Sync memory cache
     cachedAmbassadorsMemory = cachedAmbassadorsMemory.map(a => {
@@ -1882,10 +1892,10 @@ export const db = {
       id: transactionId,
       sender_id: senderUuid || sender.id,
       sender_name: sender.name,
-      sender_email: sender.email,
+      sender_email: sender.email || cleanSenderEmail,
       recipient_id: recipientUuid || recipient.id,
       recipient_name: recipient.name,
-      recipient_email: recipient.email,
+      recipient_email: recipient.email || cleanRecipientEmail,
       points,
       reason: reason || "Peer transfer",
       created_at: timestamp
@@ -1911,6 +1921,12 @@ export const db = {
       desc: `Received ${points} AVU from ${sender.name} [${sender.ambassador_id || sender.id}] for: "${reason || "Peer transfer"}"`,
       amount: `+${points} AVU`
     });
+
+    if (typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", { detail: { senderNewBalance, points } }));
+      } catch (e) {}
+    }
 
     return {
       success: true,
