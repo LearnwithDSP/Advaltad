@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase, supabaseAdmin } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance } from "../lib/supabase";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
@@ -792,22 +792,20 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       }
     }
 
-    // Step 4: Verify and normalize avu_balance against database expectations
-    const rawBalance = dbRecord.avu_balance ?? dbRecord.ledger_balance ?? 0;
-    const validatedBalance = isNaN(Number(rawBalance)) || Number(rawBalance) < 0 ? 0 : Number(rawBalance);
+    // Step 4: Verify and normalize avu_balance directly from the Supabase ambassadors table row
+    const exactBalance = extractExactAvuBalance(dbRecord);
 
-    console.log("[fetchAuthenticatedAmbassador] Step 4: Validating avu_balance against database expectation:", {
+    console.log("[fetchAuthenticatedAmbassador] Step 4: Validated exact avu_balance directly from Supabase ambassadors row:", {
       ambassador_id: dbRecord.id,
       user_id: dbRecord.user_id,
       email: dbRecord.email,
-      raw_database_balance: rawBalance,
-      verified_numerical_balance: validatedBalance,
-      is_balance_positive: validatedBalance > 0
+      exact_database_balance: exactBalance
     });
 
     const verifiedAmbassador: DbAmbassador = {
       ...dbRecord,
-      avu_balance: validatedBalance
+      avu_balance: exactBalance,
+      ledger_balance: exactBalance
     };
 
     console.log("[fetchAuthenticatedAmbassador] Step 5: Final verified ambassador object ready.", verifiedAmbassador);
@@ -2641,63 +2639,6 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   ))}
                 </div>
               </motion.div>
-
-              {/* Activity Stream Section */}
-              <motion.div variants={itemVariants} className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 text-left">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                      <Icon name="Activity" size={16} className="text-emerald-400" />
-                      <span>Recent Activity Stream</span>
-                    </h3>
-                    <p className="text-xs text-slate-400">Live ledger log events and system authorizations</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("activities")}
-                    className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    View All Activities &rarr;
-                  </button>
-                </div>
-                <div className="divide-y divide-slate-800/80 max-h-72 overflow-y-auto pr-1">
-                  {activities.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 text-xs">
-                      No recent activity events recorded.
-                    </div>
-                  ) : (
-                    activities.slice(0, 10).map((act) => {
-                      let typeBg = "bg-slate-800 text-slate-300 border-slate-700";
-                      if (act.type === "avu_transfer") typeBg = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
-                      if (act.type === "status_change") typeBg = "bg-purple-500/10 text-purple-400 border-purple-500/30";
-                      if (act.type === "registration") typeBg = "bg-sky-500/10 text-sky-400 border-sky-500/30";
-                      if (act.type === "profile_update") typeBg = "bg-amber-500/10 text-amber-400 border-amber-500/30";
-
-                      return (
-                        <div key={act.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                          <div className="space-y-1 flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${typeBg}`}>
-                                {act.type.replace("_", " ")}
-                              </span>
-                              {act.ambassador_name && (
-                                <span className="font-bold text-slate-200 truncate">{act.ambassador_name}</span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-400 leading-relaxed">{act.desc}</p>
-                          </div>
-                          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 shrink-0">
-                            {act.amount && <p className="font-mono font-bold text-emerald-400">{act.amount}</p>}
-                            <p className="text-[10px] text-slate-500">
-                              {act.created_at ? new Date(act.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </motion.div>
             </motion.div>
           )}
 
@@ -3088,11 +3029,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Transfer Amount (AVU)</label>
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-slate-400 font-bold">
-                            Available: <span className="text-emerald-400 font-mono font-black">{Math.max(Number(avuBalance) || 0, Number(profile?.avu_balance) || 0).toLocaleString()} AVU</span>
+                            Available: <span className="text-emerald-400 font-mono font-black">{Number(avuBalance || 0).toLocaleString()} AVU</span>
                           </span>
                           <button
                             type="button"
-                            onClick={() => setTransferAmount(String(Math.max(Number(avuBalance) || 0, Number(profile?.avu_balance) || 0)))}
+                            onClick={() => setTransferAmount(String(Number(avuBalance) || 0))}
                             className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-[9px] font-black uppercase tracking-wider cursor-pointer transition-colors"
                           >
                             Max
