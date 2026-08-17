@@ -3072,17 +3072,39 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </form>
                 </div>
 
-                {/* Peer Resource Library */}
-                <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6">
-                  <div className="border-b border-slate-800 pb-4">
-                    <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                      <Icon name="Compass" size={18} className="text-sky-400" />
-                      <span>Peer Resource Exchange</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-1">Acquire equipment specs, software accounts, and mentorship using AVU</p>
+                {/* Peer Resource Library - Locked */}
+                <div className="relative p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 overflow-hidden">
+                  <div className="border-b border-slate-800 pb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                        <Icon name="Lock" size={18} className="text-amber-400" />
+                        <span>Peer Resource Exchange</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">Acquire equipment specs, software accounts, and mentorship using AVU</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                      <Icon name="Lock" size={12} />
+                      Locked
+                    </span>
                   </div>
 
-                  <div className="space-y-3">
+                  {/* Prominent Coming Soon Locked Notice */}
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3 text-left">
+                    <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+                      <Icon name="Lock" size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-extrabold text-amber-300 uppercase tracking-wide">
+                        PEER Resources Exchange Feature is coming soon
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        This section is temporarily locked while we prepare decentralized peer listings and verification tools.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Disabled Preview Items */}
+                  <div className="space-y-3 opacity-40 pointer-events-none select-none filter blur-[0.3px]">
                     {exchangeItems.map(item => (
                       <div key={item.id} className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-4 text-left">
                         <div className="flex items-center gap-3">
@@ -3094,13 +3116,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             <p className="text-[10px] text-slate-400">Offered by {item.provider}</p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleClaimExchange(item)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 font-mono text-xs font-bold border border-slate-700 transition-colors cursor-pointer shrink-0"
-                        >
+                        <span className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-500 font-mono text-xs font-bold border border-slate-700 shrink-0 flex items-center gap-1.5">
+                          <Icon name="Lock" size={12} />
                           {item.avuCost === 0 ? "Free" : `${item.avuCost} AVU`}
-                        </button>
+                        </span>
                       </div>
                     ))}
                   </div>
