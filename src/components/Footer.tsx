@@ -197,7 +197,7 @@ export const Footer: React.FC<FooterProps> = ({ onDonateClick, onAmbassadorClick
                 <ul className="space-y-2 text-xs text-slate-500 font-sans">
                   <li className="flex items-center gap-1.5">
                     <Icon name="Mail" size={12} className="text-brand-primary" />
-                    <a href="mailto:contact@advaltad.org" className="hover:text-brand-primary transition-colors">contact@advaltad.org</a>
+                    <a href="mailto:info@advaltadfoundation.org" className="hover:text-brand-primary transition-colors">info@advaltadfoundation.org</a>
                   </li>
                   <li className="flex items-center gap-1.5">
                     <Icon name="Phone" size={12} className="text-brand-primary" />
