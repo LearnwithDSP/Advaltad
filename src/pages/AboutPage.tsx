@@ -3,47 +3,78 @@ import { motion } from "motion/react";
 import { About } from "../components/About";
 import { Icon } from "../components/Icon";
 
+import kushimoOlalekanImg from "../assets/images/Kushimo Olalekan.jpeg";
+import onagaumahMichaelImg from "../assets/images/ONAGAUMAH MICHAEL.jpeg";
+import timilehinAkereleImg from "../assets/images/Timilehin Akerele.jpeg";
+import fapetuFolasadeImg from "../assets/images/Fapetu Folasade.jpeg";
+import kolawoleKushimoImg from "../assets/images/Kolawole Kushimo.jpeg";
+import emmanuelAdelekeImg from "../assets/images/Emmanuel Adeleke.jpeg";
+
 export const AboutPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"all" | "mission" | "leadership" | "values">("all");
 
   // Read hash modifier on mount to scroll to or activate subsections
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("mission") || hash.includes("vision")) {
-      setActiveTab("mission");
-    } else if (hash.includes("leadership")) {
-      setActiveTab("leadership");
-    } else if (hash.includes("core-values")) {
-      setActiveTab("values");
-    } else {
-      setActiveTab("all");
-    }
-  }, [window.location.hash]);
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash.includes("mission") || hash.includes("vision")) {
+        setActiveTab("mission");
+      } else if (hash.includes("leadership")) {
+        setActiveTab("leadership");
+      } else if (hash.includes("core-values") || hash.includes("values")) {
+        setActiveTab("values");
+      } else {
+        setActiveTab("all");
+      }
+    };
+
+    handleHashChange();
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   const LEADERSHIP_MEMBERS = [
     {
-      name: "Elizabeth Kamara",
-      role: "Executive Director & Founder",
-      bio: "An international development veteran with over 18 years leading field initiatives across Sub-Saharan climates. Passionate about community-owned infrastructure.",
-      avatarName: "Sparkles"
+      name: "Kushimo Olalekan",
+      role: "Founder, Sociologist, Youth Development Advocate",
+      bio: "Sociologist and visionary youth development advocate dedicated to empowering communities, fostering grassroots leadership, and building sustainable socioeconomic pathways across developing regions.",
+      avatarName: "Sparkles",
+      image: kushimoOlalekanImg
     },
     {
-      name: "Ramon Bisola",
-      role: "Global Chief of Operations",
-      bio: "Directs resource allocations and policy compliance across Advaltad. Specializes in auditing field-work pipelines and physical construction targets.",
-      avatarName: "Shield"
+      name: "ONAGAUMAH MICHAEL",
+      role: "Member Board of Trustees & Project Manager | CEO, God's favor print",
+      bio: "Directs strategic project execution, operational logistics, and resource alignment across foundation initiatives with deep expertise in enterprise production and community project management.",
+      avatarName: "Shield",
+      image: onagaumahMichaelImg
     },
     {
-      name: "Dr. Adebayo Chidi",
-      role: "Director of Youth Tech-Hubs",
-      bio: "Former systems architect and tech builder. Orchestrates our coding courses, digital software laboratories, and graduate mentor placement programs.",
-      avatarName: "Cpu"
+      name: "Timilehin Akerele",
+      role: "Member Board of Trustees & Director of Youth Tech-Hubs | CEO, Timmiemma technology",
+      bio: "Spearheads Advaltad's digital technology hubs, software incubation labs, and vocational tech accelerator programs for rising youth builders.",
+      avatarName: "Laptop",
+      image: timilehinAkereleImg
     },
     {
-      name: "Fatima Al-Hassan",
-      role: "Senior Clinical Architect",
-      bio: "Pioneered Advaltad's Mobile Medical clinic modules. Specializes in rural clinical deployment, clean sanitations, and community wellness plans.",
-      avatarName: "HeartPulse"
+      name: "Fapetu Folasade",
+      role: "Member Board of Trustees | Senior Clinical Architect",
+      bio: "Pioneers community health systems, mobile medical delivery frameworks, and clinical infrastructure to ensure dignified healthcare access in grassroots environments.",
+      avatarName: "HeartPulse",
+      image: fapetuFolasadeImg
+    },
+    {
+      name: "Kolawole Kushimo",
+      role: "Member Board of Trustees | STEM Education Researcher",
+      bio: "Drives foundational science, technology, engineering, and mathematics (STEM) curriculum research, empowering schools and young scholars with practical hands-on pedagogy.",
+      avatarName: "GraduationCap",
+      image: kolawoleKushimoImg
+    },
+    {
+      name: "Emmanuel Adeleke",
+      role: "Member Board of Trustees | CEO, speech fluency builder",
+      bio: "Champions youth oratory excellence, speech fluency, communications leadership, and advocacy training to cultivate articulate next-generation civic leaders.",
+      avatarName: "Volume2",
+      image: emmanuelAdelekeImg
     }
   ];
 
@@ -187,7 +218,7 @@ export const AboutPage: React.FC = () => {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
                 {LEADERSHIP_MEMBERS.map((m, idx) => (
                   <motion.div
                     key={idx}
@@ -198,9 +229,22 @@ export const AboutPage: React.FC = () => {
                     className="bg-[#F7F8FA] rounded-3xl p-6 border border-slate-100 flex flex-col justify-between h-full hover:shadow-lg transition-all duration-300"
                   >
                     <div className="space-y-4">
-                      {/* Avatar placeholder with initials */}
-                      <div className="w-16 h-16 rounded-2xl bg-[#E8F1ED] text-brand-primary font-display font-black flex items-center justify-center text-lg shadow-sm border border-brand-primary/10">
-                        <Icon name={m.avatarName as any} size={28} />
+                      {/* Leadership Member Portrait Image */}
+                      <div className="relative">
+                        {m.image ? (
+                          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden shadow-md border-2 border-brand-primary/20 bg-slate-100">
+                            <img
+                              src={m.image}
+                              alt={m.name}
+                              className="w-full h-full object-cover object-top"
+                              loading="lazy"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 rounded-2xl bg-[#E8F1ED] text-brand-primary font-display font-black flex items-center justify-center text-lg shadow-sm border border-brand-primary/10">
+                            <Icon name={m.avatarName as any} size={28} />
+                          </div>
+                        )}
                       </div>
                       
                       <div>
