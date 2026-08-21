@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance } from "../lib/supabase";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
@@ -144,6 +144,325 @@ const CustomBalanceTooltip = ({ active, payload, label }: any) => {
     );
   }
   return null;
+};
+
+interface AvuWithdrawalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  profile: DbAmbassador | null;
+  currentAvuBalance: number;
+  onSuccess: () => void;
+  showToast: (type: "success" | "error" | "info", title: string, message: string) => void;
+  fetchAmbassadorData: () => void;
+}
+
+export const AvuWithdrawalModal: React.FC<AvuWithdrawalModalProps> = ({
+  isOpen,
+  onClose,
+  profile,
+  currentAvuBalance,
+  onSuccess,
+  showToast,
+  fetchAmbassadorData
+}) => {
+  const [bankName, setBankName] = useState("Access Bank");
+  const [customBank, setCustomBank] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountName, setAccountName] = useState(profile?.name || "");
+  const [avuAmount, setAvuAmount] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (profile?.name && !accountName) {
+      setAccountName(profile.name);
+    }
+  }, [profile]);
+
+  if (!isOpen) return null;
+
+  const withdrawalAvu = parseFloat(avuAmount) || 0;
+  const conversionRate = 1000; // 1 AVU = 1,000 NGN
+  const nairaEquivalent = withdrawalAvu * conversionRate;
+
+  const popularBanks = [
+    "Access Bank",
+    "Guaranty Trust Bank (GTBank)",
+    "Zenith Bank",
+    "First Bank of Nigeria",
+    "United Bank for Africa (UBA)",
+    "Fidelity Bank",
+    "Stanbic IBTC Bank",
+    "Sterling Bank",
+    "Union Bank",
+    "Wema Bank / ALAT",
+    "Kuda Microfinance Bank",
+    "OPay (PayCom)",
+    "PalmPay",
+    "Moniepoint Microfinance Bank",
+    "Other / Custom Bank"
+  ];
+
+  const handleModalClose = () => {
+    setAvuAmount("");
+    setAccountNumber("");
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const effectiveBank = bankName === "Other / Custom Bank" ? customBank.trim() : bankName;
+
+    if (!effectiveBank) {
+      showToast("error", "Bank Required", "Please select or enter your destination bank.");
+      return;
+    }
+    if (!accountNumber.trim() || accountNumber.replace(/\D/g, "").length < 10) {
+      showToast("error", "Invalid Account Number", "Please provide a valid 10-digit NUBAN account number.");
+      return;
+    }
+    if (!accountName.trim()) {
+      showToast("error", "Account Name Required", "Please enter the beneficiary account name.");
+      return;
+    }
+    if (isNaN(withdrawalAvu) || withdrawalAvu <= 0) {
+      showToast("error", "Invalid Amount", "Please enter a valid positive AVU withdrawal amount.");
+      return;
+    }
+    if (withdrawalAvu > currentAvuBalance) {
+      showToast(
+        "error",
+        "Insufficient Balance",
+        `Your requested withdrawal (${withdrawalAvu} AVU) exceeds your available balance of ${currentAvuBalance} AVU.`
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const email = profile?.email || "ambassador@domain.com";
+      const ambId = profile?.id || profile?.user_id || "AV-10000";
+      const ambName = profile?.name || accountName || "Ambassador";
+
+      await db.createAvuWithdrawal({
+        ambassador_id: ambId,
+        ambassador_name: ambName,
+        ambassador_email: email,
+        bank_name: effectiveBank,
+        account_number: accountNumber.trim(),
+        account_name: accountName.trim(),
+        avu_amount: withdrawalAvu,
+        naira_equivalent: nairaEquivalent,
+        conversion_rate: conversionRate,
+        status: "Pending"
+      });
+
+      showToast("success", "Withdrawal Submitted", "Withdrawal request submitted for admin review.");
+      handleModalClose();
+      onSuccess();
+      fetchAmbassadorData();
+    } catch (err: any) {
+      console.error("Error creating withdrawal request:", err);
+      showToast("error", "Submission Failed", err?.message || "Could not submit withdrawal request. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.6 }}
+        exit={{ opacity: 0 }}
+        onClick={handleModalClose}
+        className="absolute inset-0 bg-black backdrop-blur-sm"
+      />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="relative z-10 w-full max-w-lg bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8 overflow-y-auto max-h-[90vh]"
+      >
+        <button
+          onClick={handleModalClose}
+          type="button"
+          className="absolute top-5 right-5 p-1.5 text-gray-400 hover:text-slate-600 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+        >
+          <Icon name="X" size={18} />
+        </button>
+
+        <div className="flex items-center gap-3 pb-5 border-b border-slate-100 font-sans">
+          <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-700">
+            <Icon name="ArrowDownToLine" size={24} />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-lg text-slate-900 uppercase tracking-wide">AVU Withdrawal Terminal</h4>
+            <p className="text-xs text-slate-500">Liquidate your verified AVU balance directly to your Nigerian bank account.</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 pt-5 font-sans">
+          {/* Read-Only Pre-filled Fields */}
+          <div className="grid sm:grid-cols-2 gap-3.5">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                Full Name (Read-only)
+              </label>
+              <input
+                type="text"
+                readOnly
+                disabled
+                value={profile?.name || "Ambassador"}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 cursor-not-allowed"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                Current AVU Balance (Read-only)
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={`${currentAvuBalance.toLocaleString()} AVU`}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs font-black text-emerald-800 font-mono cursor-not-allowed"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Bank Destination Selection */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+              Destination Bank Name *
+            </label>
+            <select
+              required
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              {popularBanks.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            {bankName === "Other / Custom Bank" && (
+              <input
+                type="text"
+                required
+                placeholder="Enter financial institution name"
+                value={customBank}
+                onChange={(e) => setCustomBank(e.target.value)}
+                className="w-full mt-2 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-900 focus:outline-none focus:border-emerald-500"
+              />
+            )}
+          </div>
+
+          {/* Account Number & Account Name */}
+          <div className="grid sm:grid-cols-2 gap-3.5">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                Account Number (10 Digits) *
+              </label>
+              <input
+                required
+                type="text"
+                maxLength={10}
+                placeholder="0123456789"
+                value={accountNumber}
+                onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                Beneficiary Account Name *
+              </label>
+              <input
+                required
+                type="text"
+                placeholder="e.g. Ramon Bisola"
+                value={accountName}
+                onChange={(e) => setAccountName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
+
+          {/* Withdrawal AVU Amount & Calculated Naira Equivalent */}
+          <div className="grid sm:grid-cols-2 gap-3.5 pt-1">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                Withdrawal AVU Amount *
+              </label>
+              <div className="relative">
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  max={currentAvuBalance}
+                  step="any"
+                  placeholder="e.g. 50"
+                  value={avuAmount}
+                  onChange={(e) => setAvuAmount(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+                <span className="absolute right-3.5 top-2.5 text-[10px] font-bold text-slate-400 uppercase">
+                  AVU
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                Calculated Naira Equivalent
+              </label>
+              <div className="w-full px-3.5 py-2.5 rounded-xl bg-amber-50/70 border border-amber-200 text-xs font-mono font-black text-amber-900 flex items-center justify-between">
+                <span>₦{nairaEquivalent.toLocaleString()}</span>
+                <span className="text-[9px] font-sans font-bold text-amber-700 uppercase">1 AVU = ₦1,000</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Formula & Policy Note */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
+            <div className="flex items-center justify-between font-bold text-slate-700 text-[10px] uppercase">
+              <span>Conversion Calculation</span>
+              <span className="text-emerald-700 font-mono">AVU Amount × 1,000 NGN</span>
+            </div>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Upon submission, your withdrawal request is queued for executive review. AVU balance will be deducted automatically upon admin approval.
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleModalClose}
+              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSubmitting || withdrawalAvu <= 0 || withdrawalAvu > currentAvuBalance}
+              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:cursor-not-allowed"
+            >
+              <Icon name={isSubmitting ? "Loader2" : "CheckCircle2"} size={14} className={isSubmitting ? "animate-spin" : ""} />
+              <span>{isSubmitting ? "Submitting..." : "Submit Withdrawal Request"}</span>
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
 };
 
 interface FundWalletModalProps {
@@ -538,6 +857,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
   const [hasFunded, setHasFunded] = useState<boolean>(false);
   const [isFundWalletModalOpen, setIsFundWalletModalOpen] = useState<boolean>(false);
+  const [isAvuWithdrawalModalOpen, setIsAvuWithdrawalModalOpen] = useState<boolean>(false);
+  const [userWithdrawals, setUserWithdrawals] = useState<DbAvuWithdrawal[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [p2pTxHistory, setP2pTxHistory] = useState<any[]>([]);
   const [dbAmbassadors, setDbAmbassadors] = useState<DbAmbassador[]>([]);
@@ -861,6 +1182,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         }).catch(err => console.error("Error checking deposits:", err)),
 
         db.getP2PTransactions(user.id).then(list => setP2pTxHistory(list)).catch(err => console.warn("P2P tx error:", err)),
+        db.getAvuWithdrawals(user.id || user.email).then(list => setUserWithdrawals(list)).catch(err => console.warn("Withdrawals fetch error:", err)),
         db.getAmbassadors().then(allAmbs => setDbAmbassadors(allAmbs || [])).catch(err => console.warn("Ambassadors error:", err)),
         db.getActivities().then(allActs => setActivities(allActs || [])).catch(err => console.warn("Activities error:", err)),
         loadLiveNotifications(user).catch(err => console.warn("Notifications error:", err))
@@ -2427,32 +2749,56 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             <motion.div key="overview" variants={containerVariants} initial="hidden" animate="show" exit={{ opacity: 0 }} className="space-y-8">
               {/* Stat Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
-                <motion.div variants={itemVariants} className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 relative overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AVU Token Balance</span>
-                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
-                      <Icon name="Coins" size={20} />
+                <motion.div variants={itemVariants} className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AVU Token Balance</span>
+                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                        <Icon name="Coins" size={20} />
+                      </div>
+                    </div>
+                    <div className="space-y-0.5 mt-2">
+                      <h3 className="text-2xl font-black text-white font-mono">{avuBalance.toLocaleString()} <span className="text-sm font-sans font-bold text-emerald-400">AVU</span></h3>
+                      <p className="text-[11px] text-slate-400">Value ratio: 1 AVU = 1,000 NGN</p>
                     </div>
                   </div>
-                  <div className="space-y-0.5">
-                    <h3 className="text-2xl font-black text-white font-mono">{avuBalance.toLocaleString()} <span className="text-sm font-sans font-bold text-emerald-400">AVU</span></h3>
-                    <p className="text-[11px] text-slate-400">Value ratio: 1,000 NGN = 1.002 AVU</p>
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={() => setIsAvuWithdrawalModalOpen(true)}
+                      className="w-full py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                    >
+                      <Icon name="ArrowDownToLine" size={14} />
+                      <span>Withdraw AVU</span>
+                    </button>
                   </div>
                 </motion.div>
 
-                <motion.div variants={itemVariants} className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Funding Deposited</span>
-                    <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400">
-                      <Icon name="DollarSign" size={20} />
+                <motion.div variants={itemVariants} className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Funding Deposited</span>
+                      <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400">
+                        <Icon name="DollarSign" size={20} />
+                      </div>
+                    </div>
+                    <div className="space-y-0.5 mt-2">
+                      <h3 className="text-2xl font-black text-white font-mono">₦{totalDepositsNaira.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} <span className="text-xs font-sans font-medium text-slate-400">NGN</span></h3>
+                      <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                        <Icon name="CheckCircle2" size={12} />
+                        <span>{avuBalance > 0 ? "Naira Value of Available AVU" : "No AVU tokens in wallet"}</span>
+                      </p>
                     </div>
                   </div>
-                  <div className="space-y-0.5">
-                    <h3 className="text-2xl font-black text-white font-mono">₦{totalDepositsNaira.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} <span className="text-xs font-sans font-medium text-slate-400">NGN</span></h3>
-                    <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
-                      <Icon name="CheckCircle2" size={12} />
-                      <span>{avuBalance > 0 ? "Naira Value of Available AVU" : "No AVU tokens in wallet"}</span>
-                    </p>
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={() => setIsFundWalletModalOpen(true)}
+                      className="w-full py-2.5 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                    >
+                      <Icon name="Plus" size={14} />
+                      <span>Fund AVU</span>
+                    </button>
                   </div>
                 </motion.div>
 
@@ -3302,6 +3648,79 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </div>
                 </div>
               </div>
+
+              {/* AVU Withdrawal Requests & Disbursement Status */}
+              <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-5 text-left">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-4 flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-base font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Icon name="ArrowDownToLine" size={18} className="text-amber-400" />
+                      <span>AVU Withdrawal Requests & Disbursement Status</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Track the review, approval, and bank liquidation status of your AVU token withdrawals</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAvuWithdrawalModalOpen(true)}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                  >
+                    <Icon name="Plus" size={14} />
+                    <span>New Withdrawal Request</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {userWithdrawals.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-500 rounded-2xl bg-slate-950/50 border border-slate-800/80">
+                      No withdrawal requests placed yet. Use the "New Withdrawal Request" button above or the stat card on the Overview tab to submit a liquidation request.
+                    </div>
+                  ) : (
+                    userWithdrawals.map((w) => {
+                      const statusColor =
+                        w.status === "Approved"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          : w.status === "Disapproved"
+                          ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/30";
+
+                      const statusIcon =
+                        w.status === "Approved" ? "CheckCircle2" : w.status === "Disapproved" ? "XCircle" : "Clock";
+
+                      return (
+                        <div key={w.id} className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/90 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                          <div className="flex items-center gap-3 min-w-[200px]">
+                            <div className={`p-2.5 rounded-xl border ${statusColor}`}>
+                              <Icon name={statusIcon} size={20} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-xs text-white font-mono">{w.id}</p>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${statusColor}`}>
+                                  {w.status}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                {w.created_at ? new Date(w.created_at).toLocaleString() : "Recent"}
+                              </p>
+                              <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                                {w.bank_name} &bull; {w.account_number} ({w.account_name})
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800/60 pt-3 sm:pt-0">
+                            <div className="text-left sm:text-right">
+                              <p className="font-mono font-black text-xs text-amber-400">-{w.avu_amount.toLocaleString()} AVU</p>
+                              <p className="font-mono font-bold text-white text-xs">₦{w.naira_equivalent.toLocaleString()} NGN</p>
+                              <p className="text-[9px] text-slate-500">Rate: 1 AVU = ₦{w.conversion_rate.toLocaleString()}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -3444,6 +3863,17 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         isOpen={isFundWalletModalOpen}
         onClose={() => setIsFundWalletModalOpen(false)}
         profile={profile}
+        onSuccess={() => refetchWalletBalance()}
+        showToast={showToast}
+        fetchAmbassadorData={fetchAmbassadorData}
+      />
+
+      {/* AVU Withdrawal Modal */}
+      <AvuWithdrawalModal
+        isOpen={isAvuWithdrawalModalOpen}
+        onClose={() => setIsAvuWithdrawalModalOpen(false)}
+        profile={profile}
+        currentAvuBalance={avuBalance}
         onSuccess={() => refetchWalletBalance()}
         showToast={showToast}
         fetchAmbassadorData={fetchAmbassadorData}
