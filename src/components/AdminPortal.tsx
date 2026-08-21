@@ -12,7 +12,8 @@ import {
   ChevronLeft, 
   ChevronRight, 
   Coins, 
-  Eye, 
+  Eye,
+  EyeOff,
   UserPlus, 
   Mail, 
   Lock, 
@@ -49,6 +50,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [signupPassword, setSignupPassword] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
@@ -1190,13 +1192,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     <div className="relative text-left">
                       <Lock size={16} className="absolute left-4 top-3.5 text-slate-400" />
                       <input 
-                        type="password" 
+                        type={showLoginPassword ? "text" : "password"} 
                         required
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full pl-11 pr-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-2xl text-xs font-semibold outline-none transition-all text-slate-800"
+                        className="w-full pl-11 pr-11 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-slate-800 rounded-2xl text-xs font-semibold outline-none transition-all text-slate-800"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword(!showLoginPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors cursor-pointer p-1"
+                        aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                      >
+                        {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <a
+                        href="mailto:info@advaltadfoundation.org?subject=Account%20Recovery%20Request"
+                        className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline transition-colors"
+                      >
+                        Forgot Password / Account Recovery
+                      </a>
                     </div>
                   </div>
 
