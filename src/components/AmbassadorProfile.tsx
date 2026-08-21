@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { Eye, EyeOff } from "lucide-react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador } from "../lib/supabase";
 
@@ -17,6 +18,7 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
   const [editField, setEditField] = useState(profile.field);
   const [editPhone, setEditPhone] = useState(profile.phone || "");
   const [editPassword, setEditPassword] = useState(profile.password || "");
+  const [showPassword, setShowPassword] = useState(false);
 
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
@@ -298,15 +300,25 @@ export const AmbassadorProfile: React.FC<AmbassadorProfileProps> = ({
                 <label htmlFor="input-profile-password" className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
                   Ambassador Password *
                 </label>
-                <input
-                  id="input-profile-password"
-                  required
-                  type="password"
-                  value={editPassword}
-                  onChange={(e) => setEditPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
-                />
+                <div className="relative">
+                  <input
+                    id="input-profile-password"
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-4 pr-11 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-semibold text-slate-800 transition-all outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors cursor-pointer p-1"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
 
