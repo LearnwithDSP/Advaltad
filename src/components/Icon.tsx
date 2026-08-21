@@ -75,7 +75,9 @@ import {
   Activity,
   LayoutDashboard,
   ArrowLeftRight,
-  Plus
+  Plus,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 const iconMap: { [key: string]: React.ComponentType<any> } = {
@@ -83,6 +85,8 @@ const iconMap: { [key: string]: React.ComponentType<any> } = {
   Building2,
   Compass,
   Users,
+  Eye,
+  EyeOff,
   Shield,
   TrendingUp,
   GraduationCap,
