@@ -25,9 +25,11 @@ import {
   History, 
   Download, 
   CreditCard,
-  MapPin
+  MapPin,
+  ArrowDownToLine,
+  Clock
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
@@ -58,7 +60,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   // Dashboard states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "history" | "payments">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "withdrawals" | "history" | "payments">("overview");
+
+  // Withdrawal requests state
+  const [withdrawals, setWithdrawals] = useState<DbAvuWithdrawal[]>([]);
+  const [withdrawalFilter, setWithdrawalFilter] = useState<"all" | "Pending" | "Approved" | "Disapproved">("all");
+  const [withdrawalSearch, setWithdrawalSearch] = useState("");
+  const [isUpdatingWithdrawal, setIsUpdatingWithdrawal] = useState<string | null>(null);
+  const [adminNotes, setAdminNotes] = useState<{ [key: string]: string }>({});
 
   // Payment Gateway Tab states
   const [selectedAmbId, setSelectedAmbId] = useState("");
@@ -395,6 +404,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         console.error("Failed to load sent emails inside admin portal:", emErr);
         logDbOperation("Admin Portal Fetch Sent Emails Error", {}, emErr);
       }
+      try {
+        const withdrawalsData = await db.getAvuWithdrawals();
+        setWithdrawals(withdrawalsData);
+        logDbOperation("Admin Portal Fetch Withdrawals Success", { count: withdrawalsData.length }, null);
+      } catch (wErr) {
+        console.error("Failed to load AVU withdrawals inside admin portal:", wErr);
+        logDbOperation("Admin Portal Fetch Withdrawals Error", {}, wErr);
+      }
     } catch (err: any) {
       console.error("Failed to load DB details inside admin portal:", err);
       logDbOperation("Admin Portal Fetch Core DB Data Error", {}, err);
@@ -712,6 +729,51 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       loadDbData();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleUpdateWithdrawalStatus = async (
+    withdrawalId: string,
+    newStatus: "Approved" | "Disapproved",
+    withdrawal: DbAvuWithdrawal
+  ) => {
+    setIsUpdatingWithdrawal(withdrawalId);
+    try {
+      const adminEmail = currentAdmin?.email || "admin@advaltadfoundation.org";
+      const note = adminNotes[withdrawalId] || "";
+
+      const updated = await db.updateAvuWithdrawalStatus(
+        withdrawalId,
+        newStatus,
+        note,
+        adminEmail
+      );
+
+      if (updated) {
+        if (newStatus === "Approved") {
+          addToast(
+            "Withdrawal Approved",
+            `Approved withdrawal of ${withdrawal.avu_amount} AVU (₦${withdrawal.naira_equivalent.toLocaleString()}) for ${withdrawal.ambassador_name}. Balance deducted automatically.`
+          );
+        } else {
+          addToast(
+            "Withdrawal Disapproved",
+            `Disapproved withdrawal request for ${withdrawal.ambassador_name}.`
+          );
+        }
+        await loadDbData();
+      } else {
+        addToast(
+          "Update Failed",
+          "Could not update withdrawal status in database.",
+          "error"
+        );
+      }
+    } catch (err: any) {
+      console.error("Error updating withdrawal status:", err);
+      addToast("Error", err?.message || "Failed to update withdrawal request.", "error");
+    } finally {
+      setIsUpdatingWithdrawal(null);
     }
   };
 
@@ -1125,6 +1187,37 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const pendingCount = ambassadors.filter(a => a.status === "pending").length;
   const approvedCount = ambassadors.filter(a => a.status === "approved").length;
 
+  const pendingWithdrawalsCount = withdrawals.filter(w => w.status === "Pending").length;
+  const approvedWithdrawalsCount = withdrawals.filter(w => w.status === "Approved").length;
+  const totalApprovedAvuLiquidated = withdrawals
+    .filter(w => w.status === "Approved")
+    .reduce((acc, w) => acc + (w.avu_amount || 0), 0);
+  const totalApprovedNairaDisbursed = withdrawals
+    .filter(w => w.status === "Approved")
+    .reduce((acc, w) => acc + (w.naira_equivalent || 0), 0);
+
+  const filteredWithdrawals = withdrawals.filter(w => {
+    const search = withdrawalSearch.toLowerCase().trim();
+    const ambName = (w.ambassador_name || "").toLowerCase();
+    const ambEmail = (w.ambassador_email || "").toLowerCase();
+    const bankName = (w.bank_name || "").toLowerCase();
+    const accNum = (w.account_number || "").toLowerCase();
+    const accName = (w.account_name || "").toLowerCase();
+    const refId = (w.id || "").toLowerCase();
+
+    const matchesSearch =
+      !search ||
+      ambName.includes(search) ||
+      ambEmail.includes(search) ||
+      bankName.includes(search) ||
+      accNum.includes(search) ||
+      accName.includes(search) ||
+      refId.includes(search);
+
+    if (withdrawalFilter === "all") return matchesSearch;
+    return matchesSearch && w.status === withdrawalFilter;
+  });
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
       
@@ -1416,6 +1509,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               </button>
 
               <button
+                onClick={() => setActiveTab("withdrawals")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "withdrawals"
+                    ? "bg-emerald-600 text-white"
+                    : "hover:bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                <ArrowDownToLine size={16} className="flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <span className="flex-1 text-left flex items-center justify-between">
+                    AVU Withdrawals
+                    {pendingWithdrawalsCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-[9px] text-slate-900 font-black animate-pulse">
+                        {pendingWithdrawalsCount}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </button>
+
+              <button
                 onClick={() => setActiveTab("payments")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
                   activeTab === "payments"
@@ -1501,6 +1615,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 { id: "ambassadors", label: `Ambassadors ${pendingCount > 0 ? `(${pendingCount})` : ''}`, icon: Users },
                 { id: "blogs", label: "Blog Management", icon: Compass },
                 { id: "wallets", label: "Financial Overview", icon: Coins },
+                { id: "withdrawals", label: `Withdrawals ${pendingWithdrawalsCount > 0 ? `(${pendingWithdrawalsCount})` : ''}`, icon: ArrowDownToLine },
                 { id: "payments", label: "Payment Gateway", icon: CreditCard },
                 { id: "history", label: "Oversight History", icon: History },
               ].map(t => (
@@ -2173,6 +2288,269 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           })
                         )}
                       </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB: AVU WITHDRAWAL REQUESTS */}
+                {activeTab === "withdrawals" && (
+                  <motion.div
+                    key="tab-v-withdrawals"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-6 text-left"
+                  >
+                    {/* Header & Metrics */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4 text-left">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                          <ArrowDownToLine size={16} className="text-amber-500" />
+                          <span>AVU Withdrawal Requests & Liquidations</span>
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          Review, approve, or reject ambassador AVU token bank liquidation requests.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="bg-slate-900 text-amber-400 font-mono text-xs px-3.5 py-2 rounded-xl border border-slate-800 flex items-center gap-1.5 shadow-sm">
+                          <Coins size={14} />
+                          <span className="font-bold">Liquidated: {totalApprovedAvuLiquidated.toLocaleString()} AVU</span>
+                        </div>
+                        <div className="bg-emerald-900 text-emerald-300 font-mono text-xs px-3.5 py-2 rounded-xl border border-emerald-800 flex items-center gap-1.5 shadow-sm">
+                          <span className="font-bold">Disbursed: ₦{totalApprovedNairaDisbursed.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Summary Metric Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                      <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-1">
+                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Total Requests</span>
+                        <p className="text-xl font-black text-slate-900 font-mono">{withdrawals.length}</p>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 shadow-sm space-y-1">
+                        <span className="text-[10px] font-extrabold text-amber-700 uppercase tracking-wider block">Pending Review</span>
+                        <p className="text-xl font-black text-amber-900 font-mono">{pendingWithdrawalsCount}</p>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 shadow-sm space-y-1">
+                        <span className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider block">Approved & Deducted</span>
+                        <p className="text-xl font-black text-emerald-900 font-mono">{approvedWithdrawalsCount}</p>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/80 shadow-sm space-y-1">
+                        <span className="text-[10px] font-extrabold text-rose-700 uppercase tracking-wider block">Disapproved</span>
+                        <p className="text-xl font-black text-rose-900 font-mono">{withdrawals.filter(w => w.status === "Disapproved").length}</p>
+                      </div>
+                    </div>
+
+                    {/* Filter & Search Bar */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                      {/* Status Filter Tabs */}
+                      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1 overflow-x-auto">
+                        {[
+                          { id: "all", label: `All (${withdrawals.length})` },
+                          { id: "Pending", label: `Pending (${pendingWithdrawalsCount})` },
+                          { id: "Approved", label: `Approved (${approvedWithdrawalsCount})` },
+                          { id: "Disapproved", label: `Disapproved (${withdrawals.filter(w => w.status === "Disapproved").length})` },
+                        ].map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setWithdrawalFilter(f.id as any)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                              withdrawalFilter === f.id
+                                ? "bg-white text-slate-900 shadow-sm"
+                                : "text-slate-500 hover:text-slate-900"
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Search Bar */}
+                      <div className="relative flex-1 max-w-sm">
+                        <Search size={14} className="absolute left-3.5 top-3 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by ambassador, bank, NUBAN, or Ref ID..."
+                          value={withdrawalSearch}
+                          onChange={(e) => setWithdrawalSearch(e.target.value)}
+                          className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 shadow-sm"
+                        />
+                        {withdrawalSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setWithdrawalSearch("")}
+                            className="absolute right-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            &times;
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Table / List Container */}
+                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm text-left">
+                      {filteredWithdrawals.length === 0 ? (
+                        <div className="p-12 text-center text-slate-400 text-xs space-y-2">
+                          <ArrowDownToLine size={32} className="mx-auto text-slate-300" />
+                          <p className="font-bold text-slate-600">No withdrawal requests found matching your filter criteria.</p>
+                          <p className="text-[11px] text-slate-400">Ambassadors can initiate withdrawals from their dashboard terminal.</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {filteredWithdrawals.map((w) => {
+                            const isPending = w.status === "Pending";
+                            const isApproved = w.status === "Approved";
+                            const isDisapproved = w.status === "Disapproved";
+                            const isUpdating = isUpdatingWithdrawal === w.id;
+
+                            const statusBadge = isApproved ? (
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                <CheckCircle size={11} />
+                                Approved
+                              </span>
+                            ) : isDisapproved ? (
+                              <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                <XCircle size={11} />
+                                Disapproved
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                                <Clock size={11} />
+                                Pending Review
+                              </span>
+                            );
+
+                            return (
+                              <div
+                                key={w.id}
+                                className={`p-5 sm:p-6 transition-colors ${
+                                  isPending ? "bg-amber-50/20" : "bg-white"
+                                }`}
+                              >
+                                <div className="flex flex-col lg:flex-row gap-5 items-start lg:items-center justify-between">
+                                  {/* Ambassador & Bank Data */}
+                                  <div className="space-y-2 flex-1 min-w-0">
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                                        {w.id}
+                                      </span>
+                                      <h4 className="text-sm font-black text-slate-900 tracking-tight">
+                                        {w.ambassador_name}
+                                      </h4>
+                                      {statusBadge}
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                                      <div className="space-y-0.5">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Email Address</span>
+                                        <p className="font-mono text-slate-700 truncate">{w.ambassador_email}</p>
+                                      </div>
+                                      <div className="space-y-0.5">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Destination Bank</span>
+                                        <p className="font-bold text-slate-800">{w.bank_name}</p>
+                                      </div>
+                                      <div className="space-y-0.5">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Account Details</span>
+                                        <p className="font-mono font-bold text-slate-900">
+                                          {w.account_number} <span className="font-sans font-normal text-slate-500">({w.account_name})</span>
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono pt-1">
+                                      <span>Submitted: {new Date(w.created_at).toLocaleString()}</span>
+                                      {w.reviewed_by && (
+                                        <>
+                                          <span>&bull;</span>
+                                          <span>Audited by: {w.reviewed_by}</span>
+                                        </>
+                                      )}
+                                      {w.reviewed_at && (
+                                        <>
+                                          <span>&bull;</span>
+                                          <span>Time: {new Date(w.reviewed_at).toLocaleTimeString()}</span>
+                                        </>
+                                      )}
+                                    </div>
+
+                                    {w.admin_note && (
+                                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 font-sans">
+                                        <span className="font-bold text-slate-700">Admin Note: </span>
+                                        {w.admin_note}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Liquidation Financials & Action Controls */}
+                                  <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-end lg:items-end gap-3 self-stretch sm:self-auto border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100 shrink-0 min-w-[220px]">
+                                    <div className="text-left sm:text-right lg:text-right">
+                                      <div className="flex items-center gap-1.5 sm:justify-end">
+                                        <span className="text-base font-black font-mono text-amber-600">
+                                          -{w.avu_amount.toLocaleString()} AVU
+                                        </span>
+                                      </div>
+                                      <p className="text-xs font-black text-emerald-800 font-mono">
+                                        ₦{w.naira_equivalent.toLocaleString()} NGN
+                                      </p>
+                                      <span className="text-[9px] text-slate-400 font-sans block">
+                                        Formula: {w.avu_amount} × ₦{w.conversion_rate.toLocaleString()}
+                                      </span>
+                                    </div>
+
+                                    {isPending ? (
+                                      <div className="space-y-2 w-full sm:w-auto">
+                                        <input
+                                          type="text"
+                                          placeholder="Optional admin review note..."
+                                          value={adminNotes[w.id] || ""}
+                                          onChange={(e) =>
+                                            setAdminNotes((prev) => ({ ...prev, [w.id]: e.target.value }))
+                                          }
+                                          className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-800 focus:outline-none focus:border-emerald-500"
+                                        />
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            disabled={isUpdating}
+                                            onClick={() => handleUpdateWithdrawalStatus(w.id, "Approved", w)}
+                                            className="flex-1 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm disabled:opacity-50"
+                                            title="Approve and deduct AVU balance"
+                                          >
+                                            {isUpdating ? (
+                                              <span className="animate-spin text-xs">&bull;</span>
+                                            ) : (
+                                              <CheckCircle size={12} />
+                                            )}
+                                            <span>Approve & Deduct</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            disabled={isUpdating}
+                                            onClick={() => handleUpdateWithdrawalStatus(w.id, "Disapproved", w)}
+                                            className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                                            title="Disapprove withdrawal request"
+                                          >
+                                            <XCircle size={12} />
+                                            <span>Disapprove</span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] text-slate-400 italic">
+                                        Decision finalized & logged in ledger.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
