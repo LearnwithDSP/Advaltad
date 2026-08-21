@@ -6,6 +6,7 @@ import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
 import { AmbassadorProfile } from "./AmbassadorProfile";
+import { AmbassadorCertificate } from "./AmbassadorCertificate";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
   ResponsiveContainer,
@@ -832,11 +833,21 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   // Ambassador Personal State
-  const [ambassadorName, setAmbassadorName] = useState("Ramon Bisola");
+  const [ambassadorName, setAmbassadorName] = useState<string>("");
   const [ambassadorRegion, setAmbassadorRegion] = useState("Lagos, Nigeria");
   const [ambassadorField, setAmbassadorField] = useState("Youth Technology Labs");
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Dynamic candidate name binding strictly adhering to Supabase profile state with fallback placeholder
+  const candidateAmbassadorName =
+    (profile as any)?.full_name ||
+    profile?.name ||
+    ((profile as any)?.first_name && (profile as any)?.last_name
+      ? `${(profile as any).first_name} ${(profile as any).last_name}`.trim()
+      : (profile as any)?.first_name || (profile as any)?.last_name) ||
+    ambassadorName ||
+    (isLoadingProfile ? "Valued Ambassador" : "Valued Ambassador");
   
   // Single Source of Truth for Wallet Balance from Supabase
   const activeIdentifier = profile?.user_id || profile?.db_id || profile?.email || profile?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
@@ -1584,14 +1595,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // Calculate Leaderboard entries
   const currentUserEntry = {
     id: profile?.id || "AV-ME",
-    name: profile?.name || ambassadorName || "Ramon Bisola",
+    name: profile?.name || candidateAmbassadorName || "Valued Ambassador",
     city: profile?.city || ambassadorRegion || "Lagos, Nigeria",
     field: profile?.field || ambassadorField || "Growth Ambassador",
     avu_balance: avuBalance,
     totalDeposits: totalDepositsNaira,
     projects: 3,
     avatarBg: "from-emerald-600 to-teal-700",
-    initials: getSafeInitials(profile?.name || ambassadorName, "RB"),
+    initials: getSafeInitials(profile?.name || candidateAmbassadorName, "VA"),
     isCurrentUser: true,
   };
 
@@ -2275,7 +2286,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
               Application Under Review
             </h2>
             <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
-              Hello <strong className="text-white font-semibold">{ambassadorName}</strong>, your Growth Ambassador application has been received and is currently under review by our executive board.
+              Hello <strong className="text-white font-semibold">{candidateAmbassadorName}</strong>, your Growth Ambassador application has been received and is currently under review by our executive board.
             </p>
           </div>
 
@@ -2288,7 +2299,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <span className="text-slate-500 block text-[10px] uppercase font-mono">Full Name</span>
-                <span className="font-bold text-slate-200">{ambassadorName}</span>
+                <span className="font-bold text-slate-200">{candidateAmbassadorName}</span>
               </div>
               <div>
                 <span className="text-slate-500 block text-[10px] uppercase font-mono">Email Address</span>
@@ -2351,7 +2362,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           <div className="space-y-2">
             <h2 className="text-2xl font-bold text-white">Application Disapproved</h2>
             <p className="text-sm text-slate-300 max-w-md mx-auto">
-              Your Growth Ambassador application for <strong className="text-white">{ambassadorName}</strong> has been disapproved by the executive board.
+              Your Growth Ambassador application for <strong className="text-white">{candidateAmbassadorName}</strong> has been disapproved by the executive board.
             </p>
           </div>
           <button
@@ -2430,7 +2441,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
             <img src={logoUrl} alt="Advaltad Logo" className="w-10 h-10 rounded-xl object-cover border border-slate-700 shadow-sm flex-shrink-0" />
             {!sidebarCollapsed && (
               <div className="min-w-0">
-                <h1 className="text-sm font-extrabold text-white tracking-wide truncate">{ambassadorName}</h1>
+                <h1 className="text-sm font-extrabold text-white tracking-wide truncate">{candidateAmbassadorName}</h1>
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 inline-block">
                   Fellow Ambassador
                 </span>
@@ -2589,7 +2600,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           <div className="flex items-center gap-2.5 min-w-0">
             <img src={logoUrl} alt="Advaltad Logo" className="w-8 h-8 rounded-lg object-cover border border-slate-700 shadow-sm flex-shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-xs font-extrabold text-white tracking-wide truncate">{ambassadorName}</h1>
+              <h1 className="text-xs font-extrabold text-white tracking-wide truncate">{candidateAmbassadorName}</h1>
               <p className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
                 <Icon name="MapPin" size={10} />
                 <span className="truncate">{ambassadorRegion}</span>
@@ -3056,190 +3067,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
           )}
 
           {activeTab === "certificate" && (
-            <motion.div key="certificate" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-4xl mx-auto">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                  <h2 className="text-xl font-black text-white tracking-wide uppercase">Fellowship Credential Badge</h2>
-                  <p className="text-xs text-slate-400">Official verified commission credential for Advaltad Growth Ambassadors</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setCertFormOpen(true)}
-                    type="button"
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors flex items-center gap-2 cursor-pointer"
-                  >
-                    <Icon name="Edit3" size={14} />
-                    <span>Edit Badge Info</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDownloadingCert(true);
-                      setTimeout(() => {
-                        setDownloadingCert(false);
-                        window.print();
-                      }, 800);
-                    }}
-                    type="button"
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer"
-                  >
-                    <Icon name={downloadingCert ? "Loader2" : "Download"} size={14} className={downloadingCert ? "animate-spin" : ""} />
-                    <span>Download / Print</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Modern Certificate Canvas Box with Beautiful Side Ribbons */}
-              <div className="relative overflow-hidden rounded-3xl bg-slate-950 p-2 sm:p-4 shadow-2xl border-2 border-amber-500/40">
-                {/* Outer Gold Decorative Frame */}
-                <div className="relative rounded-2xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 p-6 sm:p-12 border border-amber-500/30 text-center space-y-6 sm:space-y-8 overflow-hidden">
-                  
-                  {/* Left Side Ornamental Ribbon Banner */}
-                  <div className="absolute top-0 left-0 bottom-0 w-8 sm:w-12 pointer-events-none flex flex-col justify-between items-center py-2 z-10">
-                    <div className="w-full h-full bg-gradient-to-r from-amber-600 via-amber-400 to-amber-700 shadow-xl opacity-90 border-r border-amber-300/40 relative flex flex-col justify-between items-center py-4">
-                      {/* Ribbon Fold Lines & Sheen */}
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      {/* Side Medallion Badge */}
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-700 border-2 border-amber-100 flex items-center justify-center shadow-lg my-auto">
-                        <Icon name="Award" size={14} className="text-slate-950" />
-                      </div>
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                    </div>
-                  </div>
-
-                  {/* Right Side Ornamental Ribbon Banner */}
-                  <div className="absolute top-0 right-0 bottom-0 w-8 sm:w-12 pointer-events-none flex flex-col justify-between items-center py-2 z-10">
-                    <div className="w-full h-full bg-gradient-to-l from-amber-600 via-amber-400 to-amber-700 shadow-xl opacity-90 border-l border-amber-300/40 relative flex flex-col justify-between items-center py-4">
-                      {/* Ribbon Fold Lines & Sheen */}
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      {/* Side Medallion Badge */}
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-700 border-2 border-amber-100 flex items-center justify-center shadow-lg my-auto">
-                        <Icon name="ShieldCheck" size={14} className="text-slate-950" />
-                      </div>
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                      <div className="w-full h-1 bg-amber-200/50 my-2" />
-                    </div>
-                  </div>
-
-                  {/* Top & Bottom Accent Gold Bars */}
-                  <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-600 via-yellow-300 to-amber-600 z-20" />
-                  <div className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-600 via-yellow-300 to-amber-600 z-20" />
-
-                  {/* Inner Certificate Content Container */}
-                  <div className="px-6 sm:px-12 py-2 space-y-6 sm:space-y-8 relative z-20">
-                    {/* Header Row */}
-                    <div className="flex items-center justify-between border-b border-amber-500/20 pb-4 sm:pb-6">
-                      <div className="flex items-center gap-3">
-                        <img src={logoUrl} alt="Advaltad" className="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-amber-400/50 shadow-md" />
-                        <div className="text-left hidden sm:block">
-                          <span className="text-[11px] font-black tracking-widest uppercase text-amber-400 block font-sans">Advaltad Fellowship</span>
-                          <span className="text-[9px] text-slate-400 block font-sans">Pan-African Grassroots Commission</span>
-                        </div>
-                      </div>
-                      
-                      {/* Top Center Crown/Crest */}
-                      <div className="text-center">
-                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-500/10 border border-amber-400/30 text-amber-300 mb-1">
-                          <Icon name="Crown" size={20} />
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <span className="text-[9px] sm:text-[10px] font-mono text-amber-400 font-bold block uppercase tracking-widest">Commission Ref</span>
-                        <span className="text-xs sm:text-sm font-mono text-slate-200 font-extrabold">{profile?.id || "AV-2026-99401"}</span>
-                      </div>
-                    </div>
-
-                    {/* Main Body */}
-                    <div className="space-y-3 sm:space-y-4 py-2">
-                      <div className="inline-block px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-inner">
-                        Certificate of Official Commission
-                      </div>
-                      
-                      <p className="text-[11px] sm:text-xs text-slate-400 uppercase tracking-widest font-semibold">This is to certify that</p>
-                      
-                      <h3 className="text-2xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 font-serif tracking-tight py-1 drop-shadow-md">
-                        {ambassadorName}
-                      </h3>
-                      
-                      <div className="w-24 sm:w-32 h-0.5 mx-auto bg-gradient-to-r from-transparent via-amber-400 to-transparent" />
-
-                      <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed font-sans px-2">
-                        has been duly vetted, ratified, and commissioned as an official <span className="text-amber-300 font-extrabold">Growth Ambassador</span> overseeing local empowerment initiatives in <span className="text-emerald-400 font-bold">{ambassadorRegion}</span> under the <span className="text-amber-200 font-bold">{ambassadorField}</span> division.
-                      </p>
-                    </div>
-
-                    {/* Bottom Signatures & Central Starburst Seal */}
-                    <div className="pt-6 sm:pt-8 border-t border-amber-500/20 grid grid-cols-3 items-end gap-2 text-center">
-                      {/* Left Signature */}
-                      <div className="text-left space-y-1">
-                        <div className="h-8 border-b border-amber-400/30 font-serif italic text-amber-200 text-xs sm:text-sm flex items-end">
-                          Ramon Bisola
-                        </div>
-                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider">Executive Chairman</p>
-                        <p className="text-[8px] text-slate-500 font-mono">{commissionDate}</p>
-                      </div>
-
-                      {/* Center Starburst Seal */}
-                      <div className="flex flex-col items-center justify-center relative">
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600 p-0.5 shadow-2xl border-2 border-yellow-100 flex items-center justify-center relative z-20">
-                          <div className="w-full h-full rounded-full bg-gradient-to-tr from-amber-700 via-amber-500 to-yellow-300 flex flex-col items-center justify-center text-slate-950 border border-amber-200 shadow-inner p-1">
-                            <Icon name="Award" size={18} className="text-slate-950 drop-shadow" />
-                            <span className="text-[6px] sm:text-[7px] font-black uppercase tracking-tighter text-slate-950 leading-none mt-0.5">Verified Seal</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right Signature */}
-                      <div className="text-right space-y-1">
-                        <div className="h-8 border-b border-amber-400/30 font-serif italic text-amber-200 text-xs sm:text-sm flex items-end justify-end">
-                          Advaltad Board
-                        </div>
-                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider">Director of Governance</p>
-                        <p className="text-[8px] text-emerald-400 font-mono font-bold flex items-center gap-1 justify-end">
-                          <Icon name="CheckCircle2" size={10} /> Verified On-Chain
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Edit Cert Form Modal */}
-              <AnimatePresence>
-                {certFormOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-md w-full space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                        <h3 className="font-bold text-sm text-white">Edit Credential Details</h3>
-                        <button onClick={() => setCertFormOpen(false)} type="button" className="text-slate-400 hover:text-white cursor-pointer"><Icon name="X" size={16} /></button>
-                      </div>
-                      <form onSubmit={handleCertSubmit} className="space-y-4">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Ambassador Name</label>
-                          <input type="text" value={tempName} onChange={e => setTempName(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white" />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Region / City</label>
-                          <input type="text" value={tempRegion} onChange={e => setTempRegion(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white" />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Focus Division</label>
-                          <input type="text" value={tempField} onChange={e => setTempField(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white" />
-                        </div>
-                        <div className="flex justify-end gap-2 pt-2">
-                          <button type="button" onClick={() => setCertFormOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer">Cancel</button>
-                          <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer">Save Changes</button>
-                        </div>
-                      </form>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
+            <motion.div key="certificate" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <AmbassadorCertificate
+                profile={profile}
+                isLoading={isLoadingProfile}
+                onProfileUpdated={fetchAmbassadorData}
+                showToast={showToast}
+              />
             </motion.div>
           )}
 
