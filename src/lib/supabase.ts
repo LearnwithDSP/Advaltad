@@ -133,6 +133,25 @@ export interface DbP2PTransaction {
   created_at: string;
 }
 
+export interface DbAvuWithdrawal {
+  id: string;
+  ambassador_id: string;
+  ambassador_name: string;
+  ambassador_email: string;
+  bank_name: string;
+  account_number: string;
+  account_name: string;
+  avu_amount: number;
+  naira_equivalent: number;
+  conversion_rate?: number;
+  status: "Pending" | "Approved" | "Disapproved" | "pending" | "approved" | "disapproved";
+  admin_note?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 const LOCAL_STORAGE_KEY = "advaltad_ambassadors_db";
 const ACTIVITIES_LOCAL_STORAGE_KEY = "advaltad_activities_db";
 const BLOGS_LOCAL_STORAGE_KEY = "advaltad_blogs_db";
@@ -142,6 +161,7 @@ const AUDIT_LOGS_LOCAL_STORAGE_KEY = "advaltad_audit_logs_db";
 const DONATIONS_LOCAL_STORAGE_KEY = "advaltad_donations_db";
 const DEPOSITS_LOCAL_STORAGE_KEY = "advaltad_deposits_db";
 const P2P_TX_LOCAL_STORAGE_KEY = "advaltad_p2p_transactions_db";
+const AVU_WITHDRAWALS_LOCAL_STORAGE_KEY = "advaltad_avu_withdrawals_db";
 const AMB_STATIC_ID_MAP_KEY = "advaltad_ambassador_static_id_map";
 
 function getStaticAmbassadorId(identifier: string): string {
@@ -1987,5 +2007,215 @@ export const db = {
       note: t.note || t.reason || "P2P Allocation",
       reason: t.reason || t.note || "P2P Allocation"
     })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
+
+  async getAvuWithdrawals(ambassadorIdOrEmail?: string): Promise<DbAvuWithdrawal[]> {
+    let supabaseWithdrawals: DbAvuWithdrawal[] = [];
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        let query = client.from("avu_withdrawals").select("*").order("created_at", { ascending: false });
+        let { data, error } = await query;
+        if (error || !data) {
+          const fallback = await client.from("AvuWithdrawals").select("*").order("created_at", { ascending: false });
+          data = fallback.data;
+          error = fallback.error;
+        }
+        if (!error && data) {
+          supabaseWithdrawals = data.map((row: any) => ({
+            id: row.id || "WTH-" + Math.floor(Math.random() * 89999 + 10000),
+            ambassador_id: row.ambassador_id || row.user_id || "",
+            ambassador_name: row.ambassador_name || row.name || "Ambassador",
+            ambassador_email: row.ambassador_email || row.email || "",
+            bank_name: row.bank_name || "",
+            account_number: row.account_number || "",
+            account_name: row.account_name || "",
+            avu_amount: Number(row.avu_amount || row.amount_avu || row.amount || 0),
+            naira_equivalent: Number(row.naira_equivalent || row.amount_naira || (Number(row.avu_amount || 0) * 1000)),
+            conversion_rate: Number(row.conversion_rate || 1000),
+            status: (row.status ? (row.status.charAt(0).toUpperCase() + row.status.slice(1).toLowerCase()) : "Pending") as any,
+            admin_note: row.admin_note || "",
+            created_at: row.created_at || new Date().toISOString(),
+            updated_at: row.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn("Error getting Supabase AVU withdrawals:", err);
+      }
+    }
+
+    const localData = typeof window !== "undefined" ? localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY) : null;
+    const localWithdrawals: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
+
+    const map = new Map<string, DbAvuWithdrawal>();
+    for (const item of [...supabaseWithdrawals, ...localWithdrawals]) {
+      if (!item || !item.id) continue;
+      if (!map.has(item.id)) {
+        map.set(item.id, item);
+      }
+    }
+    let all = Array.from(map.values());
+    all.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+    if (ambassadorIdOrEmail) {
+      const clean = ambassadorIdOrEmail.trim().toLowerCase();
+      all = all.filter(w => 
+        (w.ambassador_id && w.ambassador_id.toLowerCase() === clean) ||
+        (w.ambassador_email && w.ambassador_email.toLowerCase() === clean)
+      );
+    }
+    return all;
+  },
+
+  async createAvuWithdrawal(
+    withdrawal: Omit<DbAvuWithdrawal, "id" | "created_at">
+  ): Promise<DbAvuWithdrawal> {
+    const id = "WTH-" + Date.now().toString().slice(-6) + Math.floor(Math.random() * 899 + 100);
+    const timestamp = new Date().toISOString();
+    const fresh: DbAvuWithdrawal = {
+      id,
+      ...withdrawal,
+      status: "Pending",
+      conversion_rate: withdrawal.conversion_rate || 1000,
+      created_at: timestamp
+    };
+
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const payload = {
+          id: fresh.id,
+          ambassador_id: fresh.ambassador_id,
+          ambassador_name: fresh.ambassador_name,
+          ambassador_email: fresh.ambassador_email,
+          bank_name: fresh.bank_name,
+          account_number: fresh.account_number,
+          account_name: fresh.account_name,
+          avu_amount: fresh.avu_amount,
+          naira_equivalent: fresh.naira_equivalent,
+          conversion_rate: fresh.conversion_rate,
+          status: "Pending",
+          created_at: timestamp
+        };
+
+        let { error } = await client.from("avu_withdrawals").insert([payload]);
+        if (error) {
+          await client.from("AvuWithdrawals").insert([payload]);
+        }
+      } catch (err) {
+        console.warn("Error inserting into public.avu_withdrawals:", err);
+      }
+    }
+
+    // Save to local storage
+    if (typeof window !== "undefined") {
+      const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+      const list: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
+      list.unshift(fresh);
+      localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+    }
+
+    // Log Activity
+    await this.logActivity({
+      ambassador_id: fresh.ambassador_id,
+      ambassador_name: fresh.ambassador_name,
+      type: "avu_transfer",
+      desc: `Requested AVU withdrawal of ${fresh.avu_amount} AVU (₦${fresh.naira_equivalent.toLocaleString()}) to ${fresh.bank_name} (${fresh.account_number})`,
+      amount: `-${fresh.avu_amount} AVU`
+    });
+
+    return fresh;
+  },
+
+  async updateAvuWithdrawalStatus(
+    id: string,
+    status: "Approved" | "Disapproved",
+    adminNote?: string,
+    adminEmail?: string
+  ): Promise<boolean> {
+    const timestamp = new Date().toISOString();
+    const reviewer = adminEmail || "Executive Treasury Admin";
+
+    // 1. Get withdrawal record
+    const all = await this.getAvuWithdrawals();
+    const target = all.find(w => w.id === id);
+
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const updatePayload: any = {
+          status,
+          reviewed_by: reviewer,
+          reviewed_at: timestamp,
+          updated_at: timestamp
+        };
+        if (adminNote) updatePayload.admin_note = adminNote;
+
+        for (const tableName of ["avu_withdrawals", "AvuWithdrawals"]) {
+          try {
+            await client.from(tableName).update(updatePayload).eq("id", id);
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn("Error updating withdrawal in Supabase:", err);
+      }
+    }
+
+    // Update local storage
+    if (typeof window !== "undefined") {
+      const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+      const list: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
+      const idx = list.findIndex(w => w.id === id);
+      if (idx !== -1) {
+        list[idx].status = status;
+        list[idx].reviewed_by = reviewer;
+        list[idx].reviewed_at = timestamp;
+        if (adminNote) list[idx].admin_note = adminNote;
+        list[idx].updated_at = timestamp;
+        localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+      }
+    }
+
+    // If Approved, deduct AVU tokens from ambassador's account
+    if (status === "Approved" && target) {
+      const amb = await this.findAmbassadorByEmail(target.ambassador_email) || await this.findAmbassadorById(target.ambassador_id);
+      if (amb) {
+        const currentBal = Number(amb.avu_balance) || 0;
+        const newBal = Math.max(0, Number((currentBal - target.avu_amount).toFixed(3)));
+        
+        await this.updateAvuBalance(amb.id, newBal);
+        if (amb.email) await this.updateAvuBalance(amb.email, newBal);
+        if (amb.user_id) await this.updateAvuBalance(amb.user_id, newBal);
+        await this.updateWalletBalance(amb.id, newBal);
+
+        // Log activity and audit log
+        await this.logActivity({
+          ambassador_id: amb.id,
+          ambassador_name: amb.name,
+          type: "avu_transfer",
+          desc: `Withdrawal Approved: Disbursed ₦${target.naira_equivalent.toLocaleString()} to ${target.bank_name} (${target.account_number}). Deducted ${target.avu_amount} AVU from balance.`,
+          amount: `-${target.avu_amount} AVU`
+        });
+
+        await this.createAuditLog({
+          admin_id: "ADM-EXEC",
+          admin_name: "Executive Treasury Admin",
+          admin_email: "treasury@advaltadfoundation.org",
+          ambassador_id: amb.id,
+          ambassador_name: amb.name,
+          action: "updated_portfolio"
+        });
+      }
+    } else if (status === "Disapproved" && target) {
+      await this.logActivity({
+        ambassador_id: target.ambassador_id,
+        ambassador_name: target.ambassador_name,
+        type: "status_change",
+        desc: `Withdrawal Disapproved: Request for ${target.avu_amount} AVU (₦${target.naira_equivalent.toLocaleString()}) was rejected by treasury.${adminNote ? ` Note: ${adminNote}` : ""}`,
+        amount: `${target.avu_amount} AVU`
+      });
+    }
+
+    return true;
   }
 };
