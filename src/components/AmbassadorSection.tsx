@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { Eye, EyeOff } from "lucide-react";
 import { Icon } from "./Icon";
 import { db, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
 import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
@@ -20,6 +21,7 @@ export const AmbassadorSection: React.FC = () => {
   const [isLogin, setIsLogin] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -703,14 +705,32 @@ export const AmbassadorSection: React.FC = () => {
 
                       <div>
                         <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showLoginPassword ? "text" : "password"}
+                            required
+                            placeholder="••••••••"
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                            className="w-full pl-4 pr-11 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowLoginPassword(!showLoginPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors cursor-pointer p-1"
+                            aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                          >
+                            {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                        <div className="flex justify-end pt-1.5">
+                          <a
+                            href="mailto:info@advaltadfoundation.org?subject=Account%20Recovery%20Request"
+                            className="text-[11px] font-semibold text-brand-primary hover:underline transition-colors"
+                          >
+                            Forgot Password / Account Recovery
+                          </a>
+                        </div>
                       </div>
 
                       <button
