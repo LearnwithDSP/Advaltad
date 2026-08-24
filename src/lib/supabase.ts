@@ -157,7 +157,10 @@ export interface DbAvuWithdrawal {
   id: string;
   ambassador_id: string;
   ambassador_name: string;
+  email?: string;
   ambassador_email: string;
+  current_balance?: number;
+  requested_avu?: number;
   bank_name: string;
   account_number: string;
   account_name: string;
@@ -2046,16 +2049,21 @@ export const db = {
           supabaseWithdrawals = data.map((row: any) => ({
             id: row.id || "WTH-" + Math.floor(Math.random() * 89999 + 10000),
             ambassador_id: row.ambassador_id || row.user_id || "",
-            ambassador_name: row.ambassador_name || row.name || "Ambassador",
+            ambassador_name: row.ambassador_name || row.full_name || row.name || "Ambassador",
+            email: row.email || row.ambassador_email || "",
             ambassador_email: row.ambassador_email || row.email || "",
+            current_balance: Number(row.current_balance ?? row.avu_balance ?? 0),
+            requested_avu: Number(row.requested_avu ?? row.avu_amount ?? row.amount_avu ?? row.amount ?? 0),
             bank_name: row.bank_name || "",
             account_number: row.account_number || "",
             account_name: row.account_name || "",
-            avu_amount: Number(row.avu_amount || row.amount_avu || row.amount || 0),
-            naira_equivalent: Number(row.naira_equivalent || row.amount_naira || (Number(row.avu_amount || 0) * 1000)),
+            avu_amount: Number(row.avu_amount ?? row.requested_avu ?? row.amount_avu ?? row.amount ?? 0),
+            naira_equivalent: Number(row.naira_equivalent || row.amount_naira || (Number(row.avu_amount || row.requested_avu || 0) * 1000)),
             conversion_rate: Number(row.conversion_rate || 1000),
             status: (row.status ? (row.status.charAt(0).toUpperCase() + row.status.slice(1).toLowerCase()) : "Pending") as any,
             admin_note: row.admin_note || "",
+            reviewed_by: row.reviewed_by || "",
+            reviewed_at: row.reviewed_at || "",
             created_at: row.created_at || new Date().toISOString(),
             updated_at: row.updated_at
           }));
@@ -2082,7 +2090,8 @@ export const db = {
       const clean = ambassadorIdOrEmail.trim().toLowerCase();
       all = all.filter(w => 
         (w.ambassador_id && w.ambassador_id.toLowerCase() === clean) ||
-        (w.ambassador_email && w.ambassador_email.toLowerCase() === clean)
+        (w.ambassador_email && w.ambassador_email.toLowerCase() === clean) ||
+        (w.email && w.email.toLowerCase() === clean)
       );
     }
     return all;
@@ -2093,35 +2102,70 @@ export const db = {
   ): Promise<DbAvuWithdrawal> {
     const id = "WTH-" + Date.now().toString().slice(-6) + Math.floor(Math.random() * 899 + 100);
     const timestamp = new Date().toISOString();
+    const reqAmount = Number(withdrawal.requested_avu || withdrawal.avu_amount || 0);
+    const convRate = Number(withdrawal.conversion_rate || 1000);
+    const nairaEq = Number(withdrawal.naira_equivalent || (reqAmount * convRate));
+
     const fresh: DbAvuWithdrawal = {
       id,
-      ...withdrawal,
+      ambassador_id: withdrawal.ambassador_id,
+      ambassador_name: withdrawal.ambassador_name,
+      email: withdrawal.email || withdrawal.ambassador_email,
+      ambassador_email: withdrawal.ambassador_email || withdrawal.email || "",
+      current_balance: withdrawal.current_balance,
+      requested_avu: reqAmount,
+      avu_amount: reqAmount,
+      naira_equivalent: nairaEq,
+      bank_name: withdrawal.bank_name,
+      account_number: withdrawal.account_number,
+      account_name: withdrawal.account_name,
       status: "Pending",
-      conversion_rate: withdrawal.conversion_rate || 1000,
+      conversion_rate: convRate,
       created_at: timestamp
     };
 
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        const payload = {
+        // Primary full payload adhering to public.avu_withdrawals schema
+        const primaryPayload: any = {
           id: fresh.id,
           ambassador_id: fresh.ambassador_id,
           ambassador_name: fresh.ambassador_name,
+          email: fresh.email,
           ambassador_email: fresh.ambassador_email,
-          bank_name: fresh.bank_name,
-          account_number: fresh.account_number,
-          account_name: fresh.account_name,
+          current_balance: fresh.current_balance,
+          requested_avu: fresh.requested_avu,
           avu_amount: fresh.avu_amount,
           naira_equivalent: fresh.naira_equivalent,
           conversion_rate: fresh.conversion_rate,
+          bank_name: fresh.bank_name,
+          account_number: fresh.account_number,
+          account_name: fresh.account_name,
           status: "Pending",
           created_at: timestamp
         };
 
-        let { error } = await client.from("avu_withdrawals").insert([payload]);
+        let { error } = await client.from("avu_withdrawals").insert([primaryPayload]);
         if (error) {
-          await client.from("AvuWithdrawals").insert([payload]);
+          // Retry with compact schema if custom schema omits secondary column aliases
+          const compactPayload: any = {
+            id: fresh.id,
+            ambassador_id: fresh.ambassador_id,
+            ambassador_name: fresh.ambassador_name,
+            email: fresh.email,
+            current_balance: fresh.current_balance,
+            requested_avu: fresh.requested_avu,
+            naira_equivalent: fresh.naira_equivalent,
+            bank_name: fresh.bank_name,
+            account_number: fresh.account_number,
+            account_name: fresh.account_name,
+            status: "Pending"
+          };
+          const res2 = await client.from("avu_withdrawals").insert([compactPayload]);
+          if (res2.error) {
+            await client.from("AvuWithdrawals").insert([primaryPayload]);
+          }
         }
       } catch (err) {
         console.warn("Error inserting into public.avu_withdrawals:", err);
@@ -2197,33 +2241,60 @@ export const db = {
       }
     }
 
-    // If Approved, deduct AVU tokens from ambassador's account
+    // If Approved, deduct AVU tokens from ambassador's balance in public.ambassadors
     if (status === "Approved" && target) {
-      const amb = await this.findAmbassadorByEmail(target.ambassador_email) || await this.findAmbassadorById(target.ambassador_id);
-      if (amb) {
-        const currentBal = Number(amb.avu_balance) || 0;
-        const newBal = Math.max(0, Number((currentBal - target.avu_amount).toFixed(3)));
+      const requestedAvu = Number(target.requested_avu || target.avu_amount || 0);
+
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        try {
+          const client = supabaseAdmin || supabase;
+          // Step 1: Fetch latest sender balance
+          const { data: amb } = await client
+            .from('ambassadors')
+            .select('avu_balance')
+            .eq('id', target.ambassador_id)
+            .single();
+
+          if (amb && amb.avu_balance !== undefined) {
+            const newBalance = Math.max(0, Number(amb.avu_balance) - requestedAvu);
+
+            // Step 2: Update ambassador balance
+            await client
+              .from('ambassadors')
+              .update({ avu_balance: newBalance })
+              .eq('id', target.ambassador_id);
+          }
+        } catch (err) {
+          console.warn("Direct Supabase update balance on approval error:", err);
+        }
+      }
+
+      // Also ensure mirrors / local cache / email fallbacks are cleanly synced
+      const ambRecord = await this.findAmbassadorByEmail(target.ambassador_email || target.email || "") || await this.findAmbassadorById(target.ambassador_id);
+      if (ambRecord) {
+        const currentBal = Number(ambRecord.avu_balance) || 0;
+        const newBal = Math.max(0, Number((currentBal - requestedAvu).toFixed(3)));
         
-        await this.updateAvuBalance(amb.id, newBal);
-        if (amb.email) await this.updateAvuBalance(amb.email, newBal);
-        if (amb.user_id) await this.updateAvuBalance(amb.user_id, newBal);
-        await this.updateWalletBalance(amb.id, newBal);
+        await this.updateAvuBalance(ambRecord.id, newBal);
+        if (ambRecord.email) await this.updateAvuBalance(ambRecord.email, newBal);
+        if (ambRecord.user_id) await this.updateAvuBalance(ambRecord.user_id, newBal);
+        await this.updateWalletBalance(ambRecord.id, newBal);
 
         // Log activity and audit log
         await this.logActivity({
-          ambassador_id: amb.id,
-          ambassador_name: amb.name,
+          ambassador_id: ambRecord.id,
+          ambassador_name: ambRecord.name,
           type: "avu_transfer",
-          desc: `Withdrawal Approved: Disbursed ₦${target.naira_equivalent.toLocaleString()} to ${target.bank_name} (${target.account_number}). Deducted ${target.avu_amount} AVU from balance.`,
-          amount: `-${target.avu_amount} AVU`
+          desc: `Withdrawal Approved: Disbursed ₦${target.naira_equivalent.toLocaleString()} to ${target.bank_name} (${target.account_number}). Deducted ${requestedAvu} AVU from balance.`,
+          amount: `-${requestedAvu} AVU`
         });
 
         await this.createAuditLog({
           admin_id: "ADM-EXEC",
           admin_name: "Executive Treasury Admin",
-          admin_email: "treasury@advaltadfoundation.org",
-          ambassador_id: amb.id,
-          ambassador_name: amb.name,
+          admin_email: adminEmail || "treasury@advaltadfoundation.org",
+          ambassador_id: ambRecord.id,
+          ambassador_name: ambRecord.name,
           action: "updated_portfolio"
         });
       }
@@ -2232,8 +2303,8 @@ export const db = {
         ambassador_id: target.ambassador_id,
         ambassador_name: target.ambassador_name,
         type: "status_change",
-        desc: `Withdrawal Disapproved: Request for ${target.avu_amount} AVU (₦${target.naira_equivalent.toLocaleString()}) was rejected by treasury.${adminNote ? ` Note: ${adminNote}` : ""}`,
-        amount: `${target.avu_amount} AVU`
+        desc: `Withdrawal Disapproved: Request for ${target.requested_avu || target.avu_amount} AVU (₦${target.naira_equivalent.toLocaleString()}) was rejected by treasury.${adminNote ? ` Note: ${adminNote}` : ""}`,
+        amount: `${target.requested_avu || target.avu_amount} AVU`
       });
     }
 
