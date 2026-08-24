@@ -248,17 +248,20 @@ export const AvuWithdrawalModal: React.FC<AvuWithdrawalModalProps> = ({
       await db.createAvuWithdrawal({
         ambassador_id: ambId,
         ambassador_name: ambName,
+        email: email,
         ambassador_email: email,
+        current_balance: currentAvuBalance,
+        requested_avu: Number(withdrawalAvu),
+        avu_amount: Number(withdrawalAvu),
+        naira_equivalent: Number(nairaEquivalent),
+        conversion_rate: conversionRate,
         bank_name: effectiveBank,
         account_number: accountNumber.trim(),
         account_name: accountName.trim(),
-        avu_amount: withdrawalAvu,
-        naira_equivalent: nairaEquivalent,
-        conversion_rate: conversionRate,
         status: "Pending"
       });
 
-      showToast("success", "Withdrawal Submitted", "Withdrawal request submitted for admin review.");
+      showToast("success", "Withdrawal Submitted", "Withdrawal request submitted successfully.");
       handleModalClose();
       onSuccess();
       fetchAmbassadorData();
@@ -299,40 +302,53 @@ export const AvuWithdrawalModal: React.FC<AvuWithdrawalModalProps> = ({
             <Icon name="ArrowDownToLine" size={24} />
           </div>
           <div>
-            <h4 className="font-extrabold text-lg text-slate-900 uppercase tracking-wide">AVU Withdrawal Terminal</h4>
+            <h4 className="font-extrabold text-lg text-slate-900 uppercase tracking-wide">Withdraw AVU</h4>
             <p className="text-xs text-slate-500">Liquidate your verified AVU balance directly to your Nigerian bank account.</p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-5 font-sans">
           {/* Read-Only Pre-filled Fields */}
-          <div className="grid sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
+          <div className="space-y-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Ambassador Name (Read-only)
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={profile?.name || "Ambassador"}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 cursor-not-allowed"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Email Address (Read-only)
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={profile?.email || "ambassador@domain.com"}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 cursor-not-allowed truncate"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                Full Name (Read-only)
+                Current AVU Balance (Read-only)
               </label>
               <input
                 type="text"
                 readOnly
                 disabled
-                value={profile?.name || "Ambassador"}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 cursor-not-allowed"
+                value={`${currentAvuBalance.toLocaleString()} AVU`}
+                className="w-full px-3 py-2 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs font-black text-emerald-800 font-mono cursor-not-allowed"
               />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                Current AVU Balance (Read-only)
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  readOnly
-                  disabled
-                  value={`${currentAvuBalance.toLocaleString()} AVU`}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs font-black text-emerald-800 font-mono cursor-not-allowed"
-                />
-              </div>
             </div>
           </div>
 
