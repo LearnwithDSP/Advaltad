@@ -1303,7 +1303,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     </div>
                     <div className="flex justify-end pt-1">
                       <a
-                        href="mailto:info@advaltadfoundation.org?subject=Account%20Recovery%20Request"
+                        href={`mailto:info@advaltadfoundation.org?subject=${encodeURIComponent(
+                          "Password Recovery Request"
+                        )}&body=${encodeURIComponent(
+                          "Hello Advaltad Team,\n\nI am requesting a password reset for my ambassador account.\n\nAccount Email: [Enter Your Email Here]\nFull Name: [Enter Your Name Here]\n\nThank you."
+                        )}`}
                         className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline transition-colors"
                       >
                         Forgot Password / Account Recovery
