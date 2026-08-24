@@ -22,6 +22,7 @@ import { StoriesPage } from "./pages/StoriesPage";
 import { MediaPage } from "./pages/MediaPage";
 import { DonatePage } from "./pages/DonatePage";
 import { AmbassadorPage } from "./pages/AmbassadorPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 
 export default function App() {
   const [route, setRoute] = useState<string>("#home");
@@ -255,6 +256,10 @@ export default function App() {
           )}
         </AnimatePresence>
       );
+    }
+
+    if (lowercaseRoute.includes("reset-password")) {
+      return <ResetPasswordPage onComplete={() => { window.location.hash = "#/ambassador"; }} />;
     }
 
     if (lowercaseRoute.includes("about") || lowercaseRoute.includes("mission") || lowercaseRoute.includes("leadership") || lowercaseRoute.includes("values")) {
