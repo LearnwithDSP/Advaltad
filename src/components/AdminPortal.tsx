@@ -27,7 +27,9 @@ import {
   CreditCard,
   MapPin,
   ArrowDownToLine,
-  Clock
+  Clock,
+  X,
+  Send
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
@@ -57,6 +59,56 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Admin Password Reset Modal
+  const [isAdminResetOpen, setIsAdminResetOpen] = useState(false);
+  const [adminResetEmail, setAdminResetEmail] = useState("");
+  const [isAdminSendingReset, setIsAdminSendingReset] = useState(false);
+  const [adminResetStatus, setAdminResetStatus] = useState<{ type: "success" | "error" | null; message: string }>({
+    type: null,
+    message: ""
+  });
+
+  const handleAdminPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetEmail = adminResetEmail.trim().toLowerCase();
+    if (!targetEmail) return;
+
+    setIsAdminSendingReset(true);
+    setAdminResetStatus({ type: null, message: "" });
+
+    try {
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error("Supabase authentication is not configured.");
+      }
+
+      const redirectUrl =
+        (process as any)?.env?.NODE_ENV === "production" || process.env.NODE_ENV === "production"
+          ? "https://advaltadfoundation.org/#/reset-password"
+          : `${window.location.origin}/#/reset-password`;
+
+      const { data, error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setAdminResetStatus({
+        type: "success",
+        message: "Admin password recovery link dispatched! Check your email inbox to reset your password.",
+      });
+    } catch (err: any) {
+      console.error("[ADMIN PASSWORD RESET ERROR]:", err);
+      setAdminResetStatus({
+        type: "error",
+        message: err.message || "Failed to send reset link. Please verify your email or contact support.",
+      });
+    } finally {
+      setIsAdminSendingReset(false);
+    }
+  };
 
   // Dashboard states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1301,16 +1353,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                         {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
-                    <div className="flex justify-end pt-1">
+                    <div className="flex justify-between items-center pt-1 flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminResetEmail(loginEmail || "");
+                          setAdminResetStatus({ type: null, message: "" });
+                          setIsAdminResetOpen(true);
+                        }}
+                        className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline transition-colors cursor-pointer"
+                      >
+                        Forgot Password? Reset Online
+                      </button>
                       <a
                         href={`mailto:info@advaltadfoundation.org?subject=${encodeURIComponent(
                           "Password Recovery Request"
                         )}&body=${encodeURIComponent(
-                          "Hello Advaltad Team,\n\nI am requesting a password reset for my ambassador account.\n\nAccount Email: [Enter Your Email Here]\nFull Name: [Enter Your Name Here]\n\nThank you."
+                          "Hello Advaltad Team,\n\nI am requesting a password reset for my admin account.\n\nAccount Email: [Enter Your Email Here]\nFull Name: [Enter Your Name Here]\n\nThank you."
                         )}`}
-                        className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline transition-colors"
+                        className="text-[11px] font-medium text-slate-400 hover:text-slate-600 hover:underline transition-colors"
                       >
-                        Forgot Password / Account Recovery
+                        Email Support
                       </a>
                     </div>
                   </div>
@@ -3482,6 +3545,112 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Admin Password Reset Modal */}
+      <AnimatePresence>
+        {isAdminResetOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl p-6 sm:p-8 max-w-md w-full relative overflow-hidden text-left"
+            >
+              <button
+                type="button"
+                onClick={() => setIsAdminResetOpen(false)}
+                className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-full hover:bg-slate-100 transition-colors"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-slate-900 text-emerald-400 flex items-center justify-center shadow">
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-base text-slate-900">Admin Password Recovery</h3>
+                  <p className="text-xs text-slate-500">Dispatch a password reset link to your admin email</p>
+                </div>
+              </div>
+
+              {adminResetStatus.type === "success" ? (
+                <div className="space-y-4 py-2">
+                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-3">
+                    <CheckCircle size={18} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold mb-1">Reset Link Dispatched</p>
+                      <p className="text-slate-600 leading-relaxed">{adminResetStatus.message}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAdminResetOpen(false)}
+                    className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                  >
+                    Return to Login
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleAdminPasswordReset} className="space-y-4">
+                  {adminResetStatus.type === "error" && (
+                    <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
+                      <AlertCircle size={16} className="text-rose-600 flex-shrink-0 mt-0.5" />
+                      <span>{adminResetStatus.message}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Admin Email Address</label>
+                    <div className="relative">
+                      <input
+                        required
+                        type="email"
+                        placeholder="admin@advaltadfoundation.org"
+                        value={adminResetEmail}
+                        onChange={(e) => setAdminResetEmail(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 focus:border-slate-900 focus:bg-white rounded-xl text-xs text-slate-900 focus:outline-none font-medium transition-all"
+                      />
+                      <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/#/reset-password</code> to update credentials.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAdminResetOpen(false)}
+                      className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isAdminSendingReset || !adminResetEmail.trim()}
+                      className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isAdminSendingReset ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Sending Link...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={14} />
+                          <span>Send Reset Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
