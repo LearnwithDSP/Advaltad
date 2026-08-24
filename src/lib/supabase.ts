@@ -18,6 +18,26 @@ export const supabaseAdmin = isSupabaseConfigured && supabaseServiceRole
     })
   : null;
 
+/**
+ * Sends a password reset request via Supabase Auth with explicit redirectTo parameter
+ */
+export async function resetPasswordForEmail(email: string) {
+  if (!isSupabaseConfigured || !supabase) {
+    return { data: null, error: new Error("Supabase is not configured") };
+  }
+
+  const redirectUrl =
+    (process as any)?.env?.NODE_ENV === "production" || process.env.NODE_ENV === "production"
+      ? "https://advaltadfoundation.org/#/reset-password"
+      : `${window.location.origin}/#/reset-password`;
+
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: redirectUrl,
+  });
+
+  return { data, error };
+}
+
 // Unified Database interface matching your exact table schema columns
 export interface DbAmbassador {
   id: string;
@@ -434,6 +454,7 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
 }
 
 export const db = {
+  resetPasswordForEmail,
   fetchWalletBalance,
   async getAmbassadors(): Promise<DbAmbassador[]> {
     let resultList: DbAmbassador[] = [];
