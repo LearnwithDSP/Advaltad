@@ -1586,7 +1586,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 <ArrowDownToLine size={16} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <span className="flex-1 text-left flex items-center justify-between">
-                    AVU Withdrawals
+                    Pending Withdrawals
                     {pendingWithdrawalsCount > 0 && (
                       <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-[9px] text-slate-900 font-black animate-pulse">
                         {pendingWithdrawalsCount}
@@ -1682,7 +1682,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 { id: "ambassadors", label: `Ambassadors ${pendingCount > 0 ? `(${pendingCount})` : ''}`, icon: Users },
                 { id: "blogs", label: "Blog Management", icon: Compass },
                 { id: "wallets", label: "Financial Overview", icon: Coins },
-                { id: "withdrawals", label: `Withdrawals ${pendingWithdrawalsCount > 0 ? `(${pendingWithdrawalsCount})` : ''}`, icon: ArrowDownToLine },
+                { id: "withdrawals", label: `Pending Withdrawals ${pendingWithdrawalsCount > 0 ? `(${pendingWithdrawalsCount})` : ''}`, icon: ArrowDownToLine },
                 { id: "payments", label: "Payment Gateway", icon: CreditCard },
                 { id: "history", label: "Oversight History", icon: History },
               ].map(t => (
