@@ -85,7 +85,7 @@ export const getAmbassadorDisplayName = (
     }
   }
 
-  return "Ramon Bisola";
+  return "Kushimo Rasheed Olalekan";
 };
 
 export const getAmbassadorDisplayRegion = (profile?: DbAmbassador | null): string => {
@@ -350,7 +350,7 @@ export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
               {/* Left Signature */}
               <div className="text-left space-y-1">
                 <div className="h-8 border-b border-amber-400/30 font-serif italic text-amber-200 text-xs sm:text-sm flex items-end">
-                  Ramon Bisola
+                  Kushimo Rasheed Olalekan
                 </div>
                 <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider">
                   Executive Chairman
