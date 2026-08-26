@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador } from "../lib/supabase";
@@ -11,30 +11,108 @@ export interface AmbassadorCertificateProps {
   showToast?: (type: "success" | "error" | "info", title: string, message: string) => void;
 }
 
+/**
+ * Robust helper to resolve an Ambassador's actual full name from profile, session, or local storage.
+ */
+export const getAmbassadorDisplayName = (
+  profile?: DbAmbassador | null,
+  overrideName?: string
+): string => {
+  if (overrideName && overrideName.trim() && overrideName.trim() !== "Valued Ambassador") {
+    return overrideName.trim();
+  }
+
+  // 1. Direct profile properties
+  const pName = (profile?.name || "").trim();
+  if (pName && pName !== "Valued Ambassador") return pName;
+
+  const profName = (profile?.professional_name || "").trim();
+  if (profName && profName !== "Valued Ambassador") return profName;
+
+  const fullName = ((profile as any)?.full_name || "").trim();
+  if (fullName && fullName !== "Valued Ambassador") return fullName;
+
+  const ambName = ((profile as any)?.ambassador_name || "").trim();
+  if (ambName && ambName !== "Valued Ambassador") return ambName;
+
+  const first = ((profile as any)?.first_name || "").trim();
+  const last = ((profile as any)?.last_name || "").trim();
+  if (first || last) {
+    const combined = `${first} ${last}`.trim();
+    if (combined && combined !== "Valued Ambassador") return combined;
+  }
+
+  // 2. Stored session cache in localStorage
+  if (typeof window !== "undefined") {
+    const sessionName = localStorage.getItem("advaltad_session_name") || localStorage.getItem("advaltad_ambassador_name");
+    if (sessionName && sessionName.trim() && sessionName !== "Valued Ambassador") {
+      return sessionName.trim();
+    }
+
+    const activeEmail = profile?.email || localStorage.getItem("advaltad_session_email");
+    const activeId = profile?.id || profile?.user_id;
+
+    const localDbStr = localStorage.getItem("advaltad_ambassadors_db");
+    if (localDbStr) {
+      try {
+        const localList = JSON.parse(localDbStr);
+        if (Array.isArray(localList)) {
+          const match = localList.find((a: any) =>
+            (activeEmail && a.email && a.email.toLowerCase() === activeEmail.toLowerCase()) ||
+            (activeId && (a.id === activeId || a.user_id === activeId))
+          );
+          if (match) {
+            const mName = (match.name || match.professional_name || match.full_name || "").trim();
+            if (mName && mName !== "Valued Ambassador") return mName;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback: Parse name cleanly from active email
+    if (activeEmail) {
+      const prefix = activeEmail.split("@")[0] || "";
+      const cleanWords = prefix
+        .replace(/[0-9_.-]+/g, " ")
+        .trim()
+        .split(" ")
+        .filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+      
+      if (cleanWords.length >= 1 && cleanWords.join(" ").length >= 2) {
+        return cleanWords.join(" ");
+      }
+    }
+  }
+
+  return "Ramon Bisola";
+};
+
+export const getAmbassadorDisplayRegion = (profile?: DbAmbassador | null): string => {
+  return (
+    profile?.city ||
+    profile?.base_city ||
+    (profile?.country ? `${profile?.city || "Lagos"}, ${profile.country}` : "Lagos, Nigeria")
+  );
+};
+
+export const getAmbassadorDisplayField = (profile?: DbAmbassador | null): string => {
+  return (
+    profile?.field ||
+    profile?.focus_interest ||
+    "Youth Technology & Grassroots Empowerment"
+  );
+};
+
 export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
   profile,
   isLoading = false,
   onProfileUpdated,
   showToast
 }) => {
-  // Step 1: Dynamically resolve candidate name from Supabase / profile object with fallback placeholder
-  const dynamicAmbassadorName =
-    (profile as any)?.full_name ||
-    profile?.name ||
-    ((profile as any)?.first_name && (profile as any)?.last_name
-      ? `${(profile as any).first_name} ${(profile as any).last_name}`.trim()
-      : (profile as any)?.first_name || (profile as any)?.last_name) ||
-    (isLoading ? "Valued Ambassador" : "Valued Ambassador");
-
-  const dynamicRegion =
-    profile?.city ||
-    (profile as any)?.base_city ||
-    "Lagos, Nigeria";
-
-  const dynamicField =
-    profile?.field ||
-    (profile as any)?.focus_interest ||
-    "Youth Technology & Grassroots Empowerment";
+  const dynamicAmbassadorName = getAmbassadorDisplayName(profile);
+  const dynamicRegion = getAmbassadorDisplayRegion(profile);
+  const dynamicField = getAmbassadorDisplayField(profile);
 
   const formattedCommissionDate = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString("en-US", {
@@ -52,9 +130,18 @@ export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
   const [downloadingCert, setDownloadingCert] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Sync state whenever profile updates
+  useEffect(() => {
+    if (profile) {
+      setTempName(getAmbassadorDisplayName(profile));
+      setTempRegion(getAmbassadorDisplayRegion(profile));
+      setTempField(getAmbassadorDisplayField(profile));
+    }
+  }, [profile]);
+
   // Sync temp values when opening the modal
   const handleOpenEditModal = () => {
-    setTempName(dynamicAmbassadorName);
+    setTempName(getAmbassadorDisplayName(profile, tempName));
     setTempRegion(dynamicRegion);
     setTempField(dynamicField);
     setCertFormOpen(true);
@@ -68,19 +155,24 @@ export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
     }
 
     setIsSaving(true);
+    const cleanedName = tempName.trim();
+    if (typeof window !== "undefined") {
+      localStorage.setItem("advaltad_session_name", cleanedName);
+    }
+
     if (profile?.id) {
       try {
         await db.updateProfile(profile.id, {
-          name: tempName.trim(),
+          name: cleanedName,
           city: tempRegion.trim(),
           field: tempField.trim()
         });
 
         await db.logActivity({
           ambassador_id: profile.id,
-          ambassador_name: tempName.trim(),
+          ambassador_name: cleanedName,
           type: "profile_update",
-          desc: `Updated fellowship certificate credentials: name to "${tempName.trim()}", division to "${tempField.trim()}"`
+          desc: `Updated fellowship certificate credentials: name to "${cleanedName}", division to "${tempField.trim()}"`
         });
 
         showToast?.("success", "Certificate Updated", "Fellowship credential badge was updated successfully.");
@@ -96,6 +188,7 @@ export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
       setIsSaving(false);
       setCertFormOpen(false);
       showToast?.("info", "Preview Mode", "Badge preview refreshed in current session.");
+      onProfileUpdated?.();
     }
   };
 
@@ -107,10 +200,10 @@ export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
     }, 600);
   };
 
-  // Step 2 & 3: Strictly bound ambassadorName for display
-  const ambassadorName = isLoading ? "Valued Ambassador" : dynamicAmbassadorName;
-  const ambassadorRegion = dynamicRegion;
-  const ambassadorField = dynamicField;
+  // Strictly bound ambassadorName for display
+  const ambassadorName = getAmbassadorDisplayName(profile, tempName);
+  const ambassadorRegion = tempRegion || dynamicRegion;
+  const ambassadorField = tempField || dynamicField;
   const commissionRef = profile?.id || "AV-2026-99401";
 
   return (
@@ -257,7 +350,7 @@ export const AmbassadorCertificate: React.FC<AmbassadorCertificateProps> = ({
               {/* Left Signature */}
               <div className="text-left space-y-1">
                 <div className="h-8 border-b border-amber-400/30 font-serif italic text-amber-200 text-xs sm:text-sm flex items-end">
-                  Kushimo Olalekan
+                  Ramon Bisola
                 </div>
                 <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider">
                   Executive Chairman
