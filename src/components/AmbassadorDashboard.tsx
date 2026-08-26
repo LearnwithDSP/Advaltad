@@ -6,7 +6,7 @@ import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
 import { AmbassadorProfile } from "./AmbassadorProfile";
-import { AmbassadorCertificate } from "./AmbassadorCertificate";
+import { AmbassadorCertificate, getAmbassadorDisplayName } from "./AmbassadorCertificate";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
   ResponsiveContainer,
@@ -855,15 +855,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   const [commissionDate, setCommissionDate] = useState("May 27, 2026");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Dynamic candidate name binding strictly adhering to Supabase profile state with fallback placeholder
-  const candidateAmbassadorName =
-    (profile as any)?.full_name ||
-    profile?.name ||
-    ((profile as any)?.first_name && (profile as any)?.last_name
-      ? `${(profile as any).first_name} ${(profile as any).last_name}`.trim()
-      : (profile as any)?.first_name || (profile as any)?.last_name) ||
-    ambassadorName ||
-    (isLoadingProfile ? "Valued Ambassador" : "Valued Ambassador");
+  // Dynamic candidate name binding strictly resolving the ambassador's real name
+  const candidateAmbassadorName = getAmbassadorDisplayName(profile, ambassadorName);
   
   // Single Source of Truth for Wallet Balance from Supabase
   const activeIdentifier = profile?.user_id || profile?.db_id || profile?.email || profile?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
@@ -1611,7 +1604,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // Calculate Leaderboard entries
   const currentUserEntry = {
     id: profile?.id || "AV-ME",
-    name: profile?.name || candidateAmbassadorName || "Valued Ambassador",
+    name: getAmbassadorDisplayName(profile, candidateAmbassadorName),
     city: profile?.city || ambassadorRegion || "Lagos, Nigeria",
     field: profile?.field || ambassadorField || "Growth Ambassador",
     avu_balance: avuBalance,
