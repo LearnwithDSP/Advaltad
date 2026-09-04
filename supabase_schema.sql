@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.ambassadors (
     email TEXT NOT NULL UNIQUE,
     phone_number TEXT,
     badge_status TEXT NOT NULL DEFAULT 'pending' CHECK (badge_status IN ('pending', 'approved', 'disapproved')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'disapproved')),
+    is_approved BOOLEAN NOT NULL DEFAULT FALSE,
     avu_balance NUMERIC NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -167,5 +169,35 @@ ON public.audit_logs FOR SELECT USING (true);
 
 CREATE POLICY "Allow insert access to audit_logs" 
 ON public.audit_logs FOR INSERT WITH CHECK (true);
+
+-- 9. Automatic Synchronization Trigger for Ambassador Approval
+CREATE OR REPLACE FUNCTION public.sync_ambassador_approval_status()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.is_approved = TRUE THEN
+    NEW.badge_status := 'approved';
+    NEW.status := 'approved';
+  ELSIF NEW.badge_status = 'approved' OR NEW.status = 'approved' THEN
+    NEW.is_approved := TRUE;
+    NEW.badge_status := 'approved';
+    NEW.status := 'approved';
+  ELSIF NEW.badge_status = 'disapproved' OR NEW.status = 'disapproved' THEN
+    NEW.is_approved := FALSE;
+    NEW.badge_status := 'disapproved';
+    NEW.status := 'disapproved';
+  ELSE
+    NEW.is_approved := FALSE;
+    NEW.badge_status := 'pending';
+    NEW.status := 'pending';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_sync_ambassador_approval ON public.ambassadors;
+CREATE TRIGGER tr_sync_ambassador_approval
+  BEFORE INSERT OR UPDATE ON public.ambassadors
+  FOR EACH ROW EXECUTE FUNCTION public.sync_ambassador_approval_status();
+
 
 
