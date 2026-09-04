@@ -22,6 +22,7 @@ export const AmbassadorSection: React.FC = () => {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -47,13 +48,8 @@ export const AmbassadorSection: React.FC = () => {
         throw new Error("Supabase authentication is not configured.");
       }
 
-      const redirectUrl =
-        (process as any)?.env?.NODE_ENV === "production" || process.env.NODE_ENV === "production"
-          ? "https://advaltadfoundation.org/#/reset-password"
-          : `${window.location.origin}/#/reset-password`;
-
       const { data, error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: redirectUrl,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) {
@@ -928,14 +924,26 @@ export const AmbassadorSection: React.FC = () => {
 
                       <div>
                         <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Create Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showRegisterPassword ? "text" : "password"}
+                            required
+                            placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full pl-4 pr-11 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                          />
+                          <button
+                            id="btn-toggle-register-password"
+                            type="button"
+                            onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors cursor-pointer p-1"
+                            aria-label={showRegisterPassword ? "Hide password" : "Show password"}
+                            title={showRegisterPassword ? "Hide password" : "Show password"}
+                          >
+                            {showRegisterPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
                       </div>
 
                       <button
@@ -1131,7 +1139,7 @@ export const AmbassadorSection: React.FC = () => {
                       <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/#/reset-password</code> to set your new password.
+                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/reset-password</code> to set your new password.
                     </p>
                   </div>
 
