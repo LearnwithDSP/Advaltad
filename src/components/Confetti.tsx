@@ -68,7 +68,7 @@ export const Confetti: React.FC = () => {
             initial={{
               x: 0,
               y: 0,
-              rotation: 0,
+              rotate: 0,
               scale: 0,
               opacity: 1,
             }}
