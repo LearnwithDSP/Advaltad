@@ -53,6 +53,7 @@ export interface DbAmbassador {
   password?: string;
   status: "pending" | "approved" | "disapproved";
   badge_status?: "pending" | "approved" | "disapproved";
+  is_approved?: boolean;
   avu_balance: number;
   ledger_balance?: number;
   created_at: string;
@@ -239,7 +240,25 @@ function applyAmbassadorFilter(query: any, idOrEmail: string): any {
   } else if (isEmail) {
     return query.ilike("email", clean.toLowerCase());
   } else {
-    return query.or(`user_id.eq.${clean},ambassador_id.eq.${clean},email.ilike.${clean.toLowerCase()}`);
+    // Check if known in memory or local storage to resolve safely without UUID type cast crash in PostgreSQL
+    const known = (cachedAmbassadorsMemory || []).find(a =>
+      (a.id && a.id.toLowerCase() === clean.toLowerCase()) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === clean.toLowerCase()) ||
+      (a.email && a.email.toLowerCase() === clean.toLowerCase())
+    ) || (getLocalDb() || []).find(a =>
+      (a.id && a.id.toLowerCase() === clean.toLowerCase()) ||
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === clean.toLowerCase()) ||
+      (a.email && a.email.toLowerCase() === clean.toLowerCase())
+    );
+
+    if (known?.email) {
+      return query.ilike("email", known.email.trim().toLowerCase());
+    }
+    if (known?.db_id && isUuid(known.db_id)) {
+      return query.eq("id", known.db_id);
+    }
+    // Safe text ilike filter on email (never query user_id with non-uuid strings)
+    return query.ilike("email", clean.toLowerCase());
   }
 }
 
@@ -269,16 +288,15 @@ function saveLocalDb(db: DbAmbassador[]) {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(db));
 }
 
-function mapRowToAmbassador(row: any): DbAmbassador {
+export function mapRowToAmbassador(row: any): DbAmbassador {
   const isApprovedCol = row.is_approved === true || row.is_approved === "true" || row.is_approved === 1;
-  const isDisapprovedCol = row.is_approved === false || row.is_approved === "false" || row.is_approved === 0;
+  const rawStatus = (row.badge_status || row.status || "").toString().toLowerCase().trim();
+  const isDisapprovedStatus = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
+  const isApprovedStatus = isApprovedCol || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified";
 
-  const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
   const mappedStatus: "pending" | "approved" | "disapproved" = 
-    isApprovedCol ? "approved" :
-    isDisapprovedCol ? "disapproved" :
-    (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
-    (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
+    isDisapprovedStatus ? "disapproved" :
+    isApprovedStatus ? "approved" : "pending";
 
   const nameVal = row.professional_name || row.name || "";
   const cityVal = row.base_city || row.city || "";
@@ -311,6 +329,7 @@ function mapRowToAmbassador(row: any): DbAmbassador {
     phone_number: phoneVal,
     status: mappedStatus,
     badge_status: mappedStatus,
+    is_approved: isApprovedStatus,
     avu_balance: exactBal,
     ledger_balance: exactBal,
     created_at: row.created_at || new Date().toISOString()
@@ -345,31 +364,45 @@ export async function checkApprovalStatus(email: string): Promise<boolean> {
       }
 
       if (data) {
-        if (data.is_approved === true || data.is_approved === "true" || data.is_approved === 1) {
-          return true;
-        }
-        if (data.is_approved === false || data.is_approved === "false" || data.is_approved === 0) {
+        const isApprovedFlag = data.is_approved === true || data.is_approved === "true" || data.is_approved === 1;
+        const rawStatus = (data.badge_status || data.status || "").toString().toLowerCase().trim();
+        const isDisapproved = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
+
+        if (isDisapproved) {
           return false;
         }
-        const rawStatus = (data.badge_status || data.status || "pending").toString().toLowerCase().trim();
-        return rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified";
+
+        if (isApprovedFlag || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") {
+          return true;
+        }
+
+        return false;
       }
     } catch (err) {
       console.warn("[checkApprovalStatus] Error querying Supabase:", err);
     }
   }
 
+  // Check in-memory cache
+  const memAmb = cachedAmbassadorsMemory.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail);
+  if (memAmb) {
+    const rawStatus = (memAmb.badge_status || memAmb.status || "").toString().toLowerCase().trim();
+    const isApprovedFlag = (memAmb as any).is_approved === true || (memAmb as any).is_approved === "true" || (memAmb as any).is_approved === 1;
+    const isDisapproved = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
+    if (isDisapproved) return false;
+    if (isApprovedFlag || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") return true;
+    return false;
+  }
+
   const localDb = getLocalDb();
   const amb = localDb.find(a => a.email && a.email.trim().toLowerCase() === sanitizedEmail);
   if (amb) {
-    if ((amb as any).is_approved === true || (amb as any).is_approved === "true") {
-      return true;
-    }
-    if ((amb as any).is_approved === false || (amb as any).is_approved === "false") {
-      return false;
-    }
-    const rawStatus = (amb.badge_status || amb.status || "pending").toString().toLowerCase().trim();
-    return rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified";
+    const rawStatus = (amb.badge_status || amb.status || "").toString().toLowerCase().trim();
+    const isApprovedFlag = (amb as any).is_approved === true || (amb as any).is_approved === "true" || (amb as any).is_approved === 1;
+    const isDisapproved = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
+    if (isDisapproved) return false;
+    if (isApprovedFlag || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") return true;
+    return false;
   }
 
   return false;
@@ -726,49 +759,217 @@ export const db = {
     return fresh;
   },
 
-  async updateStatus(id: string, status: "pending" | "approved" | "disapproved"): Promise<boolean> {
+  async updateStatus(
+    id: string,
+    status: "pending" | "approved" | "disapproved",
+    extra?: { email?: string; db_id?: string; user_id?: string; name?: string }
+  ): Promise<boolean> {
     const cleanId = id.trim();
+    const isAppr = status === "approved";
+
+    // 1. Resolve ambassador details from parameters, cache, or local storage
+    const knownAmb = (cachedAmbassadorsMemory || []).find(a => 
+      (a.id && a.id.toLowerCase() === cleanId.toLowerCase()) || 
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.email && a.email.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.db_id && a.db_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase())
+    ) || (getLocalDb() || []).find(a => 
+      (a.id && a.id.toLowerCase() === cleanId.toLowerCase()) || 
+      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.email && a.email.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.db_id && a.db_id.toLowerCase() === cleanId.toLowerCase()) ||
+      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase())
+    );
+
+    const targetEmail = (extra?.email || (cleanId.includes("@") ? cleanId : "") || knownAmb?.email || "").trim().toLowerCase();
+    const targetDbId = extra?.db_id || (isUuid(cleanId) ? cleanId : "") || (knownAmb?.db_id && isUuid(knownAmb.db_id) ? knownAmb.db_id : "");
+    const targetUserId = extra?.user_id || (knownAmb?.user_id && isUuid(knownAmb.user_id) ? knownAmb.user_id : "");
+
+    // 2a. Attempt Supabase Edge Function invoke ('approve') if deployed on project
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("approve", {
+          body: {
+            id: cleanId,
+            email: targetEmail,
+            db_id: targetDbId,
+            user_id: targetUserId,
+            status,
+            is_approved: isAppr
+          }
+        });
+        if (!edgeErr && edgeData?.success) {
+          console.log("[updateStatus] Supabase Edge Function 'approve' succeeded:", edgeData);
+        }
+      } catch (e) {
+        // Edge function may not be deployed, proceed smoothly to API and direct client update
+      }
+    }
+
+    // 2b. Attempt server-side API approval route (Service Role key bypasses RLS in production)
+    try {
+      const apiRes = await fetch("/api/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: cleanId,
+          email: targetEmail,
+          db_id: targetDbId,
+          user_id: targetUserId,
+          status,
+          is_approved: isAppr
+        })
+      });
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json.success) {
+          console.log("[updateStatus] /api/approve succeeded:", json);
+        }
+      }
+    } catch (_) {
+      // Offline, preview, or static mode: fall through to direct Supabase update
+    }
+
+    // 3. Direct client Supabase update
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
         const payloadsToTry = [
-          { status: status, badge_status: status },
+          { badge_status: status, status: status, is_approved: isAppr },
+          { badge_status: status, is_approved: isAppr },
+          { status: status, is_approved: isAppr },
+          { is_approved: isAppr },
+          { badge_status: status, status: status },
           { badge_status: status },
           { status: status }
         ];
 
+        let supabaseUpdated = false;
+
         for (const tableName of ["ambassadors", "Ambassadors"]) {
           for (const payload of payloadsToTry) {
             try {
+              // Priority A: Update by email (safest, no UUID casting issues)
+              if (targetEmail) {
+                const { data, error } = await client
+                  .from(tableName)
+                  .update(payload)
+                  .ilike("email", targetEmail)
+                  .select();
+                if (!error && data && data.length > 0) {
+                  console.log(`[DB UPDATE STATUS SUCCESS] Updated ambassador by email '${targetEmail}' in '${tableName}' to '${status}' (is_approved: ${isAppr})`);
+                  supabaseUpdated = true;
+                  break;
+                } else if (!error) {
+                  // If update succeeded without returning rows via select
+                  const resNoSelect = await client
+                    .from(tableName)
+                    .update(payload)
+                    .ilike("email", targetEmail);
+                  if (!resNoSelect.error) {
+                    supabaseUpdated = true;
+                    break;
+                  }
+                }
+              }
+
+              // Priority B: Update by database row id (UUID)
+              if (targetDbId && isUuid(targetDbId)) {
+                const { data, error } = await client
+                  .from(tableName)
+                  .update(payload)
+                  .eq("id", targetDbId)
+                  .select();
+                if (!error && data && data.length > 0) {
+                  console.log(`[DB UPDATE STATUS SUCCESS] Updated ambassador by db_id '${targetDbId}' in '${tableName}' to '${status}' (is_approved: ${isAppr})`);
+                  supabaseUpdated = true;
+                  break;
+                }
+              }
+
+              // Priority C: Update by user_id (UUID)
+              if (targetUserId && isUuid(targetUserId)) {
+                const { data, error } = await client
+                  .from(tableName)
+                  .update(payload)
+                  .eq("user_id", targetUserId)
+                  .select();
+                if (!error && data && data.length > 0) {
+                  console.log(`[DB UPDATE STATUS SUCCESS] Updated ambassador by user_id '${targetUserId}' in '${tableName}' to '${status}' (is_approved: ${isAppr})`);
+                  supabaseUpdated = true;
+                  break;
+                }
+              }
+
+              // Priority D: Try applyAmbassadorFilter query
               let query = client.from(tableName).update(payload);
               query = applyAmbassadorFilter(query, cleanId);
               const { data, error } = await query.select();
               if (!error && data && data.length > 0) {
-                console.log(`[DB UPDATE STATUS SUCCESS] Updated ambassador ${cleanId} status to '${status}' in table '${tableName}'`);
-                return true;
+                console.log(`[DB UPDATE STATUS SUCCESS] Updated ambassador '${cleanId}' in '${tableName}' to '${status}' (is_approved: ${isAppr})`);
+                supabaseUpdated = true;
+                break;
               }
             } catch (err) {
-              console.warn(`Attempt failed for table ${tableName}:`, err);
+              // Continue trying fallback payloads
             }
           }
+          if (supabaseUpdated) break;
         }
       } catch (err) {
-        console.warn("Status change update exception:", err);
+        console.warn("Status change direct Supabase update exception:", err);
       }
     }
 
+    // 4. Update in-memory cache
+    (cachedAmbassadorsMemory || []).forEach(a => {
+      if (
+        (cleanId && a.id && a.id.toLowerCase() === cleanId.toLowerCase()) ||
+        (cleanId && a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+        (targetEmail && a.email && a.email.toLowerCase() === targetEmail) ||
+        (targetDbId && a.db_id === targetDbId) ||
+        (targetUserId && a.user_id === targetUserId)
+      ) {
+        a.status = status;
+        a.badge_status = status;
+        (a as any).is_approved = isAppr;
+      }
+    });
+
+    // 5. Update local storage database
     const localDb = getLocalDb();
-    const index = localDb.findIndex(a => 
-      a.id.toLowerCase() === cleanId.toLowerCase() || 
-      (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
-      (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
-      a.email.toLowerCase() === cleanId.toLowerCase()
-    );
-    if (index !== -1) {
-      localDb[index].status = status;
-      localDb[index].badge_status = status;
+    let updatedLocal = false;
+    localDb.forEach(a => {
+      if (
+        (cleanId && a.id && a.id.toLowerCase() === cleanId.toLowerCase()) ||
+        (cleanId && a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
+        (targetEmail && a.email && a.email.toLowerCase() === targetEmail) ||
+        (targetDbId && a.db_id === targetDbId) ||
+        (targetUserId && a.user_id === targetUserId)
+      ) {
+        a.status = status;
+        a.badge_status = status;
+        (a as any).is_approved = isAppr;
+        updatedLocal = true;
+      }
+    });
+
+    if (updatedLocal) {
       saveLocalDb(localDb);
     }
+
+    // 6. Dispatch cross-component and cross-tab update event
+    if (typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(
+          new CustomEvent("advaltad-ambassador-status-updated", {
+            detail: { id: cleanId, email: targetEmail, status, is_approved: isAppr }
+          })
+        );
+      } catch (_) {}
+    }
+
     return true;
   },
 
@@ -1083,12 +1284,11 @@ export const db = {
 
   async findAdminByEmail(email: string): Promise<DbAdmin | null> {
     const cleanEmail = email.trim().toLowerCase();
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+    if (isSupabaseConfigured && supabase) {
       try {
-        const client = supabaseAdmin || supabase;
-        let { data, error } = await client.from("admins").select("*").ilike("email", cleanEmail).maybeSingle();
+        let { data, error } = await supabase.from("admins").select("*").eq("email", cleanEmail).maybeSingle();
         if (error || !data) {
-          const fallback = await client.from("Admins").select("*").ilike("email", cleanEmail).maybeSingle();
+          const fallback = await supabase.from("Admins").select("*").eq("email", cleanEmail).maybeSingle();
           data = fallback.data;
           error = fallback.error;
         }
