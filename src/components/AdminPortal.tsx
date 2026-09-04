@@ -82,13 +82,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         throw new Error("Supabase authentication is not configured.");
       }
 
-      const redirectUrl =
-        (process as any)?.env?.NODE_ENV === "production" || process.env.NODE_ENV === "production"
-          ? "https://advaltadfoundation.org/#/reset-password"
-          : `${window.location.origin}/#/reset-password`;
-
       const { data, error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: redirectUrl,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) {
@@ -543,7 +538,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   // Login handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail || !loginPassword) {
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    const cleanPassword = loginPassword.trim();
+
+    if (!cleanEmail || !cleanPassword) {
       setAuthError("Please fill in all fields.");
       return;
     }
@@ -551,27 +549,48 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setIsSubmitting(true);
 
     try {
-      let loggedInEmail = loginEmail;
+      let loggedInEmail = cleanEmail;
       let adminRecord: DbAdmin | null = null;
 
       if (isSupabaseConfigured && supabase) {
-        const { data: signInData, error: signInError } = await traceDbOperation("Admin Supabase Auth Signin", { email: loginEmail }, supabase.auth.signInWithPassword({
-          email: loginEmail,
-          password: loginPassword
+        const { data: signInData, error: signInError } = await traceDbOperation("Admin Supabase Auth Signin", { email: cleanEmail }, supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: cleanPassword
         }));
 
         if (signInError) {
-          logDbOperation("Admin Supabase Auth Signin Error", { email: loginEmail }, signInError);
-          setAuthError(signInError.message);
-          setIsSubmitting(false);
-          return;
+          logDbOperation("Admin Supabase Auth Signin Error", { email: cleanEmail }, signInError);
+
+          // Check if user has a matching local credential record as fallback
+          const localAdmin = await db.findAdminByEmail(cleanEmail);
+          if (localAdmin && localAdmin.password === cleanPassword) {
+            adminRecord = localAdmin;
+            loggedInEmail = adminRecord.email;
+          } else {
+            setAuthError(signInError.message);
+            setIsSubmitting(false);
+            return;
+          }
         }
 
-        if (signInData.user) {
-          adminRecord = await traceGenericOperation("Fetch Admin Profile on Login", { email: loginEmail }, () => db.findAdminByEmail(loginEmail));
+        if (signInData?.user) {
+          adminRecord = await traceGenericOperation("Fetch Admin Profile on Login", { email: cleanEmail }, () => db.findAdminByEmail(cleanEmail));
+          if (!adminRecord) {
+            // Auto-link primary administrative accounts if verified via Supabase Auth
+            const isAuthorizedSuperAdmin = ["ramonbisola1@gmail.com", "advaltadfoundation@gmail.com", "stanleypatrick380@gmail.com"].includes(cleanEmail);
+            if (isAuthorizedSuperAdmin) {
+              adminRecord = await db.createAdmin({
+                name: signInData.user.user_metadata?.full_name || signInData.user.user_metadata?.name || "Kemi Ramon",
+                email: cleanEmail,
+                user_id: signInData.user.id,
+                role: "super_admin"
+              });
+            }
+          }
+
           if (!adminRecord) {
             const noAdminErr = new Error("Your account is not registered as an administrator in the database registry.");
-            logDbOperation("Fetch Admin Profile on Login Missing Record", { email: loginEmail }, noAdminErr);
+            logDbOperation("Fetch Admin Profile on Login Missing Record", { email: cleanEmail }, noAdminErr);
             setAuthError(noAdminErr.message);
             setIsSubmitting(false);
             await supabase.auth.signOut();
@@ -580,10 +599,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           loggedInEmail = adminRecord.email;
         }
       } else {
-        const admin = await traceGenericOperation("Fetch Admin Profile on Local Login", { email: loginEmail }, () => db.findAdminByEmail(loginEmail));
-        if (!admin || admin.password !== loginPassword) {
+        const admin = await traceGenericOperation("Fetch Admin Profile on Local Login", { email: cleanEmail }, () => db.findAdminByEmail(cleanEmail));
+        if (!admin || admin.password !== cleanPassword) {
           const invalidCredsErr = new Error("Invalid administrator credentials.");
-          logDbOperation("Fetch Admin Profile on Local Login Invalid Credentials", { email: loginEmail }, invalidCredsErr);
+          logDbOperation("Fetch Admin Profile on Local Login Invalid Credentials", { email: cleanEmail }, invalidCredsErr);
           setAuthError(invalidCredsErr.message);
           setIsSubmitting(false);
           return;
@@ -602,7 +621,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         loadDbData();
       }
     } catch (err: any) {
-      logDbOperation("Admin Portal Login Uncaught Error", { email: loginEmail }, err);
+      logDbOperation("Admin Portal Login Uncaught Error", { email: cleanEmail }, err);
       setAuthError(err.message || "An unexpected error occurred during admin authentication.");
       setIsSubmitting(false);
     }
@@ -1294,9 +1313,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             </div>
 
             {authError && (
-              <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 mb-6">
-                <AlertCircle size={16} className="text-rose-500 flex-shrink-0" />
-                <span>{authError}</span>
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs flex flex-col gap-2.5 mb-6 text-left shadow-sm">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle size={17} className="text-rose-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 leading-relaxed">
+                    <span className="font-bold">{authError}</span>
+                  </div>
+                </div>
+                {authError.toLowerCase().includes("credential") && (
+                  <div className="pt-2 border-t border-rose-200/70 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                    <span className="text-rose-700">Need to update your password?</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminResetEmail(loginEmail.trim().toLowerCase());
+                        setAdminResetStatus({ type: null, message: "" });
+                        setIsAdminResetOpen(true);
+                      }}
+                      className="font-bold underline text-rose-900 hover:text-black cursor-pointer transition-colors"
+                    >
+                      Reset Password Here
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3615,7 +3654,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/#/reset-password</code> to update credentials.
+                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/reset-password</code> to update credentials.
                     </p>
                   </div>
 
