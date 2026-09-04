@@ -38,13 +38,8 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
         throw new Error("Supabase authentication is not configured.");
       }
 
-      const redirectUrl =
-        (process as any)?.env?.NODE_ENV === "production" || process.env.NODE_ENV === "production"
-          ? "https://advaltadfoundation.org/#/reset-password"
-          : `${window.location.origin}/#/reset-password`;
-
       const { data, error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: redirectUrl,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) {
@@ -461,10 +456,12 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
                   className="w-full pl-4 pr-11 py-3 bg-gray-50 border border-gray-100 hover:border-gray-200 focus:border-emerald-600 rounded-xl font-medium text-sm text-gray-900 focus:outline-none transition-all"
                 />
                 <button
+                  id="btn-toggle-ambassador-password"
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none transition-colors cursor-pointer p-1"
                   aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -592,7 +589,7 @@ export const AmbassadorLogin: React.FC<AmbassadorLoginProps> = ({ onLoginSuccess
                       <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/#/reset-password</code> to specify your new credential.
+                      You will be directed to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">/reset-password</code> to specify your new credential.
                     </p>
                   </div>
 
