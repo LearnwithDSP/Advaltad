@@ -26,14 +26,50 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 
 export default function App() {
   const [route, setRoute] = useState<string>("#home");
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const pathname = window.location.pathname.toLowerCase();
+    const hash = (window.location.hash || "").toLowerCase();
+    const search = window.location.search.toLowerCase();
+    return (
+      pathname.includes("reset-password") ||
+      hash.includes("reset-password") ||
+      hash.includes("type=recovery") ||
+      search.includes("type=recovery")
+    );
+  });
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return !!localStorage.getItem("advaltad_session_email");
   });
   const [isApproved, setIsApproved] = useState<boolean | null>(null);
   const [isCheckingApproval, setIsCheckingApproval] = useState<boolean>(false);
 
+  // Auth Listener & Routing: Listen for PASSWORD_RECOVERY event to route directly to reset password form
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        // Prevent global route guards/auth listeners from redirecting to homepage
+        setIsPasswordRecovery(true);
+        setRoute("#/reset-password");
+        if (window.location.pathname !== "/reset-password" && !window.location.hash.includes("reset-password")) {
+          window.location.hash = "#/reset-password";
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     const verifyUserApproval = async () => {
+      if (isPasswordRecovery || route.toLowerCase().includes("reset-password") || window.location.pathname.includes("reset-password")) {
+        return;
+      }
+
       const sessionEmail = localStorage.getItem("advaltad_session_email");
       if (sessionEmail && isAuthenticated) {
         setIsCheckingApproval(true);
@@ -47,19 +83,38 @@ export default function App() {
     };
 
     verifyUserApproval();
-  }, [isAuthenticated, route]);
+  }, [isAuthenticated, route, isPasswordRecovery]);
 
   useEffect(() => {
     const checkRoute = () => {
-      const hash = window.location.hash || "#home";
-      
+      const pathname = window.location.pathname.toLowerCase();
+      const rawHash = window.location.hash || "";
+      const hash = rawHash.toLowerCase();
+      const search = window.location.search.toLowerCase();
+
+      // Check if current route is for password recovery / reset password
+      const isRecoveryTarget =
+        pathname.includes("reset-password") ||
+        hash.includes("reset-password") ||
+        hash.includes("type=recovery") ||
+        search.includes("type=recovery") ||
+        isPasswordRecovery;
+
+      if (isRecoveryTarget) {
+        setIsPasswordRecovery(true);
+        setRoute("#/reset-password");
+        window.scrollTo({ top: 0, behavior: "instant" as any });
+        return;
+      }
+
       // Pull down the old growth-ambassador page and redirect to ambassador
-      if (hash.toLowerCase().includes("growth-ambassador")) {
+      if (hash.includes("growth-ambassador")) {
         window.location.hash = "#/ambassador";
         return;
       }
-      
-      setRoute(hash);
+
+      const effectiveHash = rawHash || "#home";
+      setRoute(effectiveHash);
 
       // Dynamically sync auth state from localStorage on route transitions
       const hasSession = !!localStorage.getItem("advaltad_session_email");
@@ -77,7 +132,7 @@ export default function App() {
       window.removeEventListener("hashchange", checkRoute);
       window.removeEventListener("popstate", checkRoute);
     };
-  }, []);
+  }, [isPasswordRecovery]);
 
   const handleDonateTrigger = () => {
     window.location.hash = "#/donate";
@@ -87,9 +142,9 @@ export default function App() {
     window.location.hash = "#/ambassador";
   };
 
-  const handleLoginSuccess = async (name: string, region: string) => {
+  const handleLoginSuccess = async (email?: string) => {
     setIsAuthenticated(true);
-    const sessionEmail = localStorage.getItem("advaltad_session_email");
+    const sessionEmail = email || localStorage.getItem("advaltad_session_email");
     if (sessionEmail) {
       setIsCheckingApproval(true);
       const approved = await checkApprovalStatus(sessionEmail);
@@ -137,6 +192,30 @@ export default function App() {
   const hideHeaderFooter = (isDashboardView && isAuthenticated) || isAdminView;
 
   const renderContent = () => {
+    const lowercaseRoute = route.toLowerCase();
+    const pathname = window.location.pathname.toLowerCase();
+    const rawHash = (window.location.hash || "").toLowerCase();
+    const search = window.location.search.toLowerCase();
+
+    const isResetPasswordFlow =
+      isPasswordRecovery ||
+      lowercaseRoute.includes("reset-password") ||
+      pathname.includes("reset-password") ||
+      rawHash.includes("reset-password") ||
+      rawHash.includes("type=recovery") ||
+      search.includes("type=recovery");
+
+    if (isResetPasswordFlow) {
+      return (
+        <ResetPasswordPage
+          onComplete={() => {
+            setIsPasswordRecovery(false);
+            window.location.hash = "#/ambassador";
+          }}
+        />
+      );
+    }
+
     if (isAdminView) {
       return (
         <AnimatePresence mode="wait">
@@ -256,10 +335,6 @@ export default function App() {
           )}
         </AnimatePresence>
       );
-    }
-
-    if (lowercaseRoute.includes("reset-password")) {
-      return <ResetPasswordPage onComplete={() => { window.location.hash = "#/ambassador"; }} />;
     }
 
     if (lowercaseRoute.includes("about") || lowercaseRoute.includes("mission") || lowercaseRoute.includes("leadership") || lowercaseRoute.includes("values")) {
