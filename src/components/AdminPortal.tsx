@@ -165,9 +165,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [editSuccess, setEditSuccess] = useState(false);
 
   // Toast Notification state
-  const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info"; title: string; message: string }[]>([]);
+  const [toasts, setToasts] = useState<{ id: string; type: "success" | "error" | "info" | "warning"; title: string; message: string }[]>([]);
 
-  const addToast = (title: string, message: string, type: "success" | "error" | "info" = "success") => {
+  const addToast = (title: string, message: string, type: "success" | "error" | "info" | "warning" = "success") => {
     const id = "toast-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
     setToasts(prev => [...prev, { id, type, title, message }]);
     setTimeout(() => {
@@ -201,6 +201,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     ids: string[];
     action: "approve" | "disapprove";
   } | null>(null);
+  const [isProcessingStatus, setIsProcessingStatus] = useState(false);
 
   useEffect(() => {
     if (selectedAmbassador) {
@@ -370,9 +371,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           
           // MAP ALL ROWS DIRECTLY WITHOUT ANY LOCAL FILTERING (Ensure raw, real-time representation of all rows)
           allAmbassadors = data.map((row: any) => {
-            const rawStatus = (row.badge_status || row.status || "pending").toString().toLowerCase().trim();
+            const isApprovedCol = row.is_approved === true || row.is_approved === "true" || row.is_approved === 1;
+            const rawStatus = (row.badge_status || row.status || "").toString().toLowerCase().trim();
             const mappedStatus: "pending" | "approved" | "disapproved" = 
-              (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
+              (isApprovedCol || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
               (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
 
             const nameVal = row.professional_name || row.name || "";
@@ -416,6 +418,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               phone_number: phoneVal,
               status: mappedStatus,
               badge_status: mappedStatus,
+              is_approved: mappedStatus === "approved",
               avu_balance: walletBal,
               created_at: row.created_at || new Date().toISOString()
             };
@@ -538,10 +541,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   // Login handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = loginEmail.trim().toLowerCase();
-    const cleanPassword = loginPassword.trim();
-
-    if (!cleanEmail || !cleanPassword) {
+    if (!loginEmail || !loginPassword) {
       setAuthError("Please fill in all fields.");
       return;
     }
@@ -549,48 +549,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setIsSubmitting(true);
 
     try {
-      let loggedInEmail = cleanEmail;
+      let loggedInEmail = loginEmail;
       let adminRecord: DbAdmin | null = null;
 
       if (isSupabaseConfigured && supabase) {
-        const { data: signInData, error: signInError } = await traceDbOperation("Admin Supabase Auth Signin", { email: cleanEmail }, supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: cleanPassword
+        const { data: signInData, error: signInError } = await traceDbOperation("Admin Supabase Auth Signin", { email: loginEmail }, supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword
         }));
 
         if (signInError) {
-          logDbOperation("Admin Supabase Auth Signin Error", { email: cleanEmail }, signInError);
-
-          // Check if user has a matching local credential record as fallback
-          const localAdmin = await db.findAdminByEmail(cleanEmail);
-          if (localAdmin && localAdmin.password === cleanPassword) {
-            adminRecord = localAdmin;
-            loggedInEmail = adminRecord.email;
-          } else {
-            setAuthError(signInError.message);
-            setIsSubmitting(false);
-            return;
-          }
+          logDbOperation("Admin Supabase Auth Signin Error", { email: loginEmail }, signInError);
+          setAuthError(signInError.message);
+          setIsSubmitting(false);
+          return;
         }
 
-        if (signInData?.user) {
-          adminRecord = await traceGenericOperation("Fetch Admin Profile on Login", { email: cleanEmail }, () => db.findAdminByEmail(cleanEmail));
-          if (!adminRecord) {
-            // Auto-link primary administrative accounts if verified via Supabase Auth
-            const isAuthorizedSuperAdmin = ["ramonbisola1@gmail.com", "advaltadfoundation@gmail.com", "stanleypatrick380@gmail.com"].includes(cleanEmail);
-            if (isAuthorizedSuperAdmin) {
-              adminRecord = await db.createAdmin({
-                name: signInData.user.user_metadata?.full_name || signInData.user.user_metadata?.name || "Kemi Ramon",
-                email: cleanEmail,
-                user_id: signInData.user.id,
-                role: "super_admin"
-              });
-            }
-          }
-
+        if (signInData.user) {
+          adminRecord = await traceGenericOperation("Fetch Admin Profile on Login", { email: loginEmail }, () => db.findAdminByEmail(loginEmail));
           if (!adminRecord) {
             const noAdminErr = new Error("Your account is not registered as an administrator in the database registry.");
-            logDbOperation("Fetch Admin Profile on Login Missing Record", { email: cleanEmail }, noAdminErr);
+            logDbOperation("Fetch Admin Profile on Login Missing Record", { email: loginEmail }, noAdminErr);
             setAuthError(noAdminErr.message);
             setIsSubmitting(false);
             await supabase.auth.signOut();
@@ -599,10 +578,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           loggedInEmail = adminRecord.email;
         }
       } else {
-        const admin = await traceGenericOperation("Fetch Admin Profile on Local Login", { email: cleanEmail }, () => db.findAdminByEmail(cleanEmail));
-        if (!admin || admin.password !== cleanPassword) {
+        const admin = await traceGenericOperation("Fetch Admin Profile on Local Login", { email: loginEmail }, () => db.findAdminByEmail(loginEmail));
+        if (!admin || admin.password !== loginPassword) {
           const invalidCredsErr = new Error("Invalid administrator credentials.");
-          logDbOperation("Fetch Admin Profile on Local Login Invalid Credentials", { email: cleanEmail }, invalidCredsErr);
+          logDbOperation("Fetch Admin Profile on Local Login Invalid Credentials", { email: loginEmail }, invalidCredsErr);
           setAuthError(invalidCredsErr.message);
           setIsSubmitting(false);
           return;
@@ -621,7 +600,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         loadDbData();
       }
     } catch (err: any) {
-      logDbOperation("Admin Portal Login Uncaught Error", { email: cleanEmail }, err);
+      logDbOperation("Admin Portal Login Uncaught Error", { email: loginEmail }, err);
       setAuthError(err.message || "An unexpected error occurred during admin authentication.");
       setIsSubmitting(false);
     }
@@ -641,29 +620,46 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   // Status Action Handlers
   const handleToggleStatus = async (id: string, currentStatus: "pending" | "approved" | "disapproved") => {
     const newStatus: "pending" | "approved" | "disapproved" = currentStatus === "pending" ? "approved" : "pending";
-    const ambassador = ambassadors.find(a => a.id === id);
+    const ambassador = ambassadors.find(a => 
+      a.id === id || 
+      (a.email && a.email.toLowerCase() === id.toLowerCase()) || 
+      (a.db_id && a.db_id === id) || 
+      (a.user_id && a.user_id === id)
+    );
     const originalAmbassadors = [...ambassadors];
+    const ambName = ambassador?.name || ambassador?.professional_name || "Ambassador";
 
     // Immediate state updates for instant visual feedback (Optimistic Update)
     setAmbassadors(prev =>
       prev.map(amb =>
-        amb.id === id
-          ? { ...amb, status: newStatus, badge_status: newStatus }
+        (amb.id === id || (ambassador && amb.id === ambassador.id) || (ambassador?.email && amb.email === ambassador.email))
+          ? { ...amb, status: newStatus, badge_status: newStatus, is_approved: newStatus === "approved" }
           : amb
       )
     );
 
     try {
       console.log(`[ADMIN TOGGLER] Direct database update for ${id}: 'badge_status' set to ${newStatus}`);
-      const success = await db.updateStatus(id, newStatus);
+      const success = await db.updateStatus(id, newStatus, {
+        email: ambassador?.email,
+        db_id: ambassador?.db_id,
+        user_id: ambassador?.user_id,
+        name: ambName
+      });
       if (!success) {
         throw new Error("Supabase status update failed");
       }
 
+      addToast(
+        `Status Updated: ${newStatus === "approved" ? "Approved" : "Pending"}`,
+        `Verification status for ${ambName} changed to ${newStatus}.`,
+        "success"
+      );
+
       // Add visual confirmation / notification log
       await db.logActivity({
         ambassador_id: id,
-        ambassador_name: ambassador?.name || "Ambassador",
+        ambassador_name: ambName,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" quick toggled status to "${newStatus}" without modal confirmation.`
       });
@@ -673,7 +669,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         admin_name: currentAdmin?.name || "Super Admin",
         admin_email: currentAdmin?.email || "admin@advaltad.org",
         ambassador_id: id,
-        ambassador_name: ambassador?.name || "Ambassador",
+        ambassador_name: ambName,
         action: newStatus === "approved" ? "approved" : "disapproved"
       });
 
@@ -692,24 +688,45 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       console.error("[ADMIN TOGGLER] Error during status toggle update:", err);
       // Revert state if failed
       setAmbassadors(originalAmbassadors);
+      addToast("Update Failed", "Could not persist status change to database.", "error");
     }
   };
 
   const executeApproveAmbassador = async (id: string, name: string) => {
     try {
+      const amb = ambassadors.find(a => 
+        a.id === id || 
+        (a.email && a.email.toLowerCase() === id.toLowerCase()) || 
+        (a.db_id && a.db_id === id) || 
+        (a.user_id && a.user_id === id)
+      );
+      const effectiveName = amb?.name || amb?.professional_name || name || "Ambassador";
+
       setAmbassadors(prev =>
-        prev.map(amb =>
-          amb.id === id ? { ...amb, status: "approved", badge_status: "approved" } : amb
+        prev.map(a =>
+          (a.id === id || (amb && a.id === amb.id) || (amb?.email && a.email === amb.email))
+            ? { ...a, status: "approved", badge_status: "approved", is_approved: true }
+            : a
         )
       );
 
-      await db.updateStatus(id, "approved");
+      await db.updateStatus(id, "approved", {
+        email: amb?.email,
+        db_id: amb?.db_id,
+        user_id: amb?.user_id,
+        name: effectiveName
+      });
+
+      addToast(
+        "Ambassador Approved",
+        `Successfully approved and verified ${effectiveName}.`,
+        "success"
+      );
 
       // Dispatch transactional email notification
-      const amb = ambassadors.find(a => a.id === id);
       if (amb) {
         try {
-          console.log("[ADMIN PORTAL] Dispatching transactional email notification for approved ambassador:", name);
+          console.log("[ADMIN PORTAL] Dispatching transactional email notification for approved ambassador:", effectiveName);
           const mailRes = await triggerApprovalEmail(amb);
           console.log("[ADMIN PORTAL] Transactional email notification dispatched successfully:", mailRes);
         } catch (mailErr) {
@@ -719,7 +736,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       await db.logActivity({
         ambassador_id: id,
-        ambassador_name: name,
+        ambassador_name: effectiveName,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" approved Ambassador Fellowship credentials.`
       });
@@ -728,15 +745,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         admin_name: currentAdmin?.name || "Super Admin",
         admin_email: currentAdmin?.email || "admin@advaltad.org",
         ambassador_id: id,
-        ambassador_name: name,
+        ambassador_name: effectiveName,
         action: "approved"
       });
       loadDbData();
-      if (selectedAmbassador?.id === id) {
-        setSelectedAmbassador(prev => prev ? { ...prev, status: "approved" } : null);
+      if (selectedAmbassador?.id === id || (amb && selectedAmbassador?.id === amb.id)) {
+        setSelectedAmbassador(prev => prev ? { ...prev, status: "approved", badge_status: "approved", is_approved: true } : null);
       }
     } catch (err) {
       console.error(err);
+      addToast("Approval Warning", "Updated locally; please verify database connection.", "warning");
     }
   };
 
@@ -746,16 +764,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   const executeDisapproveAmbassador = async (id: string, name: string) => {
     try {
+      const amb = ambassadors.find(a => 
+        a.id === id || 
+        (a.email && a.email.toLowerCase() === id.toLowerCase()) || 
+        (a.db_id && a.db_id === id) || 
+        (a.user_id && a.user_id === id)
+      );
+      const effectiveName = amb?.name || amb?.professional_name || name || "Ambassador";
+
       setAmbassadors(prev =>
-        prev.map(amb =>
-          amb.id === id ? { ...amb, status: "disapproved", badge_status: "disapproved" } : amb
+        prev.map(a =>
+          (a.id === id || (amb && a.id === amb.id) || (amb?.email && a.email === amb.email))
+            ? { ...a, status: "disapproved", badge_status: "disapproved", is_approved: false }
+            : a
         )
       );
 
-      await db.updateStatus(id, "disapproved");
+      await db.updateStatus(id, "disapproved", {
+        email: amb?.email,
+        db_id: amb?.db_id,
+        user_id: amb?.user_id,
+        name: effectiveName
+      });
+
+      addToast(
+        "Ambassador Disapproved",
+        `Credentials for ${effectiveName} set to disapproved.`,
+        "info"
+      );
+
       await db.logActivity({
         ambassador_id: id,
-        ambassador_name: name,
+        ambassador_name: effectiveName,
         type: "status_change",
         desc: `Super Admin "${currentAdmin?.name}" disapproved Ambassador Fellowship credentials.`
       });
@@ -764,15 +804,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         admin_name: currentAdmin?.name || "Super Admin",
         admin_email: currentAdmin?.email || "admin@advaltad.org",
         ambassador_id: id,
-        ambassador_name: name,
+        ambassador_name: effectiveName,
         action: "disapproved"
       });
       loadDbData();
-      if (selectedAmbassador?.id === id) {
-        setSelectedAmbassador(prev => prev ? { ...prev, status: "disapproved" } : null);
+      if (selectedAmbassador?.id === id || (amb && selectedAmbassador?.id === amb.id)) {
+        setSelectedAmbassador(prev => prev ? { ...prev, status: "disapproved", badge_status: "disapproved", is_approved: false } : null);
       }
     } catch (err) {
       console.error(err);
+      addToast("Status Warning", "Updated locally; please check your network connection.", "warning");
     }
   };
 
@@ -858,14 +899,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       setAmbassadors(prev =>
         prev.map(amb =>
           ids.includes(amb.id)
-            ? { ...amb, status: statusValue, badge_status: statusValue }
+            ? { ...amb, status: statusValue, badge_status: statusValue, is_approved: action === "approve" }
             : amb
         )
       );
       for (const id of ids) {
-        await db.updateStatus(id, statusValue);
-        const amb = ambassadors.find(a => a.id === id);
+        const amb = ambassadors.find(a => a.id === id || a.email === id || a.db_id === id);
         const name = amb ? (amb.name || amb.professional_name || "Ambassador") : "Ambassador";
+        await db.updateStatus(id, statusValue, {
+          email: amb?.email,
+          db_id: amb?.db_id,
+          user_id: amb?.user_id,
+          name
+        });
         
         if (action === "approve" && amb) {
           try {
@@ -892,8 +938,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
       setSelectedAmbassadorIds([]);
       loadDbData();
+      addToast(
+        `Bulk ${action === "approve" ? "Approval" : "Disapproval"} Complete`,
+        `Successfully updated ${ids.length} ambassador(s) to ${statusValue}.`,
+        "success"
+      );
     } catch (err) {
       console.error("Bulk status update failed:", err);
+      addToast("Bulk Update Warning", "Updated locally; please check your network connection.", "warning");
     }
   };
 
@@ -1313,29 +1365,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             </div>
 
             {authError && (
-              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs flex flex-col gap-2.5 mb-6 text-left shadow-sm">
-                <div className="flex items-start gap-2.5">
-                  <AlertCircle size={17} className="text-rose-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 leading-relaxed">
-                    <span className="font-bold">{authError}</span>
-                  </div>
-                </div>
-                {authError.toLowerCase().includes("credential") && (
-                  <div className="pt-2 border-t border-rose-200/70 flex items-center justify-between flex-wrap gap-2 text-[11px]">
-                    <span className="text-rose-700">Need to update your password?</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAdminResetEmail(loginEmail.trim().toLowerCase());
-                        setAdminResetStatus({ type: null, message: "" });
-                        setIsAdminResetOpen(true);
-                      }}
-                      className="font-bold underline text-rose-900 hover:text-black cursor-pointer transition-colors"
-                    >
-                      Reset Password Here
-                    </button>
-                  </div>
-                )}
+              <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 mb-6">
+                <AlertCircle size={16} className="text-rose-500 flex-shrink-0" />
+                <span>{authError}</span>
               </div>
             )}
 
