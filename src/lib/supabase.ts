@@ -26,13 +26,8 @@ export async function resetPasswordForEmail(email: string) {
     return { data: null, error: new Error("Supabase is not configured") };
   }
 
-  const redirectUrl =
-    (process as any)?.env?.NODE_ENV === "production" || process.env.NODE_ENV === "production"
-      ? "https://advaltadfoundation.org/#/reset-password"
-      : `${window.location.origin}/#/reset-password`;
-
   const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: redirectUrl,
+    redirectTo: `${window.location.origin}/reset-password`,
   });
 
   return { data, error };
@@ -1088,11 +1083,12 @@ export const db = {
 
   async findAdminByEmail(email: string): Promise<DbAdmin | null> {
     const cleanEmail = email.trim().toLowerCase();
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        let { data, error } = await supabase.from("admins").select("*").eq("email", cleanEmail).maybeSingle();
+        const client = supabaseAdmin || supabase;
+        let { data, error } = await client.from("admins").select("*").ilike("email", cleanEmail).maybeSingle();
         if (error || !data) {
-          const fallback = await supabase.from("Admins").select("*").eq("email", cleanEmail).maybeSingle();
+          const fallback = await client.from("Admins").select("*").ilike("email", cleanEmail).maybeSingle();
           data = fallback.data;
           error = fallback.error;
         }
