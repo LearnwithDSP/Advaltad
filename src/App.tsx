@@ -83,6 +83,31 @@ export default function App() {
     };
 
     verifyUserApproval();
+
+    const handleStatusEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id?: string; email?: string; status?: string; is_approved?: boolean }>;
+      const sessionEmail = localStorage.getItem("advaltad_session_email");
+      if (customEvent.detail?.email && sessionEmail && customEvent.detail.email.toLowerCase() === sessionEmail.toLowerCase()) {
+        if (customEvent.detail.status === "approved" || customEvent.detail.is_approved) {
+          setIsApproved(true);
+        }
+      }
+      verifyUserApproval();
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "advaltad_ambassadors_db" || e.key === "advaltad_session_email") {
+        verifyUserApproval();
+      }
+    };
+
+    window.addEventListener("advaltad-ambassador-status-updated", handleStatusEvent);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("advaltad-ambassador-status-updated", handleStatusEvent);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, [isAuthenticated, route, isPasswordRecovery]);
 
   useEffect(() => {
@@ -142,9 +167,9 @@ export default function App() {
     window.location.hash = "#/ambassador";
   };
 
-  const handleLoginSuccess = async (email?: string) => {
+  const handleLoginSuccess = async (name: string, region: string) => {
     setIsAuthenticated(true);
-    const sessionEmail = email || localStorage.getItem("advaltad_session_email");
+    const sessionEmail = localStorage.getItem("advaltad_session_email");
     if (sessionEmail) {
       setIsCheckingApproval(true);
       const approved = await checkApprovalStatus(sessionEmail);
