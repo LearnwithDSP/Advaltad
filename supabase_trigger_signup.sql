@@ -43,6 +43,8 @@ BEGIN
       email,
       phone_number,
       badge_status,
+      status,
+      is_approved,
       avu_balance
     ) VALUES (
       new.id,
@@ -52,6 +54,8 @@ BEGIN
       new.email,
       COALESCE(new.raw_user_meta_data->>'phone', new.raw_user_meta_data->>'phone_number', ''),
       'pending', -- All newly registered ambassadors start as 'pending' awaiting executive board approval
+      'pending',
+      FALSE,     -- is_approved starts as FALSE until admin verifies
       1250
     ) RETURNING id INTO new_ambassador_id;
     
@@ -82,3 +86,51 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =========================================================================
+-- APPROVAL STATUS SYNCHRONIZATION TRIGGER
+-- =========================================================================
+-- Automatically keeps is_approved (boolean), badge_status, and status in sync
+-- whenever an admin approves, disapproves, or updates an ambassador in Supabase.
+-- =========================================================================
+
+-- Ensure columns exist
+ALTER TABLE public.ambassadors ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.ambassadors ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
+
+CREATE OR REPLACE FUNCTION public.sync_ambassador_approval_status()
+RETURNS trigger AS $$
+BEGIN
+  -- 1. If is_approved was set to TRUE, ensure badge_status and status are 'approved'
+  IF NEW.is_approved = TRUE THEN
+    NEW.badge_status := 'approved';
+    NEW.status := 'approved';
+  -- 2. If badge_status or status was set to 'approved', ensure is_approved is TRUE
+  ELSIF NEW.badge_status = 'approved' OR NEW.status = 'approved' THEN
+    NEW.is_approved := TRUE;
+    NEW.badge_status := 'approved';
+    NEW.status := 'approved';
+  -- 3. If badge_status or status was set to 'disapproved'
+  ELSIF NEW.badge_status = 'disapproved' OR NEW.status = 'disapproved' THEN
+    NEW.is_approved := FALSE;
+    NEW.badge_status := 'disapproved';
+    NEW.status := 'disapproved';
+  -- 4. Otherwise default to pending
+  ELSE
+    NEW.is_approved := FALSE;
+    NEW.badge_status := 'pending';
+    NEW.status := 'pending';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Remove existing trigger if it already exists
+DROP TRIGGER IF EXISTS tr_sync_ambassador_approval ON public.ambassadors;
+
+-- Bind the trigger to run BEFORE INSERT OR UPDATE on public.ambassadors
+CREATE TRIGGER tr_sync_ambassador_approval
+  BEFORE INSERT OR UPDATE ON public.ambassadors
+  FOR EACH ROW EXECUTE FUNCTION public.sync_ambassador_approval_status();
+
