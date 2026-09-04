@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador } from "../lib/supabase";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
@@ -1080,14 +1080,15 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         if (error) {
           console.warn("[fetchAuthenticatedAmbassador] Step 3 Query Error:", error);
         } else if (data) {
-          dbRecord = data;
+          dbRecord = mapRowToAmbassador(data);
           console.log("[fetchAuthenticatedAmbassador] Step 3 Success: Retrieved ambassador record from Supabase by user_id:", {
-            id: data.id,
-            user_id: data.user_id,
-            email: data.email,
-            name: data.name,
-            raw_avu_balance: data.avu_balance,
-            ledger_balance: data.ledger_balance
+            id: dbRecord.id,
+            user_id: dbRecord.user_id,
+            email: dbRecord.email,
+            name: dbRecord.name,
+            status: dbRecord.status,
+            raw_avu_balance: dbRecord.avu_balance,
+            ledger_balance: dbRecord.ledger_balance
           });
         } else {
           console.log("[fetchAuthenticatedAmbassador] Step 3 Notice: No ambassador row directly matched user_id:", authUserId);
@@ -1416,7 +1417,30 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   }, []);
 
   useEffect(() => {
-    if (!profile || profile.status !== "pending") return;
+    // 1. Listen for immediate local or cross-tab status update event
+    const handleStatusUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id?: string; email?: string; status?: string; is_approved?: boolean }>;
+      const detail = customEvent.detail;
+      if (!profile) {
+        fetchAmbassadorData(true);
+        return;
+      }
+      const match =
+        (detail?.email && profile.email && detail.email.toLowerCase() === profile.email.toLowerCase()) ||
+        (detail?.id && (detail.id === profile.id || detail.id === profile.user_id || detail.id === profile.db_id));
+      
+      if (match || !detail?.email) {
+        console.log("[AmbassadorDashboard] Received status update event, refreshing profile immediately:", detail);
+        fetchAmbassadorData(false);
+      }
+    };
+
+    window.addEventListener("advaltad-ambassador-status-updated", handleStatusUpdated);
+
+    // 2. Poll if status is still pending
+    if (!profile || profile.status !== "pending") {
+      return () => window.removeEventListener("advaltad-ambassador-status-updated", handleStatusUpdated);
+    }
 
     const intervalId = setInterval(async () => {
       try {
@@ -1431,10 +1455,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       } catch (err) {
         console.error("Error polling ambassador status:", err);
       }
-    }, 4000);
+    }, 3000);
 
-    return () => clearInterval(intervalId);
-  }, [profile?.status, profile?.email]);
+    return () => {
+      window.removeEventListener("advaltad-ambassador-status-updated", handleStatusUpdated);
+      clearInterval(intervalId);
+    };
+  }, [profile?.status, profile?.email, profile?.id]);
 
   useEffect(() => {
     if (!profile || !isSupabaseConfigured || !supabase) return;
@@ -2230,9 +2257,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     }, 1000);
   };
 
-  const rawProfileStatus = (profile?.badge_status || profile?.status || "pending").toString().toLowerCase().trim();
-  const isPendingApproval = rawProfileStatus === "pending";
-  const isDisapprovedStatus = rawProfileStatus === "disapproved" || rawProfileStatus === "rejected" || rawProfileStatus === "suspended";
+  const isApprovedFlag = (profile as any)?.is_approved === true || (profile as any)?.is_approved === "true" || (profile as any)?.is_approved === 1;
+  const rawProfileStatus = (profile?.badge_status || profile?.status || "").toString().toLowerCase().trim();
+  const isApprovedStatus = isApprovedFlag || rawProfileStatus === "approved" || rawProfileStatus === "active" || rawProfileStatus === "verified";
+  const isDisapprovedStatus = !isApprovedStatus && (rawProfileStatus === "disapproved" || rawProfileStatus === "rejected" || rawProfileStatus === "suspended");
+  const isPendingApproval = !isApprovedStatus && !isDisapprovedStatus;
 
   if (isLoadingProfile) {
     return (
@@ -3020,7 +3049,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </div>
                 <button
                   type="button"
-                  onClick={fetchAmbassadorData}
+                  onClick={() => fetchAmbassadorData(false)}
                   className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <Icon name="RefreshCw" size={14} />
