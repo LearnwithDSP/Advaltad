@@ -1301,14 +1301,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     const search = searchQuery.toLowerCase();
 
     const matchesSearch = name.includes(search) || email.includes(search) || phone.includes(search);
+    const isAppr = (ambassador as any).is_approved === true || (ambassador as any).is_approved === "true" || (ambassador as any).is_approved === 1 || ambassador.status === "approved" || ambassador.badge_status === "approved";
+    const isDisappr = !isAppr && (ambassador.status === "disapproved" || ambassador.badge_status === "disapproved");
+    const effStatus = isAppr ? "approved" : isDisappr ? "disapproved" : "pending";
 
     if (statusFilter === "all") return matchesSearch;
-    return matchesSearch && ambassador.status === statusFilter;
+    return matchesSearch && effStatus === statusFilter;
   });
 
   const totalAVU = ambassadors.reduce((acc, curr) => acc + curr.avu_balance, 0);
-  const pendingCount = ambassadors.filter(a => a.status === "pending").length;
-  const approvedCount = ambassadors.filter(a => a.status === "approved").length;
+  const approvedCount = ambassadors.filter(a => (a as any).is_approved === true || (a as any).is_approved === "true" || (a as any).is_approved === 1 || a.status === "approved" || a.badge_status === "approved").length;
+  const pendingCount = ambassadors.filter(a => !((a as any).is_approved === true || (a as any).is_approved === "true" || (a as any).is_approved === 1 || a.status === "approved" || a.badge_status === "approved") && a.status !== "disapproved" && a.badge_status !== "disapproved").length;
 
   const pendingWithdrawalsCount = withdrawals.filter(w => w.status === "Pending").length;
   const approvedWithdrawalsCount = withdrawals.filter(w => w.status === "Approved").length;
@@ -3250,6 +3253,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </div>
                 </div>
 
+                {/* Quick Status Control Buttons in Drawer */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Executive Verification Decision</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
+                      disabled={(selectedAmbassador as any).is_approved === true || selectedAmbassador.status === "approved" || selectedAmbassador.badge_status === "approved"}
+                      className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <CheckCircle size={14} />
+                      <span>{((selectedAmbassador as any).is_approved === true || selectedAmbassador.status === "approved" || selectedAmbassador.badge_status === "approved") ? "Verified & Approved" : "Approve Fellow"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDisapproveAmbassador(selectedAmbassador.id, selectedAmbassador.name)}
+                      disabled={selectedAmbassador.status === "disapproved" || selectedAmbassador.badge_status === "disapproved"}
+                      className="flex-1 py-2.5 px-3 bg-rose-50 hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed text-rose-700 border border-rose-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <XCircle size={14} />
+                      <span>{selectedAmbassador.status === "disapproved" ? "Disapproved" : "Disapprove"}</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="p-5 border border-slate-150 rounded-2xl bg-white space-y-4 text-left">
                   <div className="flex items-center gap-2 text-slate-900">
                     <Edit size={16} className="text-emerald-600" />
@@ -3454,25 +3482,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               </p>
               <div className="flex justify-end gap-2 text-xs">
                 <button
+                  disabled={isProcessingStatus}
                   onClick={() => setStatusConfirmModal(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700 cursor-pointer border border-transparent"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700 cursor-pointer border border-transparent disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
+                  disabled={isProcessingStatus}
                   onClick={async () => {
-                    if (statusConfirmModal.action === "approve") {
-                      await executeApproveAmbassador(statusConfirmModal.id, statusConfirmModal.name);
-                    } else if (statusConfirmModal.action === "disapprove") {
-                      await executeDisapproveAmbassador(statusConfirmModal.id, statusConfirmModal.name);
-                    } else if (statusConfirmModal.action === "suspend") {
-                      await executeSuspendAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                    setIsProcessingStatus(true);
+                    try {
+                      if (statusConfirmModal.action === "approve") {
+                        await executeApproveAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                      } else if (statusConfirmModal.action === "disapprove") {
+                        await executeDisapproveAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                      } else if (statusConfirmModal.action === "suspend") {
+                        await executeSuspendAmbassador(statusConfirmModal.id, statusConfirmModal.name);
+                      }
+                      setStatusConfirmModal(null);
+                    } finally {
+                      setIsProcessingStatus(false);
                     }
-                    setStatusConfirmModal(null);
                   }}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white font-extrabold rounded-xl cursor-pointer border border-transparent"
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white font-extrabold rounded-xl cursor-pointer border border-transparent disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  Confirm Action
+                  {isProcessingStatus ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    "Confirm Action"
+                  )}
                 </button>
               </div>
             </motion.div>
