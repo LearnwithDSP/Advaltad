@@ -1438,14 +1438,16 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     window.addEventListener("advaltad-ambassador-status-updated", handleStatusUpdated);
 
     // 2. Poll if status is still pending
-    if (!profile || profile.status !== "pending") {
+    const isCurrentlyApproved = (profile as any)?.is_approved === true || (profile as any)?.is_approved === "true" || (profile as any)?.is_approved === 1 || profile?.status === "approved" || profile?.badge_status === "approved";
+    if (!profile || isCurrentlyApproved) {
       return () => window.removeEventListener("advaltad-ambassador-status-updated", handleStatusUpdated);
     }
 
     const intervalId = setInterval(async () => {
       try {
         const user = await db.findAmbassadorByEmail(profile.email);
-        if (user && user.status !== "pending") {
+        const userApproved = (user as any)?.is_approved === true || (user as any)?.is_approved === "true" || (user as any)?.is_approved === 1 || user?.status === "approved" || user?.badge_status === "approved";
+        if (user && (userApproved || user.status !== "pending")) {
           setProfile(user);
           setAmbassadorName(user.name);
           setAmbassadorRegion(user.city);
@@ -1461,7 +1463,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       window.removeEventListener("advaltad-ambassador-status-updated", handleStatusUpdated);
       clearInterval(intervalId);
     };
-  }, [profile?.status, profile?.email, profile?.id]);
+  }, [profile?.status, profile?.badge_status, (profile as any)?.is_approved, profile?.email, profile?.id]);
 
   useEffect(() => {
     if (!profile || !isSupabaseConfigured || !supabase) return;
