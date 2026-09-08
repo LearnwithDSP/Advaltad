@@ -22,7 +22,6 @@ export const AmbassadorSection: React.FC = () => {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -238,8 +237,9 @@ export const AmbassadorSection: React.FC = () => {
         return;
       }
 
+      const isApprovedBool = (dbProfile as any).is_approved === true || (dbProfile as any).is_approved === "true" || (dbProfile as any).is_approved === 1;
       const rawStatus = (dbProfile.badge_status || dbProfile.status || "pending").toString().toLowerCase().trim();
-      const mappedStatus = (rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
+      const mappedStatus = (isApprovedBool || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
                            (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
 
       user = {
@@ -254,6 +254,7 @@ export const AmbassadorSection: React.FC = () => {
         password: dbProfile.password,
         status: mappedStatus,
         badge_status: mappedStatus,
+        is_approved: isApprovedBool || mappedStatus === "approved",
         avu_balance: typeof dbProfile.avu_balance === "number" ? dbProfile.avu_balance : 0,
         created_at: dbProfile.created_at || new Date().toISOString()
       };
@@ -474,6 +475,8 @@ export const AmbassadorSection: React.FC = () => {
             phone_number: phone,
             email: cleanEmail,
             badge_status: "pending",
+            status: "pending",
+            is_approved: false,
             avu_balance: 0
           };
 
@@ -521,6 +524,7 @@ export const AmbassadorSection: React.FC = () => {
               password,
               status: "pending" as const,
               badge_status: "pending" as const,
+              is_approved: false,
               avu_balance: 0,
               created_at: new Date().toISOString()
             };
@@ -924,26 +928,14 @@ export const AmbassadorSection: React.FC = () => {
 
                       <div>
                         <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Create Password</label>
-                        <div className="relative">
-                          <input
-                            type={showRegisterPassword ? "text" : "password"}
-                            required
-                            placeholder="••••••••"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full pl-4 pr-11 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
-                          />
-                          <button
-                            id="btn-toggle-register-password"
-                            type="button"
-                            onClick={() => setShowRegisterPassword(!showRegisterPassword)}
-                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors cursor-pointer p-1"
-                            aria-label={showRegisterPassword ? "Hide password" : "Show password"}
-                            title={showRegisterPassword ? "Hide password" : "Show password"}
-                          >
-                            {showRegisterPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
-                        </div>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-brand-primary focus:outline-none text-sm font-semibold text-brand-charcoal"
+                        />
                       </div>
 
                       <button
