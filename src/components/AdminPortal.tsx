@@ -1056,79 +1056,45 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setGrantSuccess(false);
 
     try {
-      const currentBal = typeof selectedAmbassador.avu_balance === "number" ? selectedAmbassador.avu_balance : (selectedAmbassador.ledger_balance || 0);
-      const newBalance = Number((currentBal + tokens).toFixed(3));
-
-      // 1. Update AVU and ledger balance across all identifier variations in Supabase & local state
-      await db.updateAvuBalance(selectedAmbassador.id, newBalance);
-      if (selectedAmbassador.email) await db.updateAvuBalance(selectedAmbassador.email, newBalance);
-      if (selectedAmbassador.user_id && selectedAmbassador.user_id !== selectedAmbassador.id) {
-        await db.updateAvuBalance(selectedAmbassador.user_id, newBalance);
-      }
-      if (selectedAmbassador.ambassador_id && selectedAmbassador.ambassador_id !== selectedAmbassador.id) {
-        await db.updateAvuBalance(selectedAmbassador.ambassador_id, newBalance);
-      }
-      if (selectedAmbassador.db_id) await db.updateAvuBalance(selectedAmbassador.db_id, newBalance);
-
-      // 2. Sync wallet record in ambassador_wallet
-      const currentWallet = wallets.find(w => 
-        w.ambassador_id === selectedAmbassador.id || 
-        (selectedAmbassador.email && w.email && w.email.toLowerCase() === selectedAmbassador.email.toLowerCase())
-      );
-      if (currentWallet) {
-        await db.updateWalletBalance(selectedAmbassador.id, newBalance);
-        if (selectedAmbassador.email) await db.updateWalletBalance(selectedAmbassador.email, newBalance);
-      } else {
-        await db.createWallet({
-          ambassador_id: selectedAmbassador.id,
-          email: selectedAmbassador.email,
-          balance: newBalance
-        });
-      }
-
-      // 3. Log direct token grant in Supabase transaction log tables (token_grants, token_transactions, wallet_transactions)
-      await db.logTokenGrant({
-        admin_id: currentAdmin?.id || currentAdmin?.user_id || "admin",
-        admin_name: currentAdmin?.name || "Super Admin",
-        ambassador_id: selectedAmbassador.id,
-        ambassador_name: selectedAmbassador.name,
-        grant_amount: tokens,
-        transaction_type: "DIRECT_GRANT",
-        timestamp: new Date().toISOString()
+      // Execute unified rock-solid AVU crediting via server API / DB client
+      const creditRes = await db.creditAmbassadorAvu({
+        email: selectedAmbassador.email,
+        id: selectedAmbassador.id,
+        db_id: selectedAmbassador.db_id,
+        user_id: selectedAmbassador.user_id,
+        ambassador_id: selectedAmbassador.ambassador_id,
+        idOrEmail: selectedAmbassador.email || selectedAmbassador.id,
+        amount: tokens,
+        mode: "increment",
+        adminName: currentAdmin?.name || "Super Admin",
+        reason: `Super Admin "${currentAdmin?.name || 'Super Admin'}" authorized a direct grant of ${tokens} AVU tokens.`
       });
 
-      // 4. Log deposit record for funding history sync
-      const grantRef = `GRANT-${Date.now()}`;
+      const newBalance = creditRes.newBalance;
+
+      // Log direct token grant in Supabase transaction log tables
       try {
-        await db.createDeposit({
+        await db.logTokenGrant({
+          admin_id: currentAdmin?.id || currentAdmin?.user_id || "admin",
+          admin_name: currentAdmin?.name || "Super Admin",
           ambassador_id: selectedAmbassador.id,
-          funding_by_name: currentAdmin?.name || "Super Admin Authorization",
-          phone_number: selectedAmbassador.phone || "",
-          program_sponsored: "AVU Admin Token Authorization",
-          amount_naira: tokens * 1000,
-          avu_earned: tokens,
-          paystack_reference: grantRef,
-          status: "success"
+          ambassador_name: selectedAmbassador.name,
+          grant_amount: tokens,
+          transaction_type: "DIRECT_GRANT",
+          timestamp: new Date().toISOString()
         });
-      } catch (depErr) {
-        console.warn("Error inserting grant deposit:", depErr);
-      }
-
-      // 5. Log activity
-      await db.logActivity({
-        ambassador_id: selectedAmbassador.id,
-        ambassador_name: selectedAmbassador.name,
-        type: "avu_transfer",
-        desc: `Super Admin "${currentAdmin?.name}" authorized a direct grant of ${tokens} AVU tokens to portfolio.`,
-        amount: `${tokens} AVU`
-      });
+      } catch (_) {}
 
       setGrantSuccess(true);
       setGrantAmount("");
 
       // Optimistically update side drawer and main table list state
       setSelectedAmbassador(prev => prev ? { ...prev, avu_balance: newBalance, ledger_balance: newBalance } : null);
-      setAmbassadors(prev => prev.map(a => a.id === selectedAmbassador.id ? { ...a, avu_balance: newBalance, ledger_balance: newBalance } : a));
+      setAmbassadors(prev => prev.map(a => 
+        (a.id === selectedAmbassador.id || (selectedAmbassador.email && a.email?.toLowerCase() === selectedAmbassador.email.toLowerCase()))
+          ? { ...a, avu_balance: newBalance, ledger_balance: newBalance }
+          : a
+      ));
 
       // Instant Toast Notification feedback
       addToast(
@@ -1228,64 +1194,58 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
     setIsFundingWallet(true);
     try {
-      const currentWallet = wallets.find(w => 
-        w.ambassador_id === selectedWalletAmbassador.id || 
-        (selectedWalletAmbassador.email && w.email && w.email.toLowerCase() === selectedWalletAmbassador.email.toLowerCase())
-      );
-      const currentBal = currentWallet ? currentWallet.balance : (selectedWalletAmbassador.avu_balance || 0);
-      const newBal = currentBal + amount;
-
-      if (currentWallet) {
-        await db.updateWalletBalance(selectedWalletAmbassador.id, newBal);
-        if (selectedWalletAmbassador.email) await db.updateWalletBalance(selectedWalletAmbassador.email, newBal);
-      } else {
-        await db.createWallet({
-          ambassador_id: selectedWalletAmbassador.id,
-          email: selectedWalletAmbassador.email,
-          balance: newBal
-        });
-      }
-
-      await db.updateAvuBalance(selectedWalletAmbassador.id, newBal);
-      if (selectedWalletAmbassador.email) await db.updateAvuBalance(selectedWalletAmbassador.email, newBal);
-      if (selectedWalletAmbassador.user_id && selectedWalletAmbassador.user_id !== selectedWalletAmbassador.id) {
-        await db.updateAvuBalance(selectedWalletAmbassador.user_id, newBal);
-      }
-      if (selectedWalletAmbassador.ambassador_id && selectedWalletAmbassador.ambassador_id !== selectedWalletAmbassador.id) {
-        await db.updateAvuBalance(selectedWalletAmbassador.ambassador_id, newBal);
-      }
-
-      const grantRef = `GRANT-WALLET-${Date.now()}`;
-      try {
-        await db.createDeposit({
-          ambassador_id: selectedWalletAmbassador.id,
-          funding_by_name: currentAdmin?.name || "Admin Wallet Allocation",
-          phone_number: selectedWalletAmbassador.phone || "",
-          program_sponsored: "AVU Admin Wallet Allocation",
-          amount_naira: amount * 1000,
-          avu_earned: amount,
-          paystack_reference: grantRef,
-          status: "success"
-        });
-      } catch (depErr) {
-        console.warn("Error inserting wallet deposit:", depErr);
-      }
-
-      await db.logActivity({
-        ambassador_id: selectedWalletAmbassador.id,
-        ambassador_name: selectedWalletAmbassador.name,
-        type: "avu_transfer",
-        desc: `Super Admin "${currentAdmin?.name}" allocated ${amount} AVU to Ambassador wallet.`,
-        amount: `${amount} AVU`
+      const creditRes = await db.creditAmbassadorAvu({
+        email: selectedWalletAmbassador.email,
+        id: selectedWalletAmbassador.id,
+        db_id: selectedWalletAmbassador.db_id,
+        user_id: selectedWalletAmbassador.user_id,
+        ambassador_id: selectedWalletAmbassador.ambassador_id,
+        idOrEmail: selectedWalletAmbassador.email || selectedWalletAmbassador.id,
+        amount,
+        mode: "increment",
+        adminName: currentAdmin?.name || "Admin",
+        reason: `Admin "${currentAdmin?.name || 'Admin'}" allocated ${amount} AVU to Ambassador wallet.`
       });
+
+      const newBal = creditRes.newBalance;
+
+      try {
+        await db.logTokenGrant({
+          admin_id: currentAdmin?.id || currentAdmin?.user_id || "admin",
+          admin_name: currentAdmin?.name || "Admin",
+          ambassador_id: selectedWalletAmbassador.id,
+          ambassador_name: selectedWalletAmbassador.name,
+          grant_amount: amount,
+          transaction_type: "ADMIN_WALLET_FUNDING",
+          timestamp: new Date().toISOString()
+        });
+      } catch (_) {}
 
       setWalletFundAmount("");
       setSelectedWalletAmbassador(null);
       setIsWalletModalOpen(false);
+
+      setAmbassadors(prev => prev.map(a => 
+        (a.id === selectedWalletAmbassador.id || (selectedWalletAmbassador.email && a.email?.toLowerCase() === selectedWalletAmbassador.email.toLowerCase()))
+          ? { ...a, avu_balance: newBal, ledger_balance: newBal }
+          : a
+      ));
+
+      addToast(
+        "Wallet Funded",
+        `Successfully credited ${amount.toLocaleString()} AVU to ${selectedWalletAmbassador.name}'s wallet. New balance: ${newBal.toLocaleString()} AVU`,
+        "success"
+      );
+
       await loadWallets();
       await loadDbData();
     } catch (err) {
       console.error("Failed to fund wallet:", err);
+      addToast(
+        "Funding Failed",
+        `Failed to credit wallet for ${selectedWalletAmbassador?.name || 'Ambassador'}.`,
+        "error"
+      );
     } finally {
       setIsFundingWallet(false);
     }
@@ -2134,6 +2094,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 >
                                   <XCircle size={12} />
                                   {amb.status === "disapproved" ? "Disapproved" : "Disapprove"}
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    setSelectedWalletAmbassador(amb);
+                                    setWalletFundAmount("");
+                                    setIsWalletModalOpen(true);
+                                  }}
+                                  className="px-3.5 py-2 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                  title={`Directly Credit AVU tokens to ${amb.name}`}
+                                >
+                                  <Coins size={12} className="text-emerald-600" />
+                                  Credit AVU
                                 </button>
 
                                 <button
@@ -3419,26 +3392,54 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 </button>
               </div>
 
-              <div className="mb-4">
+              <div className="mb-4 space-y-2">
                 <p className="text-xs text-slate-500">
                   You are funding the primary wallet ledger for <strong className="text-slate-950">{selectedWalletAmbassador.name}</strong> ({selectedWalletAmbassador.email}).
                 </p>
+                <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Current Wallet Balance</span>
+                  <span className="text-sm font-black text-emerald-900 font-mono">{(selectedWalletAmbassador.avu_balance || 0).toLocaleString()} AVU</span>
+                </div>
               </div>
 
               <form onSubmit={handleFundWallet} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1.5">
-                    Funding Amount (AVU Tokens)
+                    Credit Amount (AVU Tokens)
                   </label>
                   <input
                     type="number"
+                    step="any"
                     required
-                    min="1"
+                    min="0.001"
                     value={walletFundAmount}
                     onChange={(e) => setWalletFundAmount(e.target.value)}
-                    placeholder="e.g. 1000"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl font-semibold outline-none text-slate-800"
+                    placeholder="e.g. 50 or 500"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl font-semibold outline-none text-slate-800 text-sm"
                   />
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[10, 25, 50, 100, 500, 1000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setWalletFundAmount(String(preset))}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 transition-colors cursor-pointer"
+                      >
+                        +{preset} AVU
+                      </button>
+                    ))}
+                  </div>
+
+                  {parseFloat(walletFundAmount) > 0 && (
+                    <div className="mt-2.5 text-[11px] text-slate-600 font-medium">
+                      Projected New Balance:{" "}
+                      <strong className="text-emerald-700 font-mono font-bold">
+                        {((selectedWalletAmbassador.avu_balance || 0) + parseFloat(walletFundAmount)).toLocaleString()} AVU
+                      </strong>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
@@ -3454,10 +3455,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </button>
                   <button
                     type="submit"
-                    disabled={isFundingWallet}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold uppercase rounded-xl transition-all cursor-pointer border-transparent flex items-center justify-center min-w-[100px]"
+                    disabled={isFundingWallet || !walletFundAmount || parseFloat(walletFundAmount) <= 0}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold uppercase rounded-xl transition-all cursor-pointer border-transparent flex items-center justify-center min-w-[120px] shadow-sm"
                   >
-                    {isFundingWallet ? "Processing..." : "Allocate Funds"}
+                    {isFundingWallet ? "Processing..." : "Credit AVU Now"}
                   </button>
                 </div>
               </form>
