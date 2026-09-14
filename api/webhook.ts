@@ -231,25 +231,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
 
-          // 7. Update Plural ambassador_wallets table
+          // 7. Update Plural ambassador_wallets table (Single Source of Truth)
           try {
-            let pQuery = supabaseClient.from("ambassador_wallets").select("id");
-            if (dbRowId && isUuid(dbRowId)) pQuery = pQuery.eq("ambassador_id", dbRowId);
-            else if (cleanEmail) pQuery = pQuery.ilike("email", cleanEmail);
-            const { data: pluralWallets } = await pQuery.maybeSingle();
-
-            if (pluralWallets) {
-              await supabaseClient
+            const walletAmbId = ambassador.user_id && isUuid(ambassador.user_id) ? ambassador.user_id : (dbRowId && isUuid(dbRowId) ? dbRowId : null);
+            if (walletAmbId) {
+              const { error: upsertErr } = await supabaseClient
                 .from("ambassador_wallets")
-                .update({ balance: newAvuBalance })
-                .eq("id", pluralWallets.id);
-            } else {
-              await supabaseClient
-                .from("ambassador_wallets")
-                .insert({
-                  ambassador_id: dbRowId,
+                .upsert({
+                  ambassador_id: walletAmbId,
+                  avu_balance: newAvuBalance,
+                  balance: newAvuBalance,
                   email: cleanEmail,
-                  balance: newAvuBalance
+                  updated_at: new Date().toISOString()
+                }, { onConflict: "ambassador_id" });
+
+              if (upsertErr) {
+                console.warn("[webhook] ambassador_wallets upsert warning:", upsertErr);
+              }
+            }
+          } catch (_) {}
+
+          // 7b. Log into avu_transactions immutable ledger
+          try {
+            const txAmbId = ambassador.user_id && isUuid(ambassador.user_id) ? ambassador.user_id : (dbRowId && isUuid(dbRowId) ? dbRowId : null);
+            if (txAmbId) {
+              await supabaseClient
+                .from("avu_transactions")
+                .insert({
+                  ambassador_id: txAmbId,
+                  amount: avuToEarn,
+                  type: "PAYSTACK_DEPOSIT",
+                  status: "COMPLETED",
+                  payment_reference: reference,
+                  metadata: {
+                    amount_naira: amountNaira,
+                    funding_by_name: fundingByName,
+                    program_sponsored: programSponsored,
+                    customer_email: cleanEmail
+                  },
+                  created_at: new Date().toISOString()
                 });
             }
           } catch (_) {}
