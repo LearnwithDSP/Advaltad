@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance } from "../lib/supabase";
+import { useAmbassadorWallet } from "../hooks/useAmbassadorWallet";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
@@ -878,9 +879,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // Dynamic candidate name binding strictly resolving the ambassador's real name
   const candidateAmbassadorName = getAmbassadorDisplayName(profile, ambassadorName);
   
-  // Single Source of Truth for Wallet Balance from Supabase
-  const activeIdentifier = profile?.user_id || profile?.db_id || profile?.email || profile?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
-  const { balance: avuBalance, refetch: refetchWalletBalance } = useWalletBalance(activeIdentifier);
+  // Single Source of Truth for Wallet Balance from Supabase (Guarded against refresh race conditions)
+  // Priority order: verified session email ALWAYS takes precedence over internal ID so it matches the Supabase record
+  const activeEmail = profile?.email || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null) || "";
+  const activeIdentifier = activeEmail || profile?.db_id || profile?.user_id || profile?.id || "";
+  const { balance: avuBalance, refetch: refetchWalletBalance } = useAmbassadorWallet(activeIdentifier);
+
+  // Synchronize profile.avu_balance with avuBalance so UI components and children never experience drift or reversal
+  useEffect(() => {
+    if (avuBalance !== undefined && avuBalance !== null && profile && profile.avu_balance !== avuBalance) {
+      setProfile(prev => prev ? { ...prev, avu_balance: avuBalance, ledger_balance: avuBalance } : null);
+    }
+  }, [avuBalance]);
 
   // Direct DOM binding for Desktop & Mobile Balance Elements
   useEffect(() => {
@@ -1156,18 +1166,27 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
 
     // Step 4: Verify and normalize avu_balance directly from the Supabase ambassadors table row
     const exactBalance = extractExactAvuBalance(dbRecord);
+    // Also consult live fetchWalletBalance across all tables (ambassadors, ambassador_wallets, deposits, token_grants)
+    const liveWalletBal = await fetchWalletBalance(dbRecord.email || authUserEmail || dbRecord.id || authUserId);
+    const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
+    const cachedVal = cachedStr && !isNaN(Number(cachedStr)) ? Number(cachedStr) : 0;
+    const resolvedBalance = Math.max(exactBalance, liveWalletBal, cachedVal);
 
-    console.log("[fetchAuthenticatedAmbassador] Step 4: Validated exact avu_balance directly from Supabase ambassadors row:", {
+    if (resolvedBalance > 0 && typeof window !== "undefined") {
+      localStorage.setItem("advaltad_cached_wallet_balance", String(resolvedBalance));
+    }
+
+    console.log("[fetchAuthenticatedAmbassador] Step 4: Validated exact avu_balance directly from Supabase:", {
       ambassador_id: dbRecord.id,
       user_id: dbRecord.user_id,
       email: dbRecord.email,
-      exact_database_balance: exactBalance
+      exact_database_balance: resolvedBalance
     });
 
     const verifiedAmbassador: DbAmbassador = {
       ...dbRecord,
-      avu_balance: exactBalance,
-      ledger_balance: exactBalance
+      avu_balance: resolvedBalance,
+      ledger_balance: resolvedBalance
     };
 
     console.log("[fetchAuthenticatedAmbassador] Step 5: Final verified ambassador object ready.", verifiedAmbassador);
@@ -1184,10 +1203,25 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         throw new Error("Unable to retrieve authenticated ambassador profile");
       }
 
-      setProfile(user);
-      setAmbassadorName(user.name);
-      setAmbassadorRegion(user.city);
-      setAmbassadorField(user.field);
+      // Merge verified balance with any higher cached or active wallet balance to prevent reversal
+      const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
+      const cachedVal = cachedStr && !isNaN(Number(cachedStr)) ? Number(cachedStr) : 0;
+      const verifiedAvu = Math.max(user.avu_balance || 0, avuBalance, cachedVal);
+
+      const mergedUser: DbAmbassador = {
+        ...user,
+        avu_balance: verifiedAvu,
+        ledger_balance: verifiedAvu,
+      };
+
+      if (verifiedAvu > 0 && typeof window !== "undefined") {
+        localStorage.setItem("advaltad_cached_wallet_balance", String(verifiedAvu));
+      }
+
+      setProfile(mergedUser);
+      setAmbassadorName(mergedUser.name);
+      setAmbassadorRegion(mergedUser.city);
+      setAmbassadorField(mergedUser.field);
       refetchWalletBalance();
 
       if (isInitial) {
@@ -1468,7 +1502,15 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         const user = await db.findAmbassadorByEmail(profile.email);
         const userApproved = (user as any)?.is_approved === true || (user as any)?.is_approved === "true" || (user as any)?.is_approved === 1 || user?.status === "approved" || user?.badge_status === "approved";
         if (user && (userApproved || user.status !== "pending")) {
-          setProfile(user);
+          const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
+          const cachedVal = cachedStr && !isNaN(Number(cachedStr)) ? Number(cachedStr) : 0;
+          const verifiedAvu = Math.max(user.avu_balance || 0, avuBalance, cachedVal);
+          const mergedUser: DbAmbassador = {
+            ...user,
+            avu_balance: verifiedAvu,
+            ledger_balance: verifiedAvu,
+          };
+          setProfile(mergedUser);
           setAmbassadorName(user.name);
           setAmbassadorRegion(user.city);
           setAmbassadorField(user.field);
