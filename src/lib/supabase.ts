@@ -413,11 +413,19 @@ export async function checkApprovalStatus(email: string): Promise<boolean> {
  * inspecting ambassadors, ambassador_wallet, and ambassador_wallets safely without UUID cast crashes.
  */
 export async function fetchWalletBalance(identifier?: string | null): Promise<number> {
+  const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+  const cachedBalanceStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
+  const cachedBalance = cachedBalanceStr && !isNaN(Number(cachedBalanceStr)) ? Number(cachedBalanceStr) : 0;
+
   if (!identifier) {
-    identifier = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+    identifier = sessionEmail;
+  }
+  if (!identifier && cachedBalance > 0) {
+    return cachedBalance;
   }
   if (!identifier) return 0;
   const cleanId = identifier.trim();
+  if (!cleanId && cachedBalance > 0) return cachedBalance;
   if (!cleanId) return 0;
 
   let bestBalance = 0;
@@ -437,7 +445,9 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
     (a.db_id && a.db_id.toLowerCase() === cleanLower)
   );
 
-  let targetEmail = isEmail ? cleanLower : (localMatch?.email?.trim().toLowerCase() || "");
+  let targetEmail = isEmail
+    ? cleanLower
+    : (localMatch?.email?.trim().toLowerCase() || sessionEmail?.trim().toLowerCase() || "");
   let targetDbId = isStrictUuid
     ? cleanId
     : (localMatch?.db_id && isUuid(localMatch.db_id)
@@ -454,7 +464,7 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
       // Tier 1: Query ambassadors / Ambassadors table
       for (const tableName of ["ambassadors", "Ambassadors"]) {
         try {
-          let query = client.from(tableName).select("id, user_id, email, avu_balance, ledger_balance");
+          let query = client.from(tableName).select("id, user_id, email, avu_balance, ledger_balance, points, tokens, avu_tokens, wallet_balance, balance");
           if (targetEmail) {
             query = query.ilike("email", targetEmail);
           } else if (isStrictUuid) {
@@ -462,15 +472,16 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
           } else if (targetDbId) {
             query = query.or(`id.eq.${targetDbId},user_id.eq.${targetDbId}`);
           } else {
-            // Text-only search on ambassador_id (NEVER search UUID user_id with string)
             query = query.eq("ambassador_id", cleanId);
           }
 
           const { data, error } = await query.maybeSingle();
           if (!error && data) {
             const exactBal = extractExactAvuBalance(data);
-            bestBalance = Math.max(bestBalance, exactBal);
-            balanceFound = true;
+            if (exactBal > 0) {
+              bestBalance = Math.max(bestBalance, exactBal);
+              balanceFound = true;
+            }
             if (data.id && isUuid(data.id)) {
               resolvedDbId = data.id;
             }
@@ -481,49 +492,106 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
         } catch (_) {}
       }
 
-      // Tier 2: Check ambassador_wallet (singular, UUID ambassador_id)
-      if (resolvedDbId && isUuid(resolvedDbId)) {
-        try {
-          const { data: wData } = await client
-            .from("ambassador_wallet")
-            .select("balance")
-            .eq("ambassador_id", resolvedDbId)
-            .maybeSingle();
-          if (wData && typeof wData.balance === "number") {
-            bestBalance = Math.max(bestBalance, Number(wData.balance));
-            balanceFound = true;
-          }
-        } catch (_) {}
-      }
-
-      // Tier 3: Check ambassador_wallets (plural)
+      // Tier 2: Check ambassador_wallets (plural table, check both avu_balance and balance)
       try {
-        let pQuery = client.from("ambassador_wallets").select("balance");
+        let pQuery = client.from("ambassador_wallets").select("avu_balance, balance, ambassador_id");
         if (resolvedDbId && isUuid(resolvedDbId)) {
           pQuery = pQuery.eq("ambassador_id", resolvedDbId);
         } else if (resolvedEmail || targetEmail) {
           pQuery = pQuery.ilike("email", resolvedEmail || targetEmail);
+        } else if (isStrictUuid) {
+          pQuery = pQuery.eq("ambassador_id", cleanId);
         }
         const { data: pwData } = await pQuery.maybeSingle();
-        if (pwData && typeof pwData.balance === "number") {
-          bestBalance = Math.max(bestBalance, Number(pwData.balance));
-          balanceFound = true;
+        if (pwData) {
+          const wBal = Number(pwData.avu_balance ?? pwData.balance ?? 0);
+          if (wBal > 0) {
+            bestBalance = Math.max(bestBalance, wBal);
+            balanceFound = true;
+          }
         }
       } catch (_) {}
+
+      // Tier 3: Check ambassador_wallet (singular table)
+      if (resolvedDbId && isUuid(resolvedDbId)) {
+        try {
+          const { data: wData } = await client
+            .from("ambassador_wallet")
+            .select("balance, avu_balance")
+            .eq("ambassador_id", resolvedDbId)
+            .maybeSingle();
+          if (wData) {
+            const wBal = Number(wData.balance ?? wData.avu_balance ?? 0);
+            if (wBal > 0) {
+              bestBalance = Math.max(bestBalance, wBal);
+              balanceFound = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Tier 4: Check deposits table for successful funded deposits
+      if (resolvedEmail || targetEmail || cleanId) {
+        try {
+          const emailToQuery = resolvedEmail || targetEmail;
+          let depQuery = client.from("deposits").select("avu_earned").eq("status", "success");
+          if (emailToQuery) {
+            depQuery = depQuery.or(`email.ilike.${emailToQuery},funding_by_name.ilike.${emailToQuery},ambassador_id.eq.${cleanId}`);
+          } else {
+            depQuery = depQuery.eq("ambassador_id", cleanId);
+          }
+          const { data: depRows } = await depQuery;
+          if (depRows && depRows.length > 0) {
+            const totalDepositAvu = depRows.reduce((acc: number, d: any) => acc + (Number(d.avu_earned) || 0), 0);
+            if (totalDepositAvu > 0) {
+              bestBalance = Math.max(bestBalance, Number(totalDepositAvu.toFixed(3)));
+              balanceFound = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Tier 5: Check token_grants table for direct admin credits
+      if (resolvedDbId || targetEmail || cleanId) {
+        try {
+          let grantQuery = client.from("token_grants").select("grant_amount, amount");
+          if (targetEmail) {
+            grantQuery = grantQuery.or(`ambassador_id.eq.${resolvedDbId || cleanId},ambassador_name.ilike.${targetEmail}`);
+          } else {
+            grantQuery = grantQuery.eq("ambassador_id", resolvedDbId || cleanId);
+          }
+          const { data: grantRows } = await grantQuery;
+          if (grantRows && grantRows.length > 0) {
+            const totalGrants = grantRows.reduce((acc: number, g: any) => acc + (Number(g.grant_amount || g.amount) || 0), 0);
+            if (totalGrants > 0) {
+              bestBalance = Math.max(bestBalance, Number(totalGrants.toFixed(3)));
+              balanceFound = true;
+            }
+          }
+        } catch (_) {}
+      }
 
     } catch (err) {
       console.warn("[fetchWalletBalance] Supabase query error:", err);
     }
   }
 
-  // Tier 4: Fallback to local storage if offline or to verify local cache
+  // Tier 6: Fallback to local storage if offline or to verify local cache
   if (localMatch) {
     const localBal = extractExactAvuBalance(localMatch);
-    if (!balanceFound) {
-      bestBalance = localBal;
-    } else {
+    if (localBal > 0) {
       bestBalance = Math.max(bestBalance, localBal);
+      balanceFound = true;
     }
+  }
+
+  // CRITICAL ANTI-REVERSAL GUARD:
+  // If the database query temporarily returned 0 (e.g. empty table, unlinked foreign key, or race condition),
+  // but a verified positive balance was previously captured in cache, DO NOT OVERWRITE WITH 0!
+  if (bestBalance === 0 && cachedBalance > 0) {
+    bestBalance = cachedBalance;
+  } else if (bestBalance > 0 && typeof window !== "undefined") {
+    localStorage.setItem("advaltad_cached_wallet_balance", String(bestBalance));
   }
 
   return bestBalance;
