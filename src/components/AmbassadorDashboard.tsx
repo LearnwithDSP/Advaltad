@@ -510,8 +510,9 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
 
   const amt = parseFloat(amountNaira) || 0;
   const avuToEarn = convertNairaToAvu(amt);
-  const email = profile?.email || "ambassador@domain.com";
-  const currentAmbassadorId = profile?.id || "00000000-0000-0000-0000-000000000000";
+  const sessionEmail = typeof window !== "undefined" ? (localStorage.getItem("advaltad_session_email") || "") : "";
+  const email = (profile?.email || sessionEmail || "ambassador@advaltad.org").trim();
+  const currentAmbassadorId = (profile?.id || profile?.db_id || profile?.user_id || profile?.ambassador_id || email).trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -564,11 +565,22 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
     // 2. Open Paystack payment modal with active loading overlay in UI
     try {
       const metadata = {
+        ambassador_id: currentAmbassadorId,
+        ambassador_email: email,
+        email: email,
+        user_id: profile?.user_id || "",
+        db_id: profile?.db_id || profile?.id || "",
+        avu_earned: avuToEarn,
         custom_fields: [
           {
             display_name: "Ambassador ID",
             variable_name: "ambassador_id",
             value: currentAmbassadorId,
+          },
+          {
+            display_name: "Ambassador Email",
+            variable_name: "ambassador_email",
+            value: email,
           },
           {
             display_name: "Funding By",
@@ -579,35 +591,43 @@ export const FundWalletModal: React.FC<FundWalletModalProps> = ({
             display_name: "Program Sponsored",
             variable_name: "program_sponsored",
             value: programSponsored,
+          },
+          {
+            display_name: "AVU Earned",
+            variable_name: "avu_earned",
+            value: avuToEarn,
           }
         ]
       };
 
       const paymentResult = await initializePayment(amt, email, metadata, transactionRef);
       
+      const earnedTokens = Number(paymentResult.avuEarned) || Number(avuToEarn) || 0;
+      const paymentRef = paymentResult.reference || transactionRef;
+
       // 3. Upon receiving successful payment callback, commit balance increment to wallet and profiles/ambassadors tables
       const result = await db.processFundingSuccess(
         currentAmbassadorId,
         email,
         amt,
-        paymentResult.avuEarned || avuToEarn,
-        paymentResult.reference || transactionRef
+        earnedTokens,
+        paymentRef
       );
 
       if (result.success) {
         const receiptObj: ReceiptData = {
-          reference: paymentResult.reference || transactionRef,
+          reference: paymentRef,
           ambassadorName: profile?.name || fundingByName || "Ambassador",
           ambassadorEmail: email,
           amountNaira: amt,
-          avuEarned: paymentResult.avuEarned || avuToEarn,
+          avuEarned: earnedTokens,
           date: new Date().toLocaleString(),
           fundingByName: fundingByName,
           programSponsored: programSponsored,
         };
         setCompletedReceipt(receiptObj);
         onSuccess(result.newBalance);
-        showToast("success", "Wallet Balance Credited", `Successfully committed +${avuToEarn} AVU to your wallet balance!`);
+        showToast("success", "Wallet Balance Credited", `Successfully committed +${earnedTokens.toLocaleString()} AVU to your wallet balance!`);
         fetchAmbassadorData();
       } else {
         showToast("error", "Verification Notice", "Could not fully commit wallet transaction in database, please contact support.");
