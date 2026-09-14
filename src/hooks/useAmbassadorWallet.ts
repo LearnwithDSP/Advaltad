@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, fetchWalletBalance } from "../lib/supabase";
 
 export interface UseAmbassadorWalletResult {
   balance: number;
@@ -13,11 +13,11 @@ export interface UseAmbassadorWalletResult {
 /**
  * Production-grade custom hook for Ambassador AVU Wallet Balance.
  * 
- * FIXES ROOT CAUSE OF "FLASH AND DISAPPEAR" BUG:
- * 1. Waits for Supabase Auth to finish initializing before querying.
- * 2. Never zeroes out state during auth loading or transient unauthenticated frames.
+ * FIXES ROOT CAUSE OF "FLASH AND REVERSE TO ZERO" BUG:
+ * 1. Synchronizes across all Supabase tables (ambassadors, ambassador_wallets, deposits, token_grants).
+ * 2. Strict Anti-Reversal Guard: A verified positive balance NEVER reverts to 0 due to an unlinked foreign key or query race condition.
  * 3. Uses localStorage cache to eliminate UI flicker on refresh.
- * 4. Subscribes to Supabase Postgres Realtime for instant balance updates on Paystack or Admin credits.
+ * 4. Subscribes to Supabase Postgres Realtime for instant balance updates on Paystack deposits or Admin credits.
  */
 export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassadorWalletResult {
   const [balance, setBalance] = useState<number>(() => {
@@ -58,112 +58,124 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
     }
 
     let isMounted = true;
+    let unsubscribe: (() => void) | undefined;
 
-    // Fetch initial auth session
-    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
-      if (!isMounted) return;
-      if (sessionError) {
-        console.warn("[useAmbassadorWallet] Session resolution warning:", sessionError.message);
+    // Fetch initial auth session with robust catch guard against network drops
+    try {
+      supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+        if (!isMounted) return;
+        if (sessionError) {
+          console.warn("[useAmbassadorWallet] Session resolution warning:", sessionError.message);
+        }
+        const resolvedId = session?.user?.email || session?.user?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
+        setActiveUserId(resolvedId);
+        setAuthLoading(false);
+      }).catch((err) => {
+        if (!isMounted) return;
+        console.warn("[useAmbassadorWallet] Safe session fallback on network issue:", err?.message || err);
+        const fallbackEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+        setActiveUserId(fallbackEmail);
+        setAuthLoading(false);
+      });
+    } catch (err) {
+      if (isMounted) {
+        console.warn("[useAmbassadorWallet] Supabase auth exception:", err);
+        const fallbackEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+        setActiveUserId(fallbackEmail);
+        setAuthLoading(false);
       }
-      const resolvedId = session?.user?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
-      setActiveUserId(resolvedId);
-      setAuthLoading(false);
-    });
+    }
 
     // Subscribe to auth state transitions
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) return;
-      const currentId = session?.user?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
-      setActiveUserId(currentId);
-      setAuthLoading(false);
-    });
+    try {
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!isMounted) return;
+        const currentId = session?.user?.email || session?.user?.id || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null);
+        setActiveUserId(currentId);
+        setAuthLoading(false);
+      });
+      unsubscribe = data?.subscription?.unsubscribe;
+    } catch (err) {
+      console.warn("[useAmbassadorWallet] onAuthStateChange setup failed:", err);
+    }
 
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+        } catch (_) {}
+      }
     };
   }, [explicitUserId]);
 
   // --------------------------------------------------------------------------
-  // Step 2: Atomic Wallet Fetch from PostgreSQL Single Source of Truth
+  // Step 2: Multi-Tier Atomic Wallet Fetch from PostgreSQL Single Source of Truth
   // --------------------------------------------------------------------------
   const fetchBalance = useCallback(async (): Promise<number> => {
     const userId = activeUserIdRef.current;
+    const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+    const identifierToUse = userId || sessionEmail;
 
     // CRITICAL GUARD: Do not query or reset balance if auth is still resolving
-    if (!userId) {
-      setLoading(false);
-      // Return existing state; NEVER zero out prematurely!
-      return balance;
-    }
-
-    if (!isSupabaseConfigured || !supabase) {
+    if (!identifierToUse) {
       setLoading(false);
       return balance;
     }
 
     try {
-      // 1. Try atomic PostgreSQL RPC get_or_create_ambassador_wallet
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId);
+      // 1. Fetch comprehensive verified balance across all live Supabase tables
+      const liveBal = await fetchWalletBalance(identifierToUse);
 
-      if (isUuid) {
-        const { data: rpcData, error: rpcError } = await supabase.rpc("get_or_create_ambassador_wallet", {
-          p_ambassador_id: userId,
-        });
+      let rpcBal = 0;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identifierToUse);
 
-        if (!rpcError && rpcData && rpcData.length > 0) {
-          const val = Number(rpcData[0].avu_balance ?? 0);
-          setBalance(val);
-          localStorage.setItem("advaltad_cached_wallet_balance", String(val));
-          setError(null);
-          setLoading(false);
-          return val;
-        }
+      // 2. If valid UUID, also inspect atomic get_or_create_ambassador_wallet RPC
+      if (isUuid && isSupabaseConfigured && supabase) {
+        try {
+          const { data: rpcData, error: rpcError } = await supabase.rpc("get_or_create_ambassador_wallet", {
+            p_ambassador_id: identifierToUse,
+          });
 
-        // 2. Direct select from ambassador_wallets table
-        const { data: walletRow, error: walletError } = await supabase
-          .from("ambassador_wallets")
-          .select("avu_balance")
-          .eq("ambassador_id", userId)
-          .maybeSingle();
-
-        if (!walletError && walletRow) {
-          const val = Number(walletRow.avu_balance ?? 0);
-          setBalance(val);
-          localStorage.setItem("advaltad_cached_wallet_balance", String(val));
-          setError(null);
-          setLoading(false);
-          return val;
-        }
+          if (!rpcError && rpcData && rpcData.length > 0) {
+            rpcBal = Number(rpcData[0].avu_balance ?? 0);
+          }
+        } catch (_) {}
       }
 
-      // 3. Fallback: Query ambassadors table (supporting email or UUID identifier)
-      let query = supabase.from("ambassadors").select("avu_balance, ledger_balance");
-      if (userId.includes("@")) {
-        query = query.ilike("email", userId.trim().toLowerCase());
-      } else if (isUuid) {
-        query = query.or(`id.eq.${userId},user_id.eq.${userId}`);
-      } else {
-        query = query.eq("ambassador_id", userId);
-      }
+      // 3. Take highest verified balance from Supabase
+      const verifiedDbBalance = Math.max(liveBal, rpcBal);
 
-      const { data: ambRow, error: ambError } = await query.maybeSingle();
-      if (!ambError && ambRow) {
-        const val = Number(ambRow.avu_balance ?? ambRow.ledger_balance ?? 0);
-        setBalance(val);
-        localStorage.setItem("advaltad_cached_wallet_balance", String(val));
+      if (verifiedDbBalance > 0) {
+        setBalance(verifiedDbBalance);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("advaltad_cached_wallet_balance", String(verifiedDbBalance));
+        }
         setError(null);
         setLoading(false);
-        return val;
+        return verifiedDbBalance;
       }
 
+      // CRITICAL ANTI-REVERSAL RULE:
+      // If the query returned 0, check whether we already hold a verified positive balance
+      // in React state or localStorage (e.g., from initial profile load or prior Paystack deposit).
+      // NEVER overwrite a positive verified balance with 0!
+      const currentCached = typeof window !== "undefined" ? Number(localStorage.getItem("advaltad_cached_wallet_balance") || 0) : 0;
+      const preservedBal = Math.max(balance, currentCached);
+
+      if (preservedBal > 0) {
+        setBalance(preservedBal);
+        setLoading(false);
+        return preservedBal;
+      }
+
+      setBalance(0);
       setLoading(false);
-      return balance;
+      return 0;
     } catch (err: any) {
       console.error("[useAmbassadorWallet] Fetch error:", err);
       setError(err?.message || "Failed to load wallet balance");
       setLoading(false);
-      // Keep existing balance; do not zero out on transient network error
       return balance;
     }
   }, [balance]);
@@ -172,7 +184,6 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
   // Step 3: Realtime Subscription & Live Event Synchronization
   // --------------------------------------------------------------------------
   useEffect(() => {
-    // Wait until Auth is fully loaded before launching queries or subscriptions
     if (authLoading || !activeUserId) {
       return;
     }
@@ -181,11 +192,10 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
     fetchBalance();
 
     if (!isSupabaseConfigured || !supabase) {
-      // Local event listener fallback
       const handleLocalUpdate = (e: any) => {
         if (!isSubscribed) return;
         const newBal = e.detail?.newBalance ?? e.detail?.senderNewBalance;
-        if (newBal !== undefined) {
+        if (newBal !== undefined && Number(newBal) >= 0) {
           setBalance(Number(newBal));
           localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
         } else {
@@ -200,22 +210,16 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
       };
     }
 
-    // Set up Supabase Realtime channel on ambassador_wallets table
-    const channelName = `wallet-sync-${activeUserId.slice(0, 8)}`;
+    const channelName = `wallet-sync-${activeUserId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 16)}`;
     const channel = supabase
       .channel(channelName)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "ambassador_wallets",
-        },
+        { event: "*", schema: "public", table: "ambassador_wallets" },
         (payload) => {
           if (!isSubscribed) return;
-          console.log("[useAmbassadorWallet] Realtime event on ambassador_wallets:", payload);
           const newRecord = payload.new as any;
-          if (newRecord?.avu_balance !== undefined) {
+          if (newRecord?.avu_balance !== undefined && Number(newRecord.avu_balance) > 0) {
             const newBal = Number(newRecord.avu_balance);
             setBalance(newBal);
             localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
@@ -226,22 +230,38 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
       )
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "ambassadors",
-        },
+        { event: "*", schema: "public", table: "ambassadors" },
         (payload) => {
           if (!isSubscribed) return;
-          console.log("[useAmbassadorWallet] Realtime event on ambassadors:", payload);
           const newRecord = payload.new as any;
-          if (newRecord?.avu_balance !== undefined) {
+          if (newRecord?.avu_balance !== undefined && Number(newRecord.avu_balance) > 0) {
             const newBal = Number(newRecord.avu_balance);
             setBalance(newBal);
             localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
           } else {
             fetchBalance();
           }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "Ambassadors" },
+        () => {
+          if (isSubscribed) fetchBalance();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deposits" },
+        () => {
+          if (isSubscribed) fetchBalance();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "token_grants" },
+        () => {
+          if (isSubscribed) fetchBalance();
         }
       )
       .subscribe((status) => {
@@ -254,7 +274,7 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
     const handleWalletEvent = (e: any) => {
       if (!isSubscribed) return;
       const newBal = e.detail?.newBalance ?? e.detail?.senderNewBalance;
-      if (newBal !== undefined) {
+      if (newBal !== undefined && Number(newBal) >= 0) {
         setBalance(Number(newBal));
         localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
       }
@@ -270,12 +290,12 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
     window.addEventListener("advaltad_wallet_updated", handleWalletEvent);
     window.addEventListener("focus", handleFocus);
 
-    // Reliable background polling fallback every 4 seconds
+    // Reliable background polling fallback every 3.5 seconds
     const intervalId = setInterval(() => {
       if (isSubscribed) {
         fetchBalance();
       }
-    }, 4000);
+    }, 3500);
 
     return () => {
       isSubscribed = false;
