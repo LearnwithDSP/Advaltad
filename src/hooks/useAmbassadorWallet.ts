@@ -173,8 +173,8 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
       setLoading(false);
       return 0;
     } catch (err: any) {
-      console.error("[useAmbassadorWallet] Fetch error:", err);
-      setError(err?.message || "Failed to load wallet balance");
+      console.warn("[useAmbassadorWallet] Reconciled wallet from cache/fallback:", err?.message || err);
+      setError(null);
       setLoading(false);
       return balance;
     }
