@@ -15,7 +15,15 @@ export interface UseWalletBalanceResult {
  * @param identifier Can be ambassador ID, user_id, ambassador_id string, or email address.
  */
 export function useWalletBalance(identifier?: string | null): UseWalletBalanceResult {
-  const [balance, setBalance] = useState<number>(0);
+  const [balance, setBalance] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("advaltad_cached_wallet_balance");
+      if (cached && !isNaN(Number(cached))) {
+        return Number(cached);
+      }
+    }
+    return 0;
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,14 +37,17 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
     ).trim();
 
     if (!idToUse) {
-      setBalance(0);
+      // Never zero out state if identifier is still resolving (guards against refresh race conditions)
       setLoading(false);
-      return 0;
+      return balance;
     }
 
     try {
       const currentBal = await fetchWalletBalance(idToUse);
       setBalance(currentBal);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("advaltad_cached_wallet_balance", String(currentBal));
+      }
       setError(null);
       setLoading(false);
       return currentBal;
