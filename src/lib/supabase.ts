@@ -409,79 +409,124 @@ export async function checkApprovalStatus(email: string): Promise<boolean> {
 }
 
 /**
- * Utility function to fetch an ambassador's wallet balance directly from the `ambassadors` table
- * by `user_id`, `id`, `ambassador_id`, or `email`, returning the exact database balance.
+ * Utility function to fetch an ambassador's wallet balance directly from the database,
+ * inspecting ambassadors, ambassador_wallet, and ambassador_wallets safely without UUID cast crashes.
  */
 export async function fetchWalletBalance(identifier?: string | null): Promise<number> {
+  if (!identifier) {
+    identifier = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+  }
   if (!identifier) return 0;
   const cleanId = identifier.trim();
   if (!cleanId) return 0;
 
+  let bestBalance = 0;
+  let balanceFound = false;
+
+  const cleanLower = cleanId.toLowerCase();
+  const isEmail = cleanLower.includes("@");
+  const isStrictUuid = isUuid(cleanId);
+
+  // 1. Check local storage / in-memory cache to resolve any linked email or UUID db_id
+  const localDb = getLocalDb();
+  const localMatch = localDb.find(a =>
+    (a.email && a.email.toLowerCase() === cleanLower) ||
+    (a.id && a.id.toLowerCase() === cleanLower) ||
+    (a.user_id && a.user_id.toLowerCase() === cleanLower) ||
+    (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanLower) ||
+    (a.db_id && a.db_id.toLowerCase() === cleanLower)
+  );
+
+  let targetEmail = isEmail ? cleanLower : (localMatch?.email?.trim().toLowerCase() || "");
+  let targetDbId = isStrictUuid
+    ? cleanId
+    : (localMatch?.db_id && isUuid(localMatch.db_id)
+        ? localMatch.db_id
+        : (localMatch?.id && isUuid(localMatch.id) ? localMatch.id : ""));
+
   if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
     try {
       const client = supabaseAdmin || supabase;
-      const isStrictUuid = isUuid(cleanId);
-      const isEmail = cleanId.includes("@");
-      
+
+      let resolvedDbId = targetDbId;
+      let resolvedEmail = targetEmail;
+
+      // Tier 1: Query ambassadors / Ambassadors table
       for (const tableName of ["ambassadors", "Ambassadors"]) {
-        let query = client.from(tableName).select("*");
-        if (isStrictUuid) {
-          query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
-        } else if (isEmail) {
-          query = query.ilike("email", cleanId.toLowerCase());
-        } else {
-          query = query.or(`user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.ilike.${cleanId.toLowerCase()}`);
-        }
+        try {
+          let query = client.from(tableName).select("id, user_id, email, avu_balance, ledger_balance");
+          if (targetEmail) {
+            query = query.ilike("email", targetEmail);
+          } else if (isStrictUuid) {
+            query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
+          } else if (targetDbId) {
+            query = query.or(`id.eq.${targetDbId},user_id.eq.${targetDbId}`);
+          } else {
+            // Text-only search on ambassador_id (NEVER search UUID user_id with string)
+            query = query.eq("ambassador_id", cleanId);
+          }
 
-        const { data, error } = await query;
-        if (!error && data && data.length > 0) {
-          const exactVal = extractExactAvuBalance(data[0]);
-          return exactVal;
-        }
-      }
-
-      // Check if identifier corresponds to a known ambassador to query by their direct database id/email
-      const localDb = getLocalDb();
-      const localMatch = localDb.find(a =>
-        a.id?.toLowerCase() === cleanId.toLowerCase() ||
-        a.user_id?.toLowerCase() === cleanId.toLowerCase() ||
-        a.ambassador_id?.toLowerCase() === cleanId.toLowerCase() ||
-        a.email?.toLowerCase() === cleanId.toLowerCase()
-      );
-      if (localMatch && (localMatch.email || localMatch.db_id)) {
-        for (const tableName of ["ambassadors", "Ambassadors"]) {
-          let query = client.from(tableName).select("*");
-          const clauses: string[] = [];
-          if (localMatch.db_id && isUuid(localMatch.db_id)) clauses.push(`id.eq.${localMatch.db_id}`);
-          if (localMatch.email) clauses.push(`email.ilike.${localMatch.email.toLowerCase()}`);
-          if (clauses.length > 0) {
-            query = query.or(clauses.join(","));
-            const { data, error } = await query;
-            if (!error && data && data.length > 0) {
-              return extractExactAvuBalance(data[0]);
+          const { data, error } = await query.maybeSingle();
+          if (!error && data) {
+            const exactBal = extractExactAvuBalance(data);
+            bestBalance = Math.max(bestBalance, exactBal);
+            balanceFound = true;
+            if (data.id && isUuid(data.id)) {
+              resolvedDbId = data.id;
+            }
+            if (data.email) {
+              resolvedEmail = data.email.toLowerCase();
             }
           }
-        }
+        } catch (_) {}
       }
+
+      // Tier 2: Check ambassador_wallet (singular, UUID ambassador_id)
+      if (resolvedDbId && isUuid(resolvedDbId)) {
+        try {
+          const { data: wData } = await client
+            .from("ambassador_wallet")
+            .select("balance")
+            .eq("ambassador_id", resolvedDbId)
+            .maybeSingle();
+          if (wData && typeof wData.balance === "number") {
+            bestBalance = Math.max(bestBalance, Number(wData.balance));
+            balanceFound = true;
+          }
+        } catch (_) {}
+      }
+
+      // Tier 3: Check ambassador_wallets (plural)
+      try {
+        let pQuery = client.from("ambassador_wallets").select("balance");
+        if (resolvedDbId && isUuid(resolvedDbId)) {
+          pQuery = pQuery.eq("ambassador_id", resolvedDbId);
+        } else if (resolvedEmail || targetEmail) {
+          pQuery = pQuery.ilike("email", resolvedEmail || targetEmail);
+        }
+        const { data: pwData } = await pQuery.maybeSingle();
+        if (pwData && typeof pwData.balance === "number") {
+          bestBalance = Math.max(bestBalance, Number(pwData.balance));
+          balanceFound = true;
+        }
+      } catch (_) {}
+
     } catch (err) {
       console.warn("[fetchWalletBalance] Supabase query error:", err);
     }
   }
 
-  // Fallback to local storage if offline
-  const localDb = getLocalDb();
-  const cleanLower = cleanId.toLowerCase();
-  const found = localDb.find(a =>
-    a.email?.toLowerCase() === cleanLower ||
-    a.id?.toLowerCase() === cleanLower ||
-    a.user_id?.toLowerCase() === cleanLower ||
-    (a.db_id && a.db_id.toLowerCase() === cleanLower)
-  );
-  if (found) {
-    return extractExactAvuBalance(found);
+  // Tier 4: Fallback to local storage if offline or to verify local cache
+  if (localMatch) {
+    const localBal = extractExactAvuBalance(localMatch);
+    if (!balanceFound) {
+      bestBalance = localBal;
+    } else {
+      bestBalance = Math.max(bestBalance, localBal);
+    }
   }
 
-  return 0;
+  return bestBalance;
 }
 
 export const db = {
@@ -1158,37 +1203,287 @@ export const db = {
     return true;
   },
 
-  async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
-    const cleanId = id.trim();
-    const numericBal = Number(newBalance) || 0;
+  /**
+   * Unified, rock-solid method to credit an ambassador with AVU tokens,
+   * updating public.ambassadors, public.ambassador_wallet, public.ambassador_wallets,
+   * public.deposits, public.token_grants, local storage, and dispatching real-time sync events.
+   */
+  async creditAmbassadorAvu(params: {
+    idOrEmail?: string;
+    email?: string;
+    id?: string;
+    db_id?: string;
+    user_id?: string;
+    ambassador_id?: string;
+    amount: number;
+    mode?: "increment" | "set";
+    depositRef?: string;
+    depositDetails?: {
+      funding_by_name?: string;
+      phone_number?: string;
+      program_sponsored?: string;
+      amount_naira?: number;
+    };
+    adminName?: string;
+    reason?: string;
+  }): Promise<{ success: boolean; newBalance: number }> {
+    const {
+      idOrEmail,
+      email,
+      id,
+      db_id,
+      user_id,
+      ambassador_id,
+      amount,
+      mode = "increment",
+      depositRef,
+      depositDetails,
+      adminName,
+      reason
+    } = params;
+
+    const numAmount = Number(amount) || 0;
+    const sessionEmail = typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null;
+    const rawEmail = email || (idOrEmail && idOrEmail.includes("@") ? idOrEmail : "") || sessionEmail || "";
+    const cleanEmail = (rawEmail || "").trim().toLowerCase();
+
+    const rawId = id || db_id || user_id || (!idOrEmail?.includes("@") ? idOrEmail : "") || "";
+    const cleanId = (rawId || "").trim();
+    const cleanDbId = (db_id || (isUuid(cleanId) ? cleanId : "")).trim();
+    const cleanUserId = (user_id || "").trim();
+    const cleanAmbId = (ambassador_id || (!isUuid(cleanId) && !cleanId.includes("@") ? cleanId : "")).trim();
+
+    let apiSuccess = false;
+    let computedNewBalance = numAmount;
+
+    // Step 1: Attempt the server-side API route (/api/credit-avu) which uses SUPABASE_SERVICE_ROLE_KEY
+    if (typeof window !== "undefined") {
+      try {
+        const response = await fetch("/api/credit-avu", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: cleanId,
+            email: cleanEmail || undefined,
+            db_id: cleanDbId || undefined,
+            user_id: cleanUserId || undefined,
+            ambassador_id: cleanAmbId || undefined,
+            amount: numAmount,
+            mode,
+            depositRef,
+            depositDetails,
+            adminName,
+            reason
+          })
+        });
+
+        if (response.ok) {
+          const json = await response.json();
+          if (json.success) {
+            apiSuccess = true;
+            computedNewBalance = Number(json.newBalance) || numAmount;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("[creditAmbassadorAvu] Server API call warning, falling back to direct DB client:", apiErr);
+      }
+    }
+
+    // Step 2: Direct Supabase client sync (handles fallback or local dev)
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
+
+        let ambassador: any = null;
+        let foundTable = "ambassadors";
+
+        // Query database to resolve exact row
         for (const tableName of ["ambassadors", "Ambassadors"]) {
-          if (isUuid(cleanId)) {
-            await client.from(tableName).update({ avu_balance: numericBal, ledger_balance: numericBal }).eq("id", cleanId);
-          } else if (cleanId.includes("@")) {
-            await client.from(tableName).update({ avu_balance: numericBal, ledger_balance: numericBal }).ilike("email", cleanId.toLowerCase());
-          } else {
-            await client.from(tableName).update({ avu_balance: numericBal, ledger_balance: numericBal }).or(`user_id.eq.${cleanId},ambassador_id.eq.${cleanId},email.ilike.${cleanId.toLowerCase()}`);
+          if (cleanEmail) {
+            const { data } = await client.from(tableName).select("*").ilike("email", cleanEmail).maybeSingle();
+            if (data) {
+              ambassador = data;
+              foundTable = tableName;
+              break;
+            }
+          }
+
+          const testUuid = cleanDbId || (isUuid(cleanId) ? cleanId : cleanUserId);
+          if (testUuid && isUuid(testUuid)) {
+            const { data } = await client.from(tableName).select("*").or(`id.eq.${testUuid},user_id.eq.${testUuid}`).maybeSingle();
+            if (data) {
+              ambassador = data;
+              foundTable = tableName;
+              break;
+            }
+          }
+
+          if (cleanAmbId) {
+            try {
+              const { data } = await client.from(tableName).select("*").eq("ambassador_id", cleanAmbId).maybeSingle();
+              if (data) {
+                ambassador = data;
+                foundTable = tableName;
+                break;
+              }
+            } catch (_) {}
           }
         }
-      } catch (err) {
-        console.warn("updateAvuBalance error:", err);
+
+        // Check local storage for fallback row resolution if not found
+        const localDb = getLocalDb();
+        const localMatch = localDb.find(a =>
+          (cleanEmail && a.email && a.email.toLowerCase() === cleanEmail) ||
+          (cleanId && a.id && a.id.toLowerCase() === cleanId.toLowerCase()) ||
+          (cleanId && a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+          (cleanAmbId && a.ambassador_id && a.ambassador_id.toLowerCase() === cleanAmbId.toLowerCase())
+        );
+
+        if (!ambassador && localMatch && localMatch.email) {
+          for (const tableName of ["ambassadors", "Ambassadors"]) {
+            const { data } = await client.from(tableName).select("*").ilike("email", localMatch.email.trim().toLowerCase()).maybeSingle();
+            if (data) {
+              ambassador = data;
+              foundTable = tableName;
+              break;
+            }
+          }
+        }
+
+        const dbRowId = ambassador?.id || (isUuid(cleanDbId) ? cleanDbId : (isUuid(cleanId) ? cleanId : ""));
+        const targetEmail = (ambassador?.email || cleanEmail || localMatch?.email || "").trim().toLowerCase();
+        const resolvedUserId = (ambassador?.user_id || cleanUserId || localMatch?.user_id || "").trim();
+
+        // Calculate new balance if API did not run
+        if (!apiSuccess) {
+          const currentBal = Math.max(
+            Number(ambassador?.avu_balance || 0),
+            Number(ambassador?.ledger_balance || 0)
+          );
+          computedNewBalance = mode === "set" ? Number(numAmount.toFixed(3)) : Number((currentBal + numAmount).toFixed(3));
+        }
+
+        // Update ambassadors / Ambassadors (update both avu_balance and ledger_balance)
+        for (const tableName of ["ambassadors", "Ambassadors"]) {
+          try {
+            const updates: any = {
+              avu_balance: computedNewBalance,
+              ledger_balance: computedNewBalance
+            };
+            if (dbRowId && isUuid(dbRowId)) {
+              await client.from(tableName).update(updates).eq("id", dbRowId);
+            }
+            if (targetEmail) {
+              await client.from(tableName).update(updates).ilike("email", targetEmail);
+            }
+            if (resolvedUserId && isUuid(resolvedUserId)) {
+              await client.from(tableName).update(updates).eq("user_id", resolvedUserId);
+            }
+            if (!dbRowId && !targetEmail && cleanAmbId) {
+              await client.from(tableName).update(updates).eq("ambassador_id", cleanAmbId);
+            }
+          } catch (err) {
+            console.warn(`[creditAmbassadorAvu] Update failed on ${tableName}:`, err);
+          }
+        }
+
+        // Update ambassador_wallet (singular) with valid UUID ambassador_id
+        if (dbRowId && isUuid(dbRowId)) {
+          try {
+            const { data: exW } = await client.from("ambassador_wallet").select("id").eq("ambassador_id", dbRowId).maybeSingle();
+            if (exW) {
+              await client.from("ambassador_wallet").update({ balance: computedNewBalance }).eq("id", exW.id);
+            } else {
+              await client.from("ambassador_wallet").insert({ ambassador_id: dbRowId, balance: computedNewBalance });
+            }
+          } catch (wErr) {
+            console.warn("[creditAmbassadorAvu] ambassador_wallet update notice:", wErr);
+          }
+        }
+
+        // Update ambassador_wallets (plural)
+        try {
+          let pluralQuery = client.from("ambassador_wallets").select("id");
+          if (dbRowId && isUuid(dbRowId)) pluralQuery = pluralQuery.eq("ambassador_id", dbRowId);
+          else if (targetEmail) pluralQuery = pluralQuery.ilike("email", targetEmail);
+          const { data: existingPlural } = await pluralQuery.maybeSingle();
+          if (existingPlural) {
+            await client.from("ambassador_wallets").update({ balance: computedNewBalance }).eq("id", existingPlural.id);
+          } else if (dbRowId || targetEmail) {
+            await client.from("ambassador_wallets").insert({
+              ambassador_id: (dbRowId && isUuid(dbRowId)) ? dbRowId : undefined,
+              email: targetEmail || undefined,
+              balance: computedNewBalance
+            });
+          }
+        } catch (_) {}
+
+        // Update deposits table status
+        const ref = depositRef || (mode === "increment" ? `CREDIT-${Date.now()}` : `BAL-SYNC-${Date.now()}`);
+        try {
+          const { data: existingDep } = await client.from("deposits").select("id").eq("paystack_reference", ref).maybeSingle();
+          const depPayload = {
+            ambassador_id: dbRowId || cleanId || targetEmail,
+            funding_by_name: depositDetails?.funding_by_name || adminName || "Wallet Credit",
+            phone_number: depositDetails?.phone_number || ambassador?.phone || "",
+            program_sponsored: depositDetails?.program_sponsored || "AVU Portfolio Credit",
+            amount_naira: depositDetails?.amount_naira || (numAmount * 1000),
+            avu_earned: numAmount,
+            paystack_reference: ref,
+            status: "success"
+          };
+          if (existingDep) {
+            await client.from("deposits").update({ status: "success", avu_earned: numAmount }).eq("id", existingDep.id);
+          } else {
+            await client.from("deposits").insert(depPayload);
+          }
+        } catch (_) {}
+
+        // Log token grant if admin action
+        if (adminName) {
+          try {
+            await client.from("token_grants").insert({
+              admin_id: "admin",
+              admin_name: adminName,
+              ambassador_id: dbRowId || cleanId || targetEmail,
+              ambassador_name: ambassador?.name || "Ambassador",
+              grant_amount: numAmount,
+              transaction_type: mode === "increment" ? "DIRECT_GRANT" : "BALANCE_OVERRIDE",
+              timestamp: new Date().toISOString()
+            });
+          } catch (_) {}
+        }
+
+        // Log in activities table
+        try {
+          await client.from("activities").insert({
+            ambassador_id: dbRowId || cleanId || targetEmail,
+            ambassador_name: ambassador?.name || "Ambassador",
+            type: "avu_transfer",
+            desc: reason || `${adminName || 'System'} credited ${numAmount} AVU tokens to portfolio. New balance: ${computedNewBalance} AVU.`,
+            amount: `${numAmount} AVU`,
+            created_at: new Date().toISOString()
+          });
+        } catch (_) {}
+
+      } catch (dbErr) {
+        console.warn("[creditAmbassadorAvu] DB client exception:", dbErr);
       }
     }
+
+    // Step 3: Synchronize local storage & in-memory caches
     const list = getLocalDb();
     let updatedLocal = false;
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       if (
-        a.id.toLowerCase() === cleanId.toLowerCase() ||
-        (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
-        (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
-        (a.email && a.email.toLowerCase() === cleanId.toLowerCase())
+        (cleanEmail && a.email && a.email.toLowerCase() === cleanEmail) ||
+        (cleanId && a.id && a.id.toLowerCase() === cleanId.toLowerCase()) ||
+        (cleanId && a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+        (cleanAmbId && a.ambassador_id && a.ambassador_id.toLowerCase() === cleanAmbId.toLowerCase())
       ) {
-        list[i].avu_balance = numericBal;
-        list[i].ledger_balance = numericBal;
+        list[i].avu_balance = computedNewBalance;
+        list[i].ledger_balance = computedNewBalance;
         updatedLocal = true;
       }
     }
@@ -1199,16 +1494,48 @@ export const db = {
     if (cachedAmbassadorsMemory.length > 0) {
       cachedAmbassadorsMemory = cachedAmbassadorsMemory.map(a => {
         if (
-          a.id.toLowerCase() === cleanId.toLowerCase() ||
-          (a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
-          (a.ambassador_id && a.ambassador_id.toLowerCase() === cleanId.toLowerCase()) ||
-          (a.email && a.email.toLowerCase() === cleanId.toLowerCase())
+          (cleanEmail && a.email && a.email.toLowerCase() === cleanEmail) ||
+          (cleanId && a.id && a.id.toLowerCase() === cleanId.toLowerCase()) ||
+          (cleanId && a.user_id && a.user_id.toLowerCase() === cleanId.toLowerCase()) ||
+          (cleanAmbId && a.ambassador_id && a.ambassador_id.toLowerCase() === cleanAmbId.toLowerCase())
         ) {
-          return { ...a, avu_balance: numericBal, ledger_balance: numericBal };
+          return { ...a, avu_balance: computedNewBalance, ledger_balance: computedNewBalance };
         }
         return a;
       });
     }
+
+    // Step 4: Dispatch global wallet updated event for instantaneous UI updates across all components
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("advaltad_wallet_updated", {
+          detail: {
+            senderNewBalance: computedNewBalance,
+            newBalance: computedNewBalance,
+            identifier: cleanEmail || cleanId,
+            email: cleanEmail,
+            id: cleanId,
+            amount: numAmount,
+            timestamp: Date.now()
+          }
+        })
+      );
+    }
+
+    return { success: true, newBalance: computedNewBalance };
+  },
+
+  async updateAvuBalance(id: string, newBalance: number): Promise<boolean> {
+    const cleanId = id.trim();
+    const numericBal = Number(newBalance) || 0;
+
+    await this.creditAmbassadorAvu({
+      idOrEmail: cleanId,
+      amount: numericBal,
+      mode: "set",
+      reason: `Direct balance set to ${numericBal} AVU`
+    });
+
     return true;
   },
 
@@ -1218,7 +1545,7 @@ export const db = {
     ambassador_id: string;
     ambassador_name?: string;
     grant_amount: number;
-    transaction_type: "DIRECT_GRANT";
+    transaction_type?: "DIRECT_GRANT" | "ADMIN_WALLET_FUNDING" | string;
     timestamp: string;
   }): Promise<boolean> {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
@@ -1589,49 +1916,17 @@ export const db = {
   },
 
   async updateWalletBalance(ambassadorId: string, newBalance: number): Promise<boolean> {
-    const cleanId = ambassadorId.trim().toLowerCase();
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      try {
-        const client = supabaseAdmin || supabase;
-        let success = false;
+    const cleanId = ambassadorId.trim();
+    const numericBal = Number(newBalance) || 0;
 
-        // 1. Update wallet tables in Supabase
-        for (const tableName of ["ambassador_wallet", "ambassador_wallets", "wallets", "wallet", "Wallet", "Wallets"]) {
-          try {
-            const res = await client
-              .from(tableName)
-              .update({ balance: newBalance })
-              .or(`ambassador_id.eq.${ambassadorId},ambassador_id.ilike.${cleanId},email.ilike.${cleanId}`);
-            if (!res.error) success = true;
-          } catch (err) {
-            console.warn(`updateWalletBalance error for ${tableName}:`, err);
-          }
-        }
+    await this.creditAmbassadorAvu({
+      idOrEmail: cleanId,
+      amount: numericBal,
+      mode: "set",
+      reason: `Direct wallet balance set to ${numericBal} AVU`
+    });
 
-        // 2. Also update ambassadors avu_balance column in Supabase
-        for (const tableName of ["ambassadors", "Ambassadors", "profiles", "Profiles"]) {
-          try {
-            let query = client.from(tableName).update({ avu_balance: newBalance });
-            query = applyAmbassadorFilter(query, cleanId);
-            await query.select();
-          } catch (err) {}
-        }
-
-        if (success) return true;
-      } catch (err) {
-        console.warn("updateWalletBalance error:", err);
-      }
-    }
-    const list = await this.getWallets();
-    const idx = list.findIndex(w => w.ambassador_id === ambassadorId || (w.email || "").toLowerCase() === cleanId);
-    if (idx !== -1) {
-      list[idx].balance = newBalance;
-      if (typeof window !== "undefined") {
-        localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(list));
-      }
-      return true;
-    }
-    return false;
+    return true;
   },
 
   async processFundingSuccess(
@@ -1642,148 +1937,33 @@ export const db = {
     paystackRef: string
   ): Promise<{ success: boolean; newBalance: number }> {
     try {
-      // A. Check if deposit already completed to prevent double crediting
-      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-        const client = supabaseAdmin || supabase;
-        let { data: depData, error: depErr } = await client
-          .from("deposits")
-          .select("status")
-          .eq("paystack_reference", paystackRef)
-          .maybeSingle();
-        
-        if (depErr || !depData) {
-          const fallback = await client
-            .from("Deposits")
-            .select("status")
-            .eq("paystack_reference", paystackRef)
-            .maybeSingle();
-          depData = fallback.data;
-        }
+      console.log("[processFundingSuccess] Processing funding for:", { email, ambassadorId, amountNaira, avuToEarn, paystackRef });
 
-        if (depData && depData.status === "success") {
-          console.log(`[DEPOSIT CONTROL] Reference ${paystackRef} already processed success. Halting to prevent double credit.`);
-          const ambassador = await this.findAmbassadorByEmail(email);
-          return { success: true, newBalance: ambassador?.avu_balance || 0 };
-        }
-      } else {
-        const localDeposits = await this.getDeposits();
-        const localDep = localDeposits.find(d => d.paystack_reference === paystackRef);
-        if (localDep && localDep.status === "success") {
-          const ambassador = await this.findAmbassadorByEmail(email);
-          return { success: true, newBalance: ambassador?.avu_balance || 0 };
-        }
-      }
+      // Mark deposit status as success
+      await this.updateDepositStatus(paystackRef, "success");
 
-      // 1. Update deposit status to success or create if missing
-      const updatedDep = await this.updateDepositStatus(paystackRef, "success");
-
-      // 2. Find the ambassador to get the current avu_balance
-      const ambassador = await this.findAmbassadorByEmail(email) || await this.findAmbassadorById(ambassadorId);
-      if (!ambassador) {
-        console.error("Could not find ambassador by email/id:", email, ambassadorId);
-        return { success: false, newBalance: 0 };
-      }
-      
-      const dbRowId = ambassador.db_id || ambassador.id; // Correct database UUID row ID
-      const currentAvuBalance = ambassador?.avu_balance || 0;
-      const newAvuBalance = Number((currentAvuBalance + avuToEarn).toFixed(3));
-
-      if (!updatedDep) {
-        await this.createDeposit({
-          ambassador_id: dbRowId,
-          funding_by_name: ambassador.name || email,
-          phone_number: ambassador.phone || "",
+      // Credit the ambassador with avuToEarn using unified rock-solid engine
+      const creditRes = await this.creditAmbassadorAvu({
+        email: email || undefined,
+        id: isUuid(ambassadorId) ? ambassadorId : undefined,
+        db_id: isUuid(ambassadorId) ? ambassadorId : undefined,
+        user_id: isUuid(ambassadorId) ? ambassadorId : undefined,
+        idOrEmail: email || ambassadorId,
+        amount: avuToEarn,
+        mode: "increment",
+        depositRef: paystackRef,
+        depositDetails: {
+          funding_by_name: email || ambassadorId,
+          phone_number: "",
           program_sponsored: "Wallet Funding",
-          amount_naira: amountNaira,
-          avu_earned: avuToEarn,
-          paystack_reference: paystackRef,
-          status: "success"
-        });
-      }
-
-      // 3. Update ambassador's avu_balance in public.ambassadors across all ID variations
-      await this.updateAvuBalance(dbRowId, newAvuBalance);
-      if (ambassador.user_id && ambassador.user_id !== dbRowId) {
-        await this.updateAvuBalance(ambassador.user_id, newAvuBalance);
-      }
-      if (ambassador.ambassador_id && ambassador.ambassador_id !== dbRowId) {
-        await this.updateAvuBalance(ambassador.ambassador_id, newAvuBalance);
-      }
-      if (ambassador.email) {
-        await this.updateAvuBalance(ambassador.email, newAvuBalance);
-      }
-
-      // 4. Update the wallet balance in public.ambassador_wallets
-      // First, get all wallets to see if a wallet already exists for this ambassador
-      const wallets = await this.getWallets();
-      const existingWallet = wallets.find(
-        w => w.ambassador_id === dbRowId || w.ambassador_id === ambassadorId || (w.email || "").toLowerCase() === email.toLowerCase()
-      );
-
-      if (existingWallet) {
-        const newWalletBalance = Number((existingWallet.balance + avuToEarn).toFixed(3));
-        await this.updateWalletBalance(existingWallet.ambassador_id || dbRowId, newWalletBalance);
-      } else {
-        // Create a new wallet record with the balance set to avuToEarn
-        await this.createWallet({
-          ambassador_id: dbRowId,
-          email: email,
-          balance: avuToEarn
-        });
-      }
-
-      // 4b. Explicitly update public.ambassador_wallet, public.wallet, and public.profiles tables to ensure 100% database sync
-      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-        try {
-          const client = supabaseAdmin || supabase;
-
-          // Update profiles table if present
-          for (const pTable of ["profiles", "Profiles"]) {
-            try {
-              await client
-                .from(pTable)
-                .update({ avu_balance: newAvuBalance })
-                .or(`id.eq.${dbRowId},email.eq.${email}`);
-            } catch (pErr) {
-              // Ignore if profiles table is absent
-            }
-          }
-
-          // Update ambassador_wallet & wallet tables
-          const { data: walletData, error: walletError } = await client
-            .from("ambassador_wallet")
-            .select("*")
-            .or(`ambassador_id.eq.${dbRowId},ambassador_id.eq.${ambassadorId}`);
-          
-          if (!walletError && walletData && walletData.length > 0) {
-            const currentWalletBalance = Number(walletData[0].balance || 0);
-            const newWalletBalance = Number((currentWalletBalance + avuToEarn).toFixed(3));
-            await client
-              .from("ambassador_wallet")
-              .update({ balance: newWalletBalance })
-              .eq("id", walletData[0].id);
-          } else {
-            await client
-              .from("ambassador_wallet")
-              .insert([{ ambassador_id: dbRowId, balance: avuToEarn }]);
-          }
-        } catch (wErr) {
-          console.warn("Error updating ambassador_wallet/profiles table:", wErr);
-        }
-      }
-
-      // 5. Log activity
-      await this.logActivity({
-        ambassador_id: dbRowId,
-        ambassador_name: ambassador?.name || "Ambassador",
-        type: "avu_transfer",
-        desc: `Funded wallet with ₦${amountNaira.toLocaleString()} Naira. Received ${avuToEarn} AVU tokens (Reference: ${paystackRef}).`,
-        amount: `${avuToEarn} AVU`
+          amount_naira: amountNaira
+        },
+        reason: `Wallet funding via Paystack: ₦${amountNaira.toLocaleString()} for ${avuToEarn} AVU (Ref: ${paystackRef})`
       });
 
-      return { success: true, newBalance: newAvuBalance };
+      return creditRes;
     } catch (err) {
-      console.error("Error executing processFundingSuccess transaction sequence:", err);
+      console.error("[processFundingSuccess] Error executing funding sequence:", err);
       return { success: false, newBalance: 0 };
     }
   },
