@@ -19,15 +19,23 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const resolvedIdentifier = (
+    identifier || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null) || ""
+  ).trim();
+
   const fetchBalance = useCallback(async (): Promise<number> => {
-    if (!identifier) {
+    const idToUse = (
+      resolvedIdentifier || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null) || ""
+    ).trim();
+
+    if (!idToUse) {
       setBalance(0);
       setLoading(false);
       return 0;
     }
 
     try {
-      const currentBal = await fetchWalletBalance(identifier);
+      const currentBal = await fetchWalletBalance(idToUse);
       setBalance(currentBal);
       setError(null);
       setLoading(false);
@@ -38,18 +46,51 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       setLoading(false);
       return balance;
     }
-  }, [identifier]);
+  }, [resolvedIdentifier, balance]);
 
   useEffect(() => {
     let active = true;
 
     fetchBalance();
 
-    if (!identifier || !isSupabaseConfigured || !supabase) {
-      return;
+    const idToUse = (
+      resolvedIdentifier || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null) || ""
+    ).trim();
+
+    if (!idToUse || !isSupabaseConfigured || !supabase) {
+      // Still listen to local events even if supabase is not yet ready
+      const handleWalletUpdated = (e: any) => {
+        if (active) {
+          if (e.detail?.newBalance !== undefined) {
+            setBalance(Number(e.detail.newBalance));
+          } else if (e.detail?.senderNewBalance !== undefined) {
+            setBalance(Number(e.detail.senderNewBalance));
+          }
+          fetchBalance();
+        }
+      };
+
+      const handleStorage = (e: StorageEvent) => {
+        if (active && (e.key === "advaltad_ambassadors" || e.key === "advaltad_wallets" || e.key === "advaltad_session_email")) {
+          fetchBalance();
+        }
+      };
+
+      if (typeof window !== "undefined") {
+        window.addEventListener("advaltad_wallet_updated", handleWalletUpdated);
+        window.addEventListener("storage", handleStorage);
+      }
+
+      return () => {
+        active = false;
+        if (typeof window !== "undefined") {
+          window.removeEventListener("advaltad_wallet_updated", handleWalletUpdated);
+          window.removeEventListener("storage", handleStorage);
+        }
+      };
     }
 
-    const cleanId = identifier.trim().toLowerCase();
+    const cleanId = idToUse.toLowerCase();
 
     // Realtime channel subscription for instant live balance updates
     const channel = supabase
@@ -72,14 +113,32 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
           await fetchBalance();
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallet" },
+        async (payload: any) => {
+          if (!active) return;
+          console.info("[useWalletBalance] Realtime update on ambassador_wallet table:", payload);
+          await fetchBalance();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallets" },
+        async (payload: any) => {
+          if (!active) return;
+          console.info("[useWalletBalance] Realtime update on ambassador_wallets table:", payload);
+          await fetchBalance();
+        }
+      )
       .subscribe();
 
-    // Periodic polling as a fallback when realtime web-sockets are delayed or inactive in iframe previews
+    // Periodic polling as a rock-solid fallback when realtime web-sockets are delayed in iframes or across tabs
     const pollInterval = setInterval(() => {
       if (active) {
         fetchBalance();
       }
-    }, 5000);
+    }, 3500);
 
     const handleFocus = () => {
       if (active) {
@@ -89,9 +148,17 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
 
     const handleWalletUpdated = (e: any) => {
       if (active) {
-        if (e.detail?.senderNewBalance !== undefined) {
-          setBalance(e.detail.senderNewBalance);
+        if (e.detail?.newBalance !== undefined) {
+          setBalance(Number(e.detail.newBalance));
+        } else if (e.detail?.senderNewBalance !== undefined) {
+          setBalance(Number(e.detail.senderNewBalance));
         }
+        fetchBalance();
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (active && (e.key === "advaltad_ambassadors" || e.key === "advaltad_wallets" || e.key === "advaltad_session_email")) {
         fetchBalance();
       }
     };
@@ -99,6 +166,7 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
     if (typeof window !== "undefined") {
       window.addEventListener("focus", handleFocus);
       window.addEventListener("advaltad_wallet_updated", handleWalletUpdated);
+      window.addEventListener("storage", handleStorage);
     }
 
     return () => {
@@ -107,12 +175,13 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", handleFocus);
         window.removeEventListener("advaltad_wallet_updated", handleWalletUpdated);
+        window.removeEventListener("storage", handleStorage);
       }
       if (supabase) {
         supabase.removeChannel(channel);
       }
     };
-  }, [identifier, fetchBalance]);
+  }, [resolvedIdentifier, fetchBalance]);
 
   return {
     balance,
