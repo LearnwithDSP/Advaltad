@@ -32,10 +32,12 @@ import {
   Send
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
+import { handleApprove, handleReject } from "../lib/withdrawals";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
+import { PendingWithdrawalsTable } from "./PendingWithdrawalsTable";
 import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
 
 interface AdminPortalProps {
@@ -226,6 +228,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         } else {
           localStorage.removeItem("advaltad_admin_session_email");
         }
+      }).catch((err) => {
+        console.warn("[AdminPortal] Session lookup exception:", err);
       });
     }
     loadDbData();
@@ -851,33 +855,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   ) => {
     setIsUpdatingWithdrawal(withdrawalId);
     try {
-      const adminEmail = currentAdmin?.email || "admin@advaltadfoundation.org";
-      const note = adminNotes[withdrawalId] || "";
+      const adminId = (currentAdmin?.id && /^[0-9a-f-]{36}$/i.test(currentAdmin.id))
+        ? currentAdmin.id
+        : "00000000-0000-0000-0000-000000000000";
 
-      const updated = await db.updateAvuWithdrawalStatus(
-        withdrawalId,
-        newStatus,
-        note,
-        adminEmail
-      );
+      let result;
+      if (newStatus === "Approved") {
+        result = await handleApprove(withdrawalId, adminId);
+      } else {
+        result = await handleReject(withdrawalId, adminId);
+      }
 
-      if (updated) {
+      if (result.success) {
         if (newStatus === "Approved") {
           addToast(
             "Withdrawal Approved",
-            `Approved withdrawal of ${withdrawal.avu_amount} AVU (₦${withdrawal.naira_equivalent.toLocaleString()}) for ${withdrawal.ambassador_name}. Balance deducted automatically.`
+            `Approved withdrawal of ${withdrawal.avu_amount} AVU (₦${withdrawal.naira_equivalent.toLocaleString()}) for ${withdrawal.ambassador_name}. Ambassador wallet deducted.`
           );
         } else {
           addToast(
             "Withdrawal Disapproved",
-            `Disapproved withdrawal request for ${withdrawal.ambassador_name}.`
+            `Disapproved withdrawal request for ${withdrawal.ambassador_name}. Balance left untouched.`
           );
         }
         await loadDbData();
       } else {
         addToast(
           "Update Failed",
-          "Could not update withdrawal status in database.",
+          result.error?.message || "Could not update withdrawal status in database.",
           "error"
         );
       }
@@ -2455,6 +2460,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                         <span className="text-[10px] font-extrabold text-rose-700 uppercase tracking-wider block">Disapproved</span>
                         <p className="text-xl font-black text-rose-900 font-mono">{withdrawals.filter(w => w.status === "Disapproved").length}</p>
                       </div>
+                    </div>
+
+                    {/* Dedicated Production Pending Queue Component */}
+                    <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 text-left">
+                      <PendingWithdrawalsTable
+                        adminId={currentAdmin?.id}
+                        onSuccessNotification={(msg) => addToast("Withdrawal Processed", msg, "success")}
+                        onErrorNotification={(msg) => addToast("Action Failed", msg, "error")}
+                      />
                     </div>
 
                     {/* Filter & Search Bar */}
