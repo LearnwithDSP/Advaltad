@@ -212,7 +212,7 @@ const AUDIT_LOGS_LOCAL_STORAGE_KEY = "advaltad_audit_logs_db";
 const DONATIONS_LOCAL_STORAGE_KEY = "advaltad_donations_db";
 const DEPOSITS_LOCAL_STORAGE_KEY = "advaltad_deposits_db";
 const P2P_TX_LOCAL_STORAGE_KEY = "advaltad_p2p_transactions_db";
-const AVU_WITHDRAWALS_LOCAL_STORAGE_KEY = "advaltad_avu_withdrawals_db";
+export const AVU_WITHDRAWALS_LOCAL_STORAGE_KEY = "advaltad_avu_withdrawals_db";
 const AMB_STATIC_ID_MAP_KEY = "advaltad_ambassador_static_id_map";
 
 function getStaticAmbassadorId(identifier: string): string {
@@ -2507,38 +2507,132 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let query = client.from("avu_withdrawals").select("*").order("created_at", { ascending: false });
-        let { data, error } = await query;
+        // Attempt Supabase query joining avu_withdrawals with ambassadors
+        let { data, error } = await client
+          .from("avu_withdrawals")
+          .select(`
+            *,
+            ambassadors:ambassador_id (
+              id,
+              user_id,
+              professional_name,
+              name,
+              email,
+              phone_number,
+              phone,
+              base_city,
+              city,
+              base_country,
+              country,
+              avu_balance,
+              ledger_balance,
+              status,
+              badge_status,
+              is_approved
+            )
+          `)
+          .order("created_at", { ascending: false });
+
         if (error || !data) {
-          const fallback = await client.from("AvuWithdrawals").select("*").order("created_at", { ascending: false });
-          data = fallback.data;
-          error = fallback.error;
+          const fallbackJoin = await client
+            .from("avu_withdrawals")
+            .select(`
+              *,
+              ambassadors (
+                id,
+                user_id,
+                professional_name,
+                name,
+                email,
+                phone_number,
+                phone,
+                base_city,
+                city,
+                base_country,
+                country,
+                avu_balance,
+                ledger_balance,
+                status,
+                badge_status,
+                is_approved
+              )
+            `)
+            .order("created_at", { ascending: false });
+          if (!fallbackJoin.error && fallbackJoin.data) {
+            data = fallbackJoin.data;
+            error = null;
+          }
         }
+
+        // Programmatic join fallback if foreign key relation is not registered in PostgREST
+        if (error || !data) {
+          const [rawW, rawA] = await Promise.all([
+            client.from("avu_withdrawals").select("*").order("created_at", { ascending: false }),
+            client.from("ambassadors").select("*")
+          ]);
+          if (rawW.data) {
+            const ambMap = new Map<string, any>();
+            (rawA.data || []).forEach((a: any) => {
+              if (a.id) ambMap.set(String(a.id).toLowerCase(), a);
+              if (a.user_id) ambMap.set(String(a.user_id).toLowerCase(), a);
+              if (a.email) ambMap.set(String(a.email).toLowerCase(), a);
+            });
+            data = rawW.data.map((row: any) => {
+              const amb =
+                ambMap.get(String(row.ambassador_id || "").toLowerCase()) ||
+                ambMap.get(String(row.email || row.ambassador_email || "").toLowerCase()) ||
+                null;
+              return { ...row, ambassadors: amb };
+            });
+            error = null;
+          }
+        }
+
         if (!error && data) {
-          supabaseWithdrawals = data.map((row: any) => ({
-            id: row.id || "WTH-" + Math.floor(Math.random() * 89999 + 10000),
-            ambassador_id: row.ambassador_id || row.user_id || "",
-            ambassador_name: row.ambassador_name || row.full_name || row.name || "Ambassador",
-            email: row.email || row.ambassador_email || "",
-            ambassador_email: row.ambassador_email || row.email || "",
-            current_balance: Number(row.current_balance ?? row.avu_balance ?? 0),
-            requested_avu: Number(row.requested_avu ?? row.avu_amount ?? row.amount_avu ?? row.amount ?? 0),
-            bank_name: row.bank_name || "",
-            account_number: row.account_number || "",
-            account_name: row.account_name || "",
-            avu_amount: Number(row.avu_amount ?? row.requested_avu ?? row.amount_avu ?? row.amount ?? 0),
-            naira_equivalent: Number(row.naira_equivalent || row.amount_naira || (Number(row.avu_amount || row.requested_avu || 0) * 1000)),
-            conversion_rate: Number(row.conversion_rate || 1000),
-            status: (row.status ? (row.status.charAt(0).toUpperCase() + row.status.slice(1).toLowerCase()) : "Pending") as any,
-            admin_note: row.admin_note || "",
-            reviewed_by: row.reviewed_by || "",
-            reviewed_at: row.reviewed_at || "",
-            created_at: row.created_at || new Date().toISOString(),
-            updated_at: row.updated_at
-          }));
+          supabaseWithdrawals = data.map((row: any) => {
+            const amb = Array.isArray(row.ambassadors) ? row.ambassadors[0] : row.ambassadors;
+            const reqAmount = Number(row.avu_amount ?? row.requested_avu ?? row.amount_avu ?? row.amount ?? 0);
+            const convRate = Number(row.conversion_rate || 1000);
+            const nairaEq = Number(row.naira_equivalent || row.amount_naira || (reqAmount * convRate));
+            const ambName = amb?.professional_name || amb?.name || row.ambassador_name || row.full_name || row.account_name || "Ambassador";
+            const ambEmail = amb?.email || row.ambassador_email || row.email || "";
+            const currentBal = amb?.avu_balance !== undefined && amb?.avu_balance !== null
+              ? Number(amb.avu_balance)
+              : amb?.ledger_balance !== undefined && amb?.ledger_balance !== null
+              ? Number(amb.ledger_balance)
+              : Number(row.current_balance ?? row.avu_balance ?? 0);
+
+            const rawStatus = (row.status || "pending").toString().trim();
+            let normStatus: "Pending" | "Approved" | "Disapproved" = "Pending";
+            if (rawStatus.toLowerCase() === "approved") normStatus = "Approved";
+            else if (rawStatus.toLowerCase() === "disapproved" || rawStatus.toLowerCase() === "rejected") normStatus = "Disapproved";
+            else normStatus = "Pending";
+
+            return {
+              id: row.id || "WTH-" + Math.floor(Math.random() * 89999 + 10000),
+              ambassador_id: row.ambassador_id || amb?.id || row.user_id || "",
+              ambassador_name: ambName,
+              email: ambEmail,
+              ambassador_email: ambEmail,
+              current_balance: currentBal,
+              requested_avu: reqAmount,
+              bank_name: row.bank_name || "",
+              account_number: row.account_number || "",
+              account_name: row.account_name || ambName,
+              avu_amount: reqAmount,
+              naira_equivalent: nairaEq,
+              conversion_rate: convRate,
+              status: normStatus,
+              admin_note: row.admin_note || "",
+              reviewed_by: row.reviewed_by || "",
+              reviewed_at: row.reviewed_at || "",
+              created_at: row.created_at || new Date().toISOString(),
+              updated_at: row.updated_at
+            };
+          });
         }
       } catch (err) {
-        console.warn("Error getting Supabase AVU withdrawals:", err);
+        console.warn("Error getting Supabase AVU withdrawals joined:", err);
       }
     }
 
