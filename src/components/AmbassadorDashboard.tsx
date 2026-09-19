@@ -2,12 +2,16 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance } from "../lib/supabase";
+import { handleWithdrawalSubmit } from "../lib/withdrawals";
 import { useAmbassadorWallet } from "../hooks/useAmbassadorWallet";
 import { useWalletBalance } from "../hooks/useWalletBalance";
+import { useWalletState } from "../hooks/useWalletState";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
 import { downloadDepositReceiptPDF, ReceiptData } from "../lib/pdfReceipt";
 import { AmbassadorProfile } from "./AmbassadorProfile";
 import { AmbassadorCertificate, getAmbassadorDisplayName } from "./AmbassadorCertificate";
+import { WithdrawalTrackerCard } from "./WithdrawalTrackerCard";
+import { WithdrawalModal } from "./WithdrawalModal";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
   ResponsiveContainer,
@@ -242,30 +246,21 @@ export const AvuWithdrawalModal: React.FC<AvuWithdrawalModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const email = profile?.email || "ambassador@domain.com";
-      const ambId = profile?.id || profile?.user_id || "AV-10000";
-      const ambName = profile?.name || accountName || "Ambassador";
-
-      await db.createAvuWithdrawal({
-        ambassador_id: ambId,
-        ambassador_name: ambName,
-        email: email,
-        ambassador_email: email,
-        current_balance: currentAvuBalance,
-        requested_avu: Number(withdrawalAvu),
-        avu_amount: Number(withdrawalAvu),
-        naira_equivalent: Number(nairaEquivalent),
-        conversion_rate: conversionRate,
-        bank_name: effectiveBank,
-        account_number: accountNumber.trim(),
-        account_name: accountName.trim(),
-        status: "Pending"
+      const result = await handleWithdrawalSubmit({
+        amount: Number(withdrawalAvu),
+        bankName: effectiveBank,
+        accountNumber: accountNumber.trim(),
+        accountName: accountName.trim()
       });
 
-      showToast("success", "Withdrawal Submitted", "Withdrawal request submitted successfully.");
-      handleModalClose();
-      onSuccess();
-      fetchAmbassadorData();
+      if (result.success) {
+        showToast("success", "Withdrawal Submitted", "Withdrawal request submitted! Pending Admin approval.");
+        handleModalClose();
+        onSuccess();
+        fetchAmbassadorData();
+      } else {
+        showToast("error", "Submission Failed", result.error?.message || "Could not submit withdrawal request. Please try again.");
+      }
     } catch (err: any) {
       console.error("Error creating withdrawal request:", err);
       showToast("error", "Submission Failed", err?.message || "Could not submit withdrawal request. Please try again.");
@@ -883,7 +878,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
   // Priority order: verified session email ALWAYS takes precedence over internal ID so it matches the Supabase record
   const activeEmail = profile?.email || (typeof window !== "undefined" ? localStorage.getItem("advaltad_session_email") : null) || "";
   const activeIdentifier = activeEmail || profile?.db_id || profile?.user_id || profile?.id || "";
-  const { balance: avuBalance, refetch: refetchWalletBalance } = useAmbassadorWallet(activeIdentifier);
+  const { balance: avuBalance, refetch: refetchWalletBalance, isLive: isWalletLive } = useWalletState(activeIdentifier);
 
   // Synchronize profile.avu_balance with avuBalance so UI components and children never experience drift or reversal
   useEffect(() => {
@@ -1589,6 +1584,21 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       )
       .subscribe();
 
+    const withdrawalsChannel = supabase
+      .channel(`public:avu_withdrawals:${ambId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "avu_withdrawals" },
+        () => fetchAmbassadorData(false)
+      )
+      .subscribe();
+
+    const handleWithdrawalEvent = () => {
+      fetchAmbassadorData(false);
+    };
+    window.addEventListener("advaltad_withdrawals_updated", handleWithdrawalEvent);
+    window.addEventListener("advaltad_wallet_updated", handleWithdrawalEvent);
+
     // Silent background poll for live admin transaction updates
     const pollTimer = setInterval(() => {
       fetchAmbassadorData(false);
@@ -1599,6 +1609,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       supabase.removeChannel(depositsChannel);
       supabase.removeChannel(auditChannel);
       supabase.removeChannel(activityChannel);
+      supabase.removeChannel(withdrawalsChannel);
+      window.removeEventListener("advaltad_withdrawals_updated", handleWithdrawalEvent);
+      window.removeEventListener("advaltad_wallet_updated", handleWithdrawalEvent);
       clearInterval(pollTimer);
     };
   }, [profile?.id, profile?.db_id, profile?.email]);
@@ -2944,6 +2957,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                 </motion.div>
               </div>
 
+              {/* Visual Withdrawal Tracker Card */}
+              <WithdrawalTrackerCard
+                withdrawals={userWithdrawals}
+                onOpenWithdrawalModal={() => setIsAvuWithdrawalModalOpen(true)}
+                onRefresh={() => fetchAmbassadorData(false)}
+              />
+
               {/* Charts Grid - 30-Day AVU Balance Trend Area Chart & Hub Activity */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* 30-Day AVU Balance Trend Area Chart */}
@@ -3605,6 +3625,13 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                   </button>
                 </div>
 
+                {/* Live Milestone Tracker */}
+                <WithdrawalTrackerCard
+                  withdrawals={userWithdrawals}
+                  onOpenWithdrawalModal={() => setIsAvuWithdrawalModalOpen(true)}
+                  onRefresh={() => fetchAmbassadorData(false)}
+                />
+
                 <div className="space-y-3">
                   {userWithdrawals.length === 0 ? (
                     <div className="p-8 text-center text-xs text-slate-500 rounded-2xl bg-slate-950/50 border border-slate-800/80">
@@ -3805,14 +3832,16 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       />
 
       {/* AVU Withdrawal Modal */}
-      <AvuWithdrawalModal
+      <WithdrawalModal
         isOpen={isAvuWithdrawalModalOpen}
         onClose={() => setIsAvuWithdrawalModalOpen(false)}
-        profile={profile}
-        currentAvuBalance={avuBalance}
-        onSuccess={() => refetchWalletBalance()}
+        ambassadorId={profile?.id || profile?.db_id}
+        currentBalance={avuBalance}
+        onSuccess={() => {
+          refetchWalletBalance();
+          fetchAmbassadorData(false);
+        }}
         showToast={showToast}
-        fetchAmbassadorData={fetchAmbassadorData}
       />
     </div>
   );
