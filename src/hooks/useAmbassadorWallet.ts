@@ -340,5 +340,5 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
   };
 }
 
-export { useWalletState } from "./useWalletState";
-export type { UseWalletStateResult, UseWalletStateOptions } from "./useWalletState";
+export { useWalletState } from "./useWalletBalance";
+export type { UseWalletStateResult, UseWalletStateOptions } from "./useWalletBalance";
