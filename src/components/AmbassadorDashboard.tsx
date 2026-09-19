@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance } from "../lib/supabase";
-import { handleWithdrawalSubmit } from "../lib/withdrawals";
+import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance, handleWithdrawalSubmit } from "../lib/supabase";
 import { useAmbassadorWallet } from "../hooks/useAmbassadorWallet";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { useWalletState } from "../hooks/useWalletState";
