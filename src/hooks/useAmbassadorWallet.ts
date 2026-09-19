@@ -215,14 +215,35 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
       .channel(channelName)
       .on(
         "postgres_changes",
+        { event: "*", schema: "public", table: "ambassador_wallet" },
+        (payload) => {
+          if (!isSubscribed) return;
+          const newRecord = payload.new as any;
+          const rawVal = newRecord?.balance ?? newRecord?.avu_balance;
+          if (rawVal !== undefined && rawVal !== null && !isNaN(Number(rawVal))) {
+            const newBal = Number(rawVal);
+            setBalance(newBal);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+            }
+          } else {
+            fetchBalance();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "ambassador_wallets" },
         (payload) => {
           if (!isSubscribed) return;
           const newRecord = payload.new as any;
-          if (newRecord?.avu_balance !== undefined && Number(newRecord.avu_balance) > 0) {
-            const newBal = Number(newRecord.avu_balance);
+          const rawVal = newRecord?.balance ?? newRecord?.avu_balance;
+          if (rawVal !== undefined && rawVal !== null && !isNaN(Number(rawVal))) {
+            const newBal = Number(rawVal);
             setBalance(newBal);
-            localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+            if (typeof window !== "undefined") {
+              localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+            }
           } else {
             fetchBalance();
           }
@@ -234,10 +255,13 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
         (payload) => {
           if (!isSubscribed) return;
           const newRecord = payload.new as any;
-          if (newRecord?.avu_balance !== undefined && Number(newRecord.avu_balance) > 0) {
-            const newBal = Number(newRecord.avu_balance);
+          const rawVal = newRecord?.avu_balance ?? newRecord?.balance;
+          if (rawVal !== undefined && rawVal !== null && !isNaN(Number(rawVal))) {
+            const newBal = Number(rawVal);
             setBalance(newBal);
-            localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+            if (typeof window !== "undefined") {
+              localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+            }
           } else {
             fetchBalance();
           }
@@ -315,3 +339,6 @@ export function useAmbassadorWallet(explicitUserId?: string | null): UseAmbassad
     refetch: fetchBalance,
   };
 }
+
+export { useWalletState } from "./useWalletState";
+export type { UseWalletStateResult, UseWalletStateOptions } from "./useWalletState";
