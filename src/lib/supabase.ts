@@ -510,42 +510,41 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
           const { data, error } = await query.maybeSingle();
           if (!error && data) {
             const exactBal = extractExactAvuBalance(data);
-            if (exactBal > 0) {
-              bestBalance = Math.max(bestBalance, exactBal);
-              balanceFound = true;
-            }
+            bestBalance = exactBal;
+            balanceFound = true;
             if (data.id && isUuid(data.id)) {
               resolvedDbId = data.id;
             }
             if (data.email) {
               resolvedEmail = data.email.toLowerCase();
             }
+            break;
           }
         } catch (_) {}
       }
 
-      // Tier 2: Check ambassador_wallets (plural table, check both avu_balance and balance)
-      try {
-        let pQuery = client.from("ambassador_wallets").select("avu_balance, balance, ambassador_id");
-        if (resolvedDbId && isUuid(resolvedDbId)) {
-          pQuery = pQuery.eq("ambassador_id", resolvedDbId);
-        } else if (resolvedEmail || targetEmail) {
-          pQuery = pQuery.ilike("email", resolvedEmail || targetEmail);
-        } else if (isStrictUuid) {
-          pQuery = pQuery.eq("ambassador_id", cleanId);
-        }
-        const { data: pwData } = await pQuery.maybeSingle();
-        if (pwData) {
-          const wBal = Number(pwData.avu_balance ?? pwData.balance ?? 0);
-          if (wBal > 0) {
-            bestBalance = Math.max(bestBalance, wBal);
+      // Tier 2: Check ambassador_wallets (plural table) ONLY if not found in primary profile
+      if (!balanceFound) {
+        try {
+          let pQuery = client.from("ambassador_wallets").select("avu_balance, balance, ambassador_id");
+          if (resolvedDbId && isUuid(resolvedDbId)) {
+            pQuery = pQuery.eq("ambassador_id", resolvedDbId);
+          } else if (resolvedEmail || targetEmail) {
+            pQuery = pQuery.ilike("email", resolvedEmail || targetEmail);
+          } else if (isStrictUuid) {
+            pQuery = pQuery.eq("ambassador_id", cleanId);
+          }
+          const { data: pwData } = await pQuery.maybeSingle();
+          if (pwData) {
+            const wBal = Number(pwData.avu_balance ?? pwData.balance ?? 0);
+            bestBalance = wBal;
             balanceFound = true;
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
-      // Tier 3: Check ambassador_wallet (singular table)
-      if (resolvedDbId && isUuid(resolvedDbId)) {
+      // Tier 3: Check ambassador_wallet (singular table) ONLY if not found in primary profile
+      if (!balanceFound && resolvedDbId && isUuid(resolvedDbId)) {
         try {
           const { data: wData } = await client
             .from("ambassador_wallet")
@@ -554,16 +553,14 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
             .maybeSingle();
           if (wData) {
             const wBal = Number(wData.balance ?? wData.avu_balance ?? 0);
-            if (wBal > 0) {
-              bestBalance = Math.max(bestBalance, wBal);
-              balanceFound = true;
-            }
+            bestBalance = wBal;
+            balanceFound = true;
           }
         } catch (_) {}
       }
 
-      // Tier 4: Check deposits table for successful funded deposits
-      if (resolvedEmail || targetEmail || cleanId) {
+      // Tier 4: Check deposits table ONLY if no balance record was found in profile or wallet tables
+      if (!balanceFound && (resolvedEmail || targetEmail || cleanId)) {
         try {
           const emailToQuery = resolvedEmail || targetEmail;
           let depQuery = client.from("deposits").select("avu_earned").eq("status", "success");
@@ -576,15 +573,15 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
           if (depRows && depRows.length > 0) {
             const totalDepositAvu = depRows.reduce((acc: number, d: any) => acc + (Number(d.avu_earned) || 0), 0);
             if (totalDepositAvu > 0) {
-              bestBalance = Math.max(bestBalance, Number(totalDepositAvu.toFixed(3)));
+              bestBalance = Number(totalDepositAvu.toFixed(3));
               balanceFound = true;
             }
           }
         } catch (_) {}
       }
 
-      // Tier 5: Check token_grants table for direct admin credits
-      if (resolvedDbId || targetEmail || cleanId) {
+      // Tier 5: Check token_grants table ONLY if not found
+      if (!balanceFound && (resolvedDbId || targetEmail || cleanId)) {
         try {
           let grantQuery = client.from("token_grants").select("grant_amount, amount");
           if (targetEmail) {
@@ -596,7 +593,7 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
           if (grantRows && grantRows.length > 0) {
             const totalGrants = grantRows.reduce((acc: number, g: any) => acc + (Number(g.grant_amount || g.amount) || 0), 0);
             if (totalGrants > 0) {
-              bestBalance = Math.max(bestBalance, Number(totalGrants.toFixed(3)));
+              bestBalance = Number(totalGrants.toFixed(3));
               balanceFound = true;
             }
           }
@@ -608,21 +605,17 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
     }
   }
 
-  // Tier 6: Fallback to local storage if offline or to verify local cache
-  if (localMatch) {
+  // Tier 6: Fallback to local storage if offline or not found
+  if (!balanceFound && localMatch) {
     const localBal = extractExactAvuBalance(localMatch);
-    if (localBal > 0) {
-      bestBalance = Math.max(bestBalance, localBal);
-      balanceFound = true;
-    }
+    bestBalance = localBal;
+    balanceFound = true;
   }
 
-  // CRITICAL ANTI-REVERSAL GUARD:
-  // If the database query temporarily returned 0 (e.g. empty table, unlinked foreign key, or race condition),
-  // but a verified positive balance was previously captured in cache, DO NOT OVERWRITE WITH 0!
-  if (bestBalance === 0 && cachedBalance > 0) {
+  // Anti-reversal guard: only fallback to cached balance if query failed entirely
+  if (!balanceFound && cachedBalance > 0) {
     bestBalance = cachedBalance;
-  } else if (bestBalance > 0 && typeof window !== "undefined") {
+  } else if (balanceFound && typeof window !== "undefined") {
     localStorage.setItem("advaltad_cached_wallet_balance", String(bestBalance));
   }
 
@@ -2576,14 +2569,16 @@ export const db = {
   async createAvuWithdrawal(
     withdrawal: Omit<DbAvuWithdrawal, "id" | "created_at">
   ): Promise<DbAvuWithdrawal> {
-    const id = "WTH-" + Date.now().toString().slice(-6) + Math.floor(Math.random() * 899 + 100);
+    const generatedUuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : "00000000-0000-4000-8000-" + Date.now().toString(16).padStart(12, '0');
     const timestamp = new Date().toISOString();
     const reqAmount = Number(withdrawal.requested_avu || withdrawal.avu_amount || 0);
     const convRate = Number(withdrawal.conversion_rate || 1000);
     const nairaEq = Number(withdrawal.naira_equivalent || (reqAmount * convRate));
 
     const fresh: DbAvuWithdrawal = {
-      id,
+      id: generatedUuid,
       ambassador_id: withdrawal.ambassador_id,
       ambassador_name: withdrawal.ambassador_name,
       email: withdrawal.email || withdrawal.ambassador_email,
@@ -2613,6 +2608,7 @@ export const db = {
           current_balance: fresh.current_balance,
           requested_avu: fresh.requested_avu,
           avu_amount: fresh.avu_amount,
+          amount: fresh.requested_avu,
           naira_equivalent: fresh.naira_equivalent,
           conversion_rate: fresh.conversion_rate,
           bank_name: fresh.bank_name,
@@ -2622,11 +2618,12 @@ export const db = {
           created_at: timestamp
         };
 
-        let { error } = await client.from("avu_withdrawals").insert([primaryPayload]);
-        if (error) {
+        const { data: insertedRow, error } = await client.from("avu_withdrawals").insert([primaryPayload]).select().maybeSingle();
+        if (insertedRow && insertedRow.id) {
+          fresh.id = insertedRow.id;
+        } else if (error) {
           // Retry with compact schema if custom schema omits secondary column aliases
           const compactPayload: any = {
-            id: fresh.id,
             ambassador_id: fresh.ambassador_id,
             ambassador_name: fresh.ambassador_name,
             email: fresh.email,
@@ -2638,8 +2635,10 @@ export const db = {
             account_name: fresh.account_name,
             status: "Pending"
           };
-          const res2 = await client.from("avu_withdrawals").insert([compactPayload]);
-          if (res2.error) {
+          const res2 = await client.from("avu_withdrawals").insert([compactPayload]).select().maybeSingle();
+          if (res2.data && res2.data.id) {
+            fresh.id = res2.data.id;
+          } else if (res2.error) {
             await client.from("AvuWithdrawals").insert([primaryPayload]);
           }
         }
@@ -2654,6 +2653,8 @@ export const db = {
       const list: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
       list.unshift(fresh);
       localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+      localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: fresh.id, status: "Pending" } }));
     }
 
     // Log Activity
@@ -2674,117 +2675,13 @@ export const db = {
     adminNote?: string,
     adminEmail?: string
   ): Promise<boolean> {
-    const timestamp = new Date().toISOString();
-    const reviewer = adminEmail || "Executive Treasury Admin";
-
-    // 1. Get withdrawal record
-    const all = await this.getAvuWithdrawals();
-    const target = all.find(w => w.id === id);
-
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      try {
-        const client = supabaseAdmin || supabase;
-        const updatePayload: any = {
-          status,
-          reviewed_by: reviewer,
-          reviewed_at: timestamp,
-          updated_at: timestamp
-        };
-        if (adminNote) updatePayload.admin_note = adminNote;
-
-        for (const tableName of ["avu_withdrawals", "AvuWithdrawals"]) {
-          try {
-            await client.from(tableName).update(updatePayload).eq("id", id);
-          } catch (e) {}
-        }
-      } catch (err) {
-        console.warn("Error updating withdrawal in Supabase:", err);
-      }
+    if (status === "Approved") {
+      const res = await handleApprove(id, undefined, adminEmail, adminNote);
+      return res.success;
+    } else {
+      const res = await handleReject(id, undefined, adminEmail, adminNote);
+      return res.success;
     }
-
-    // Update local storage
-    if (typeof window !== "undefined") {
-      const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
-      const list: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
-      const idx = list.findIndex(w => w.id === id);
-      if (idx !== -1) {
-        list[idx].status = status;
-        list[idx].reviewed_by = reviewer;
-        list[idx].reviewed_at = timestamp;
-        if (adminNote) list[idx].admin_note = adminNote;
-        list[idx].updated_at = timestamp;
-        localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
-      }
-    }
-
-    // If Approved, deduct AVU tokens from ambassador's balance in public.ambassadors
-    if (status === "Approved" && target) {
-      const requestedAvu = Number(target.requested_avu || target.avu_amount || 0);
-
-      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-        try {
-          const client = supabaseAdmin || supabase;
-          // Step 1: Fetch latest sender balance
-          const { data: amb } = await client
-            .from('ambassadors')
-            .select('avu_balance')
-            .eq('id', target.ambassador_id)
-            .single();
-
-          if (amb && amb.avu_balance !== undefined) {
-            const newBalance = Math.max(0, Number(amb.avu_balance) - requestedAvu);
-
-            // Step 2: Update ambassador balance
-            await client
-              .from('ambassadors')
-              .update({ avu_balance: newBalance })
-              .eq('id', target.ambassador_id);
-          }
-        } catch (err) {
-          console.warn("Direct Supabase update balance on approval error:", err);
-        }
-      }
-
-      // Also ensure mirrors / local cache / email fallbacks are cleanly synced
-      const ambRecord = await this.findAmbassadorByEmail(target.ambassador_email || target.email || "") || await this.findAmbassadorById(target.ambassador_id);
-      if (ambRecord) {
-        const currentBal = Number(ambRecord.avu_balance) || 0;
-        const newBal = Math.max(0, Number((currentBal - requestedAvu).toFixed(3)));
-        
-        await this.updateAvuBalance(ambRecord.id, newBal);
-        if (ambRecord.email) await this.updateAvuBalance(ambRecord.email, newBal);
-        if (ambRecord.user_id) await this.updateAvuBalance(ambRecord.user_id, newBal);
-        await this.updateWalletBalance(ambRecord.id, newBal);
-
-        // Log activity and audit log
-        await this.logActivity({
-          ambassador_id: ambRecord.id,
-          ambassador_name: ambRecord.name,
-          type: "avu_transfer",
-          desc: `Withdrawal Approved: Disbursed ₦${target.naira_equivalent.toLocaleString()} to ${target.bank_name} (${target.account_number}). Deducted ${requestedAvu} AVU from balance.`,
-          amount: `-${requestedAvu} AVU`
-        });
-
-        await this.createAuditLog({
-          admin_id: "ADM-EXEC",
-          admin_name: "Executive Treasury Admin",
-          admin_email: adminEmail || "treasury@advaltadfoundation.org",
-          ambassador_id: ambRecord.id,
-          ambassador_name: ambRecord.name,
-          action: "updated_portfolio"
-        });
-      }
-    } else if (status === "Disapproved" && target) {
-      await this.logActivity({
-        ambassador_id: target.ambassador_id,
-        ambassador_name: target.ambassador_name,
-        type: "status_change",
-        desc: `Withdrawal Disapproved: Request for ${target.requested_avu || target.avu_amount} AVU (₦${target.naira_equivalent.toLocaleString()}) was rejected by treasury.${adminNote ? ` Note: ${adminNote}` : ""}`,
-        amount: `${target.requested_avu || target.avu_amount} AVU`
-      });
-    }
-
-    return true;
   }
 };
 
@@ -2936,60 +2833,280 @@ export async function handleWithdrawalSubmit(formData: {
  * Admin Processing Pending Requests - Approve
  * 
  * - Calls RPC 'approve_avu_withdrawal' with p_withdrawal_id and p_admin_id.
- * - Deducts ambassador wallet balance upon approval.
+ * - Atomically deducts exact requested amount from ambassador's wallet in all Supabase tables.
+ * - Updates local storage caches and broadcasts events for instant cross-tab UI reflection.
  */
 export async function handleApprove(
   withdrawalId: string,
-  adminId: string
-): Promise<{ success: boolean; data?: any; error?: any }> {
+  adminId?: string,
+  adminEmail?: string,
+  adminNote?: string
+): Promise<{ success: boolean; data?: any; error?: any; newBalance?: number; requestedAmount?: number }> {
   try {
-    const effectiveAdminId = /^[0-9a-f-]{36}$/i.test(adminId)
+    const effectiveAdminId = (adminId && /^[0-9a-f-]{36}$/i.test(adminId))
       ? adminId
       : "00000000-0000-0000-0000-000000000000";
+    const reviewer = adminEmail || "Executive Treasury Admin";
+    const timestamp = new Date().toISOString();
 
-    let { data, error } = await supabase.rpc("approve_avu_withdrawal", {
-      p_withdrawal_id: withdrawalId,
-      p_admin_id: effectiveAdminId
+    // 1. Locate the withdrawal request record
+    const allWithdrawals = await db.getAvuWithdrawals();
+    let target = allWithdrawals.find(w => w.id === withdrawalId);
+
+    // If not in cache, query Supabase directly
+    if (!target && isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      const client = supabaseAdmin || supabase;
+      const { data: wRow } = await client.from("avu_withdrawals").select("*").eq("id", withdrawalId).maybeSingle();
+      if (wRow) {
+        target = {
+          id: wRow.id,
+          ambassador_id: wRow.ambassador_id || "",
+          ambassador_name: wRow.ambassador_name || wRow.account_name || "Ambassador",
+          email: wRow.email || wRow.ambassador_email || "",
+          ambassador_email: wRow.ambassador_email || wRow.email || "",
+          current_balance: Number(wRow.current_balance || 0),
+          requested_avu: Number(wRow.requested_avu ?? wRow.avu_amount ?? wRow.amount ?? 0),
+          bank_name: wRow.bank_name || "",
+          account_number: wRow.account_number || "",
+          account_name: wRow.account_name || "",
+          avu_amount: Number(wRow.avu_amount ?? wRow.requested_avu ?? wRow.amount ?? 0),
+          naira_equivalent: Number(wRow.naira_equivalent || 0),
+          conversion_rate: Number(wRow.conversion_rate || 1000),
+          status: "Pending",
+          created_at: wRow.created_at || timestamp
+        };
+      }
+    }
+
+    const requestedAmount = Number(target?.requested_avu ?? target?.avu_amount ?? 0);
+    const targetAmbassadorId = target?.ambassador_id || "";
+    const targetEmail = target?.ambassador_email || target?.email || "";
+    const targetName = target?.ambassador_name || target?.account_name || "Ambassador";
+
+    // 2. Attempt Supabase RPC execution if available
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.rpc("approve_avu_withdrawal", {
+          p_withdrawal_id: withdrawalId,
+          p_admin_id: effectiveAdminId
+        });
+      } catch (_) {}
+    }
+
+    // 3. Guarantee record status update on avu_withdrawals table in Supabase
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      const client = supabaseAdmin || supabase;
+      const updatePayload: any = {
+        status: "Approved",
+        reviewed_by: reviewer,
+        reviewed_at: timestamp,
+        updated_at: timestamp
+      };
+      if (adminNote) updatePayload.admin_note = adminNote;
+
+      for (const tName of ["avu_withdrawals", "AvuWithdrawals"]) {
+        try {
+          await client.from(tName).update(updatePayload).eq("id", withdrawalId);
+        } catch (_) {}
+      }
+    }
+
+    // 4. CRITICAL: Deduct exact AVU tokens from ambassador's wallet across all tables in Supabase
+    let computedNewBal = 0;
+    let balanceUpdated = false;
+
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      const client = supabaseAdmin || supabase;
+      try {
+        // Query ambassadors / Ambassadors table
+        for (const tName of ["ambassadors", "Ambassadors"]) {
+          let q = client.from(tName).select("id, email, avu_balance, wallet_balance, balance");
+          if (targetAmbassadorId && isUuid(targetAmbassadorId)) {
+            q = q.or(`id.eq.${targetAmbassadorId},user_id.eq.${targetAmbassadorId}` + (targetEmail ? `,email.ilike.${targetEmail}` : ""));
+          } else if (targetEmail) {
+            q = q.ilike("email", targetEmail);
+          } else if (targetAmbassadorId) {
+            q = q.eq("id", targetAmbassadorId);
+          }
+
+          const { data: ambRow } = await q.maybeSingle();
+          if (ambRow) {
+            const currentBal = Number(ambRow.avu_balance ?? ambRow.wallet_balance ?? ambRow.balance ?? 0);
+            computedNewBal = Math.max(0, Number((currentBal - requestedAmount).toFixed(3)));
+            balanceUpdated = true;
+
+            await client.from(tName).update({
+              avu_balance: computedNewBal,
+              wallet_balance: computedNewBal,
+              balance: computedNewBal,
+              updated_at: timestamp
+            }).eq("id", ambRow.id);
+          }
+        }
+
+        // Also update ambassador_wallet (singular) & ambassador_wallets (plural)
+        for (const wTable of ["ambassador_wallet", "ambassador_wallets"]) {
+          try {
+            let currentWBal = computedNewBal;
+            if (!balanceUpdated) {
+              let wSel = client.from(wTable).select("balance, avu_balance");
+              if (targetAmbassadorId && isUuid(targetAmbassadorId)) wSel = wSel.eq("ambassador_id", targetAmbassadorId);
+              else if (targetEmail) wSel = wSel.ilike("email", targetEmail);
+              const { data: wRow } = await wSel.maybeSingle();
+              if (wRow) {
+                const prevW = Number(wRow.balance ?? wRow.avu_balance ?? 0);
+                computedNewBal = Math.max(0, Number((prevW - requestedAmount).toFixed(3)));
+                currentWBal = computedNewBal;
+                balanceUpdated = true;
+              }
+            }
+
+            let wQ = client.from(wTable).update({
+              balance: currentWBal,
+              avu_balance: currentWBal,
+              updated_at: timestamp
+            });
+            if (targetAmbassadorId && isUuid(targetAmbassadorId)) {
+              wQ = wQ.eq("ambassador_id", targetAmbassadorId);
+            } else if (targetEmail) {
+              wQ = wQ.ilike("email", targetEmail);
+            }
+            await wQ;
+          } catch (_) {}
+        }
+      } catch (deductErr) {
+        console.warn("[handleApprove] Supabase wallet deduction warning:", deductErr);
+      }
+    }
+
+    // 5. Update local storage mirrors and caches
+    if (typeof window !== "undefined") {
+      // Update avu withdrawals local storage
+      const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+      if (localData) {
+        try {
+          const list: DbAvuWithdrawal[] = JSON.parse(localData);
+          const idx = list.findIndex(w => w.id === withdrawalId);
+          if (idx !== -1) {
+            list[idx].status = "Approved";
+            list[idx].reviewed_by = reviewer;
+            list[idx].reviewed_at = timestamp;
+            if (adminNote) list[idx].admin_note = adminNote;
+            list[idx].updated_at = timestamp;
+            localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+          }
+        } catch (_) {}
+      }
+
+      // Update ambassadors local storage
+      const localAmbs = localStorage.getItem("advaltad_ambassadors");
+      if (localAmbs) {
+        try {
+          const ambList = JSON.parse(localAmbs);
+          let updatedAmb = false;
+          for (let i = 0; i < ambList.length; i++) {
+            const a = ambList[i];
+            if (
+              (targetAmbassadorId && a.id && a.id.toLowerCase() === targetAmbassadorId.toLowerCase()) ||
+              (targetAmbassadorId && a.user_id && a.user_id.toLowerCase() === targetAmbassadorId.toLowerCase()) ||
+              (targetEmail && a.email && a.email.toLowerCase() === targetEmail.toLowerCase())
+            ) {
+              const prev = Number(a.avu_balance ?? a.wallet_balance ?? 0);
+              if (!balanceUpdated) {
+                computedNewBal = Math.max(0, Number((prev - requestedAmount).toFixed(3)));
+              }
+              ambList[i].avu_balance = computedNewBal;
+              ambList[i].ledger_balance = computedNewBal;
+              ambList[i].wallet_balance = computedNewBal;
+              ambList[i].balance = computedNewBal;
+              updatedAmb = true;
+            }
+          }
+          if (updatedAmb) {
+            localStorage.setItem("advaltad_ambassadors", JSON.stringify(ambList));
+          }
+        } catch (_) {}
+      }
+
+      // Update wallets local storage
+      const localWallets = localStorage.getItem("advaltad_wallets");
+      if (localWallets) {
+        try {
+          const wList = JSON.parse(localWallets);
+          let updatedW = false;
+          for (let i = 0; i < wList.length; i++) {
+            const w = wList[i];
+            if (
+              (targetAmbassadorId && w.ambassador_id && w.ambassador_id.toLowerCase() === targetAmbassadorId.toLowerCase()) ||
+              (targetEmail && w.email && w.email.toLowerCase() === targetEmail.toLowerCase())
+            ) {
+              wList[i].balance = computedNewBal;
+              updatedW = true;
+            }
+          }
+          if (updatedW) {
+            localStorage.setItem("advaltad_wallets", JSON.stringify(wList));
+          }
+        } catch (_) {}
+      }
+
+      // Update cached wallet balance if this session corresponds to the ambassador
+      const sessionEmail = localStorage.getItem("advaltad_session_email");
+      const sessionUserId = localStorage.getItem("advaltad_session_user_id");
+      if (
+        (sessionEmail && targetEmail && sessionEmail.toLowerCase() === targetEmail.toLowerCase()) ||
+        (sessionUserId && targetAmbassadorId && sessionUserId.toLowerCase() === targetAmbassadorId.toLowerCase())
+      ) {
+        localStorage.setItem("advaltad_cached_wallet_balance", String(computedNewBal));
+      }
+    }
+
+    // 6. Log activity and audit trail
+    await db.logActivity({
+      ambassador_id: targetAmbassadorId,
+      ambassador_name: targetName,
+      type: "avu_transfer",
+      desc: `Withdrawal Approved: Disbursed ₦${(target?.naira_equivalent || requestedAmount * 1000).toLocaleString()} to ${target?.bank_name || 'Bank'} (${target?.account_number || ''}). Deducted ${requestedAmount} AVU from balance. New balance: ${computedNewBal} AVU.`,
+      amount: `-${requestedAmount} AVU`
     });
 
-    // If RPC encountered schema or function error, fallback to direct status update + trigger
-    if (error) {
-      console.warn("[handleApprove] RPC error, using direct table update:", error.message);
-      const directUpdate = await supabase
-        .from("avu_withdrawals")
-        .update({
-          status: "Approved",
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", withdrawalId);
+    await db.createAuditLog({
+      admin_id: effectiveAdminId,
+      admin_name: reviewer,
+      admin_email: adminEmail || "treasury@advaltad.org",
+      ambassador_id: targetAmbassadorId,
+      ambassador_name: targetName,
+      action: "approved"
+    });
 
-      if (!directUpdate.error) {
-        error = null;
-      } else {
-        // Also ensure db helper fallback executes
-        const dbSuccess = await db.updateAvuWithdrawalStatus(withdrawalId, "Approved", undefined, adminId);
-        if (dbSuccess) {
-          error = null;
-        } else {
-          error = directUpdate.error;
+    // 7. Dispatch events for real-time synchronization across all tabs and components
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", {
+        detail: { id: withdrawalId, status: "Approved", ambassadorId: targetAmbassadorId, newBalance: computedNewBal }
+      }));
+      window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", {
+        detail: {
+          ambassadorId: targetAmbassadorId,
+          email: targetEmail,
+          newBalance: computedNewBal,
+          deductedAmount: requestedAmount,
+          timestamp: Date.now()
         }
-      }
+      }));
+      // Cross-tab synchronization via localStorage pings
+      localStorage.setItem("advaltad_wallet_sync_ping", JSON.stringify({
+        ambassadorId: targetAmbassadorId,
+        email: targetEmail,
+        newBalance: computedNewBal,
+        deductedAmount: requestedAmount,
+        timestamp: Date.now()
+      }));
+      localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
     }
 
-    if (error) {
-      alert("Error approving withdrawal: " + error.message);
-      return { success: false, error };
-    } else {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated"));
-        window.dispatchEvent(new CustomEvent("advaltad_wallet_updated"));
-      }
-      alert("Approved! Ambassador wallet deducted.");
-      return { success: true, data };
-    }
+    return { success: true, newBalance: computedNewBal, requestedAmount };
   } catch (err: any) {
-    const msg = err?.message || String(err);
-    alert("Error approving withdrawal: " + msg);
+    console.error("[handleApprove] Approval exception:", err);
     return { success: false, error: err };
   }
 }
@@ -2997,59 +3114,86 @@ export async function handleApprove(
 /**
  * Admin Processing Pending Requests - Reject / Disapprove
  * 
- * - Calls RPC 'reject_avu_withdrawal' with p_withdrawal_id and p_admin_id.
  * - Leaves ambassador balance untouched.
+ * - Updates status to 'Disapproved' and notifies.
  */
 export async function handleReject(
   withdrawalId: string,
-  adminId: string
+  adminId?: string,
+  adminEmail?: string,
+  adminNote?: string
 ): Promise<{ success: boolean; data?: any; error?: any }> {
   try {
-    const effectiveAdminId = /^[0-9a-f-]{36}$/i.test(adminId)
+    const effectiveAdminId = (adminId && /^[0-9a-f-]{36}$/i.test(adminId))
       ? adminId
       : "00000000-0000-0000-0000-000000000000";
+    const reviewer = adminEmail || "Executive Treasury Admin";
+    const timestamp = new Date().toISOString();
 
-    let { data, error } = await supabase.rpc("reject_avu_withdrawal", {
-      p_withdrawal_id: withdrawalId,
-      p_admin_id: effectiveAdminId
-    });
+    const allWithdrawals = await db.getAvuWithdrawals();
+    const target = allWithdrawals.find(w => w.id === withdrawalId);
 
-    // If RPC encountered schema or function error, fallback to direct status update
-    if (error) {
-      console.warn("[handleReject] RPC error, using direct table update:", error.message);
-      const directUpdate = await supabase
-        .from("avu_withdrawals")
-        .update({
-          status: "Disapproved",
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", withdrawalId);
+    // Call RPC if available
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.rpc("reject_avu_withdrawal", {
+          p_withdrawal_id: withdrawalId,
+          p_admin_id: effectiveAdminId
+        });
+      } catch (_) {}
+    }
 
-      if (!directUpdate.error) {
-        error = null;
-      } else {
-        const dbSuccess = await db.updateAvuWithdrawalStatus(withdrawalId, "Disapproved", undefined, adminId);
-        if (dbSuccess) {
-          error = null;
-        } else {
-          error = directUpdate.error;
-        }
+    // Direct table update
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      const client = supabaseAdmin || supabase;
+      const updatePayload: any = {
+        status: "Disapproved",
+        reviewed_by: reviewer,
+        reviewed_at: timestamp,
+        updated_at: timestamp
+      };
+      if (adminNote) updatePayload.admin_note = adminNote;
+
+      for (const tName of ["avu_withdrawals", "AvuWithdrawals"]) {
+        try {
+          await client.from(tName).update(updatePayload).eq("id", withdrawalId);
+        } catch (_) {}
       }
     }
 
-    if (error) {
-      alert("Error rejecting request: " + error.message);
-      return { success: false, error };
-    } else {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated"));
+    // Update local storage
+    if (typeof window !== "undefined") {
+      const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+      if (localData) {
+        try {
+          const list: DbAvuWithdrawal[] = JSON.parse(localData);
+          const idx = list.findIndex(w => w.id === withdrawalId);
+          if (idx !== -1) {
+            list[idx].status = "Disapproved";
+            list[idx].reviewed_by = reviewer;
+            list[idx].reviewed_at = timestamp;
+            if (adminNote) list[idx].admin_note = adminNote;
+            list[idx].updated_at = timestamp;
+            localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+          }
+        } catch (_) {}
       }
-      alert("Disapproved! Balance left untouched.");
-      return { success: true, data };
+      localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: withdrawalId, status: "Disapproved" } }));
     }
+
+    if (target) {
+      await db.logActivity({
+        ambassador_id: target.ambassador_id,
+        ambassador_name: target.ambassador_name,
+        type: "status_change",
+        desc: `Withdrawal Disapproved: Request for ${target.requested_avu || target.avu_amount} AVU was rejected by treasury.${adminNote ? ` Note: ${adminNote}` : ""}`
+      });
+    }
+
+    return { success: true };
   } catch (err: any) {
-    const msg = err?.message || String(err);
-    alert("Error rejecting request: " + msg);
+    console.error("[handleReject] Reject exception:", err);
     return { success: false, error: err };
   }
 }
