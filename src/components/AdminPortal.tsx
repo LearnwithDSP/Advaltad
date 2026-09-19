@@ -31,8 +31,7 @@ import {
   X,
   Send
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured } from "../lib/supabase";
-import { handleApprove, handleReject } from "../lib/withdrawals";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
