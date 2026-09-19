@@ -201,3 +201,6 @@ export function useWalletBalance(identifier?: string | null): UseWalletBalanceRe
     refetch: fetchBalance
   };
 }
+
+export { useWalletState } from "./useWalletState";
+export type { UseWalletStateResult, UseWalletStateOptions } from "./useWalletState";
