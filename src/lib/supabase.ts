@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { logWithdrawalFetchTrace } from "./db-logger";
 
 // Supabase configuration
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (process as any).env?.VITE_SUPABASE_URL || "";
@@ -2651,12 +2652,33 @@ export const db = {
 
     if (ambassadorIdOrEmail) {
       const clean = ambassadorIdOrEmail.trim().toLowerCase();
-      all = all.filter(w => 
-        (w.ambassador_id && w.ambassador_id.toLowerCase() === clean) ||
-        (w.ambassador_email && w.ambassador_email.toLowerCase() === clean) ||
-        (w.email && w.email.toLowerCase() === clean)
-      );
+      all = all.filter(w => {
+        const wAmbId = (w.ambassador_id || "").toLowerCase().trim();
+        const wEmail = (w.ambassador_email || w.email || "").toLowerCase().trim();
+        const wName = (w.ambassador_name || w.account_name || "").toLowerCase().trim();
+        const joinedAmb = (w as any).ambassadors;
+        const joinedId = (joinedAmb?.id || joinedAmb?.user_id || "").toLowerCase().trim();
+        const joinedEmail = (joinedAmb?.email || "").toLowerCase().trim();
+
+        return (
+          (wAmbId && (wAmbId === clean || wAmbId.includes(clean) || clean.includes(wAmbId))) ||
+          (joinedId && (joinedId === clean || joinedId.includes(clean) || clean.includes(joinedId))) ||
+          (wEmail && (wEmail === clean || wEmail.includes(clean))) ||
+          (joinedEmail && (joinedEmail === clean || joinedEmail.includes(clean))) ||
+          (wName && (wName === clean || clean.includes(wName)))
+        );
+      });
     }
+
+    logWithdrawalFetchTrace({
+      caller: "db.getAvuWithdrawals",
+      targetAmbassadorId: ambassadorIdOrEmail || "ALL",
+      tableQueried: "avu_withdrawals",
+      matchedCount: all.length,
+      totalCount: map.size,
+      sampleIds: all.slice(0, 3).map(w => `${w.id}:${w.ambassador_id}`)
+    });
+
     return all;
   },
 
@@ -2797,7 +2819,7 @@ export async function handleWithdrawalSubmit(formData: {
   bankName: string;
   accountNumber: string;
   accountName: string;
-}): Promise<{ success: boolean; error?: any }> {
+}): Promise<{ success: boolean; error?: any; data?: any }> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -2844,81 +2866,55 @@ export async function handleWithdrawalSubmit(formData: {
       }
     }
 
-    // 1. Attempt exact requested insert: { ambassador_id, amount, bank_name, account_number, account_name, status: 'pending' }
-    let { error } = await supabase
-      .from("avu_withdrawals")
-      .insert({
-        ambassador_id: targetAmbassadorId,
-        amount: formData.amount,
-        bank_name: formData.bankName,
-        account_number: formData.accountNumber,
-        account_name: formData.accountName,
-        status: "pending" // Balance stays intact until admin approves!
-      });
+    const compatiblePayload = {
+      ambassador_id: targetAmbassadorId,
+      ambassador_name: ambassadorName,
+      email: ambassadorEmail,
+      ambassador_email: ambassadorEmail,
+      current_balance: currentBalance,
+      requested_avu: formData.amount,
+      avu_amount: formData.amount,
+      amount: formData.amount,
+      naira_equivalent: formData.amount * 1000,
+      conversion_rate: 1000,
+      bank_name: formData.bankName,
+      account_number: formData.accountNumber,
+      account_name: formData.accountName,
+      status: "Pending" as const
+    };
 
-    // 2. If table schema requires specific constraints (e.g. requested_avu, status: 'Pending', ambassador_name, current_balance)
-    if (error) {
-      console.warn("[handleWithdrawalSubmit] Initial insert note, retrying with schema-compatible payload:", error.message);
-      
-      const compatiblePayload: any = {
-        ambassador_id: targetAmbassadorId,
-        ambassador_name: ambassadorName,
-        email: ambassadorEmail,
-        current_balance: currentBalance,
-        requested_avu: formData.amount,
-        naira_equivalent: formData.amount * 1000,
-        bank_name: formData.bankName,
-        account_number: formData.accountNumber,
-        account_name: formData.accountName,
-        status: "Pending" // Database check constraint enforces 'Pending'
-      };
+    // 1. Create using db.createAvuWithdrawal to ensure full persistence and activity logging
+    const createdRecord = await db.createAvuWithdrawal(compatiblePayload);
 
-      const fallbackRes = await supabase
-        .from("avu_withdrawals")
-        .insert(compatiblePayload)
-        .select();
-
-      if (fallbackRes.error) {
-        console.warn("[handleWithdrawalSubmit] Fallback insert note, writing to local db cache:", fallbackRes.error.message);
-        error = fallbackRes.error;
-      } else {
-        error = null;
-      }
-
-      // Mirror to db service
+    // 2. Also ensure direct insertion into avu_withdrawals table if Supabase is connected
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
-        await db.createAvuWithdrawal({
+        const client = supabaseAdmin || supabase;
+        await client.from("avu_withdrawals").upsert({
+          id: createdRecord.id,
           ambassador_id: targetAmbassadorId,
-          ambassador_name: ambassadorName,
-          ambassador_email: ambassadorEmail,
-          current_balance: currentBalance,
+          amount: formData.amount,
           requested_avu: formData.amount,
           avu_amount: formData.amount,
-          naira_equivalent: formData.amount * 1000,
-          conversion_rate: 1000,
           bank_name: formData.bankName,
           account_number: formData.accountNumber,
           account_name: formData.accountName,
+          ambassador_name: ambassadorName,
+          email: ambassadorEmail,
+          ambassador_email: ambassadorEmail,
           status: "Pending"
         });
-      } catch (mirrorErr) {
-        console.warn("[handleWithdrawalSubmit] Local mirror update note:", mirrorErr);
-      }
+      } catch (_) {}
     }
 
-    if (error) {
-      alert("Failed to submit withdrawal request: " + error.message);
-      return { success: false, error };
-    } else {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated"));
-      }
-      alert("Withdrawal request submitted! Pending Admin approval.");
-      return { success: true };
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: createdRecord }));
+      localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
     }
+
+    return { success: true, data: createdRecord };
   } catch (err: any) {
-    const msg = err?.message || String(err);
-    alert("Failed to submit withdrawal request: " + msg);
+    console.error("[handleWithdrawalSubmit] Error:", err);
     return { success: false, error: err };
   }
 }
