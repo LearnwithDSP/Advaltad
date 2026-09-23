@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance, handleWithdrawalSubmit } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance, handleWithdrawalSubmit, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY } from "../lib/supabase";
 import { useAmbassadorWallet } from "../hooks/useAmbassadorWallet";
 import { useWalletBalance, useWalletState } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
@@ -10,6 +10,7 @@ import { AmbassadorProfile } from "./AmbassadorProfile";
 import { AmbassadorCertificate, getAmbassadorDisplayName } from "./AmbassadorCertificate";
 import { WithdrawalTrackerCard } from "./WithdrawalTrackerCard";
 import { WithdrawalModal } from "./WithdrawalModal";
+import { logWithdrawalFetchTrace } from "../lib/db-logger";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
   ResponsiveContainer,
@@ -1161,11 +1162,20 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const exactBalance = extractExactAvuBalance(dbRecord);
     // Also consult live fetchWalletBalance across all tables (ambassadors, ambassador_wallets, deposits, token_grants)
     const liveWalletBal = await fetchWalletBalance(dbRecord.email || authUserEmail || dbRecord.id || authUserId);
-    const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
-    const cachedVal = cachedStr && !isNaN(Number(cachedStr)) ? Number(cachedStr) : 0;
-    const resolvedBalance = Math.max(exactBalance, liveWalletBal, cachedVal);
+    
+    // Exact database record is primary source of truth:
+    let resolvedBalance = exactBalance;
+    if (resolvedBalance === 0 && liveWalletBal > 0) {
+      resolvedBalance = liveWalletBal;
+    }
+    if (resolvedBalance === 0) {
+      const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
+      if (cachedStr && !isNaN(Number(cachedStr))) {
+        resolvedBalance = Number(cachedStr);
+      }
+    }
 
-    if (resolvedBalance > 0 && typeof window !== "undefined") {
+    if (typeof window !== "undefined") {
       localStorage.setItem("advaltad_cached_wallet_balance", String(resolvedBalance));
     }
 
@@ -1196,10 +1206,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         throw new Error("Unable to retrieve authenticated ambassador profile");
       }
 
-      // Merge verified balance with any higher cached or active wallet balance to prevent reversal
-      const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
-      const cachedVal = cachedStr && !isNaN(Number(cachedStr)) ? Number(cachedStr) : 0;
-      const verifiedAvu = Math.max(user.avu_balance || 0, avuBalance, cachedVal);
+      // Authoritative database balance directly from profile
+      const verifiedAvu = user.avu_balance !== undefined && user.avu_balance !== null
+        ? user.avu_balance
+        : avuBalance;
 
       const mergedUser: DbAmbassador = {
         ...user,
@@ -1207,7 +1217,7 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         ledger_balance: verifiedAvu,
       };
 
-      if (verifiedAvu > 0 && typeof window !== "undefined") {
+      if (typeof window !== "undefined") {
         localStorage.setItem("advaltad_cached_wallet_balance", String(verifiedAvu));
       }
 
@@ -1250,7 +1260,48 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         }).catch(err => console.error("Error checking deposits:", err)),
 
         db.getP2PTransactions(user.id).then(list => setP2pTxHistory(list)).catch(err => console.warn("P2P tx error:", err)),
-        db.getAvuWithdrawals(user.id || user.email).then(list => setUserWithdrawals(list)).catch(err => console.warn("Withdrawals fetch error:", err)),
+        db.getAvuWithdrawals().then(allWithdrawals => {
+          const myIds = [user.id, user.user_id, user.db_id, (user as any).ambassador_id]
+            .filter(Boolean)
+            .map(x => String(x).toLowerCase().trim());
+          const myEmail = (user.email || "").toLowerCase().trim();
+          const myName = (user.name || (user as any).professional_name || "").toLowerCase().trim();
+
+          const myWithdrawals = (allWithdrawals || []).filter(w => {
+            const wAmbId = (w.ambassador_id || "").toLowerCase().trim();
+            const wEmail = (w.ambassador_email || w.email || "").toLowerCase().trim();
+            const wName = (w.ambassador_name || w.account_name || "").toLowerCase().trim();
+            const joinedAmb = (w as any).ambassadors;
+            const joinedId = (joinedAmb?.id || joinedAmb?.user_id || "").toLowerCase().trim();
+            const joinedEmail = (joinedAmb?.email || "").toLowerCase().trim();
+
+            if (myIds.some(id => id && (wAmbId === id || wAmbId.includes(id) || id.includes(wAmbId)))) return true;
+            if (joinedId && myIds.some(id => id && (joinedId === id || joinedId.includes(id) || id.includes(joinedId)))) return true;
+            if (myEmail && (wEmail === myEmail || wAmbId === myEmail || joinedEmail === myEmail)) return true;
+            if (myName && (wName === myName || (w.account_name && w.account_name.toLowerCase().trim() === myName))) return true;
+            return false;
+          });
+
+          // Unified debugging trace logging specific ambassador_id being filtered for
+          logWithdrawalFetchTrace({
+            caller: "AmbassadorDashboard",
+            targetAmbassadorId: myIds,
+            tableQueried: "avu_withdrawals",
+            matchedCount: myWithdrawals.length,
+            totalCount: (allWithdrawals || []).length,
+            sampleIds: myWithdrawals.slice(0, 3).map(w => `${w.id}:${w.ambassador_id}:${w.status}`)
+          });
+
+          setUserWithdrawals(myWithdrawals);
+        }).catch(err => {
+          console.warn("Withdrawals fetch error:", err);
+          logWithdrawalFetchTrace({
+            caller: "AmbassadorDashboard",
+            targetAmbassadorId: user.id || user.user_id,
+            tableQueried: "avu_withdrawals",
+            error: err
+          });
+        }),
         db.getAmbassadors().then(allAmbs => setDbAmbassadors(allAmbs || [])).catch(err => console.warn("Ambassadors error:", err)),
         db.getActivities().then(allActs => setActivities(allActs || [])).catch(err => console.warn("Activities error:", err)),
         loadLiveNotifications(user).catch(err => console.warn("Notifications error:", err))
@@ -1495,9 +1546,12 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
         const user = await db.findAmbassadorByEmail(profile.email);
         const userApproved = (user as any)?.is_approved === true || (user as any)?.is_approved === "true" || (user as any)?.is_approved === 1 || user?.status === "approved" || user?.badge_status === "approved";
         if (user && (userApproved || user.status !== "pending")) {
-          const cachedStr = typeof window !== "undefined" ? localStorage.getItem("advaltad_cached_wallet_balance") : null;
-          const cachedVal = cachedStr && !isNaN(Number(cachedStr)) ? Number(cachedStr) : 0;
-          const verifiedAvu = Math.max(user.avu_balance || 0, avuBalance, cachedVal);
+          const verifiedAvu = user.avu_balance !== undefined && user.avu_balance !== null
+            ? user.avu_balance
+            : avuBalance;
+          if (typeof window !== "undefined") {
+            localStorage.setItem("advaltad_cached_wallet_balance", String(verifiedAvu));
+          }
           const mergedUser: DbAmbassador = {
             ...user,
             avu_balance: verifiedAvu,
@@ -1587,20 +1641,59 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "avu_withdrawals" },
-        () => fetchAmbassadorData(false)
+        () => {
+          fetchAmbassadorData(false);
+          refetchWalletBalance();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "AvuWithdrawals" },
+        () => {
+          fetchAmbassadorData(false);
+          refetchWalletBalance();
+        }
       )
       .subscribe();
 
     const handleWithdrawalEvent = () => {
       fetchAmbassadorData(false);
+      refetchWalletBalance();
     };
+
+    const handleWalletUpdated = (e: any) => {
+      if (e?.detail?.newBalance !== undefined) {
+        const newBal = Number(e.detail.newBalance);
+        setProfile(prev => prev ? { ...prev, avu_balance: newBal, ledger_balance: newBal } : null);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+        }
+      }
+      fetchAmbassadorData(false);
+      refetchWalletBalance();
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === "advaltad_withdrawals_sync_ping" ||
+        e.key === "advaltad_withdrawals_db" ||
+        e.key === AVU_WITHDRAWALS_LOCAL_STORAGE_KEY ||
+        e.key === "advaltad_wallet_sync_ping" ||
+        e.key === "advaltad_cached_wallet_balance"
+      ) {
+        fetchAmbassadorData(false);
+        refetchWalletBalance();
+      }
+    };
+
     window.addEventListener("advaltad_withdrawals_updated", handleWithdrawalEvent);
-    window.addEventListener("advaltad_wallet_updated", handleWithdrawalEvent);
+    window.addEventListener("advaltad_wallet_updated", handleWalletUpdated);
+    window.addEventListener("storage", handleStorageChange);
 
     // Silent background poll for live admin transaction updates
     const pollTimer = setInterval(() => {
       fetchAmbassadorData(false);
-    }, 12000);
+    }, 4000);
 
     return () => {
       supabase.removeChannel(ambassadorChannel);
@@ -1609,7 +1702,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       supabase.removeChannel(activityChannel);
       supabase.removeChannel(withdrawalsChannel);
       window.removeEventListener("advaltad_withdrawals_updated", handleWithdrawalEvent);
-      window.removeEventListener("advaltad_wallet_updated", handleWithdrawalEvent);
+      window.removeEventListener("advaltad_wallet_updated", handleWalletUpdated);
+      window.removeEventListener("storage", handleStorageChange);
       clearInterval(pollTimer);
     };
   }, [profile?.id, profile?.db_id, profile?.email]);
@@ -3833,7 +3927,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       <WithdrawalModal
         isOpen={isAvuWithdrawalModalOpen}
         onClose={() => setIsAvuWithdrawalModalOpen(false)}
-        ambassadorId={profile?.id || profile?.db_id}
+        ambassadorId={profile?.id || profile?.user_id || profile?.db_id}
+        ambassadorEmail={profile?.email}
+        ambassadorName={profile?.name || (profile as any)?.professional_name}
         currentBalance={avuBalance}
         onSuccess={() => {
           refetchWalletBalance();
