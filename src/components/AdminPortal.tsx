@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Users, 
@@ -31,13 +31,14 @@ import {
   X,
   Send
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
+import { OverviewSummaryCharts } from "./OverviewSummaryCharts";
 import { PendingWithdrawalsTable } from "./PendingWithdrawalsTable";
-import { traceDbOperation, traceGenericOperation, logDbOperation } from "../lib/db-logger";
+import { traceDbOperation, traceGenericOperation, logDbOperation, logAmbassadorApprovalLifecycle, logWithdrawalFetchTrace } from "../lib/db-logger";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -204,6 +205,183 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   } | null>(null);
   const [isProcessingStatus, setIsProcessingStatus] = useState(false);
 
+  const fetchPendingWithdrawals = useCallback(async () => {
+    try {
+      let withdrawalsData: DbAvuWithdrawal[] = [];
+
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        const client = supabaseAdmin || supabase;
+        console.log("[ADMIN PORTAL] Fetching pending withdrawal requests joined with ambassadors via Supabase query...");
+
+        // Perform join with the 'ambassadors' table selecting professional_name and explicitly filtering for pending
+        let { data, error } = await client
+          .from("avu_withdrawals")
+          .select("*, ambassadors(professional_name, name, email, phone_number, phone, base_city, city, avu_balance, ledger_balance, status)")
+          .ilike("status", "pending")
+          .order("created_at", { ascending: false });
+
+        // Fallback join if schema foreign-key definition requires explicit table foreign key mapping
+        if (error || !data) {
+          console.warn("[ADMIN PORTAL] .select('*, ambassadors(...)') fallback attempt:", error?.message);
+          const fallbackRes = await client
+            .from("avu_withdrawals")
+            .select(`
+              *,
+              ambassadors:ambassador_id (
+                id,
+                professional_name,
+                name,
+                email,
+                phone_number,
+                phone,
+                base_city,
+                city,
+                base_country,
+                country,
+                avu_balance,
+                ledger_balance,
+                status,
+                badge_status,
+                is_approved
+              )
+            `)
+            .ilike("status", "pending")
+            .order("created_at", { ascending: false });
+
+          if (!fallbackRes.error && fallbackRes.data) {
+            data = fallbackRes.data;
+            error = null;
+          }
+        }
+
+        // Programmatic join fallback if PostgREST schema cache does not have foreign key registered
+        if (error || !data) {
+          console.warn("[ADMIN PORTAL] Schema relation not detected in PostgREST, performing parallel fetch and join:", error?.message);
+          const [rawWRes, rawARes] = await Promise.all([
+            client.from("avu_withdrawals").select("*").ilike("status", "pending").order("created_at", { ascending: false }),
+            client.from("ambassadors").select("id, user_id, professional_name, name, email, phone_number, phone, avu_balance, ledger_balance, status, badge_status, is_approved")
+          ]);
+
+          if (rawWRes.data) {
+            const ambMap = new Map<string, any>();
+            (rawARes.data || []).forEach((a: any) => {
+              if (a.id) ambMap.set(String(a.id).toLowerCase(), a);
+              if (a.user_id) ambMap.set(String(a.user_id).toLowerCase(), a);
+              if (a.email) ambMap.set(String(a.email).toLowerCase(), a);
+            });
+            data = rawWRes.data.map((row: any) => ({
+              ...row,
+              ambassadors:
+                ambMap.get(String(row.ambassador_id || "").toLowerCase()) ||
+                ambMap.get(String(row.email || row.ambassador_email || "").toLowerCase()) ||
+                null
+            }));
+            error = null;
+          }
+        }
+
+        // Also check if any unjoined query fallback is needed
+        if (error || !data) {
+          const directW = await client.from("avu_withdrawals").select("*").order("created_at", { ascending: false });
+          if (directW.data) {
+            data = directW.data.filter((r: any) => String(r.status || "pending").toLowerCase() === "pending");
+            error = null;
+          }
+        }
+
+        if (!error && data) {
+          withdrawalsData = data.map((row: any) => {
+            const amb = Array.isArray(row.ambassadors) ? row.ambassadors[0] : row.ambassadors;
+            const reqAmount = Number(row.avu_amount ?? row.requested_avu ?? row.amount_avu ?? row.amount ?? 0);
+            const convRate = Number(row.conversion_rate || 1000);
+            const nairaEq = Number(row.naira_equivalent || row.amount_naira || (reqAmount * convRate));
+            const ambName =
+              amb?.professional_name ||
+              amb?.name ||
+              row.ambassador_name ||
+              row.full_name ||
+              row.account_name ||
+              "Ambassador";
+            const ambEmail = amb?.email || row.ambassador_email || row.email || "";
+            const currentBal =
+              amb?.avu_balance !== undefined && amb?.avu_balance !== null
+                ? Number(amb.avu_balance)
+                : amb?.ledger_balance !== undefined && amb?.ledger_balance !== null
+                ? Number(amb.ledger_balance)
+                : Number(row.current_balance ?? row.avu_balance ?? 0);
+
+            // Normalize 'pending' (lowercase or uppercase) to canonical "Pending"
+            const rawStatus = (row.status || "pending").toString().trim();
+            let normStatus: "Pending" | "Approved" | "Disapproved" = "Pending";
+            if (rawStatus.toLowerCase() === "approved") normStatus = "Approved";
+            else if (rawStatus.toLowerCase() === "disapproved" || rawStatus.toLowerCase() === "rejected") normStatus = "Disapproved";
+            else normStatus = "Pending";
+
+            return {
+              id: row.id || "WTH-" + Math.floor(Math.random() * 89999 + 10000),
+              ambassador_id: row.ambassador_id || amb?.id || row.user_id || "",
+              ambassador_name: ambName,
+              email: ambEmail,
+              ambassador_email: ambEmail,
+              current_balance: currentBal,
+              requested_avu: reqAmount,
+              bank_name: row.bank_name || "",
+              account_number: row.account_number || "",
+              account_name: row.account_name || ambName,
+              avu_amount: reqAmount,
+              naira_equivalent: nairaEq,
+              conversion_rate: convRate,
+              status: normStatus,
+              admin_note: row.admin_note || "",
+              reviewed_by: row.reviewed_by || "",
+              reviewed_at: row.reviewed_at || "",
+              created_at: row.created_at || new Date().toISOString(),
+              updated_at: row.updated_at
+            };
+          });
+        }
+      }
+
+      // Merge with local fallback and ensure pending status filtering
+      const localData = typeof window !== "undefined" ? localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY) : null;
+      const localWithdrawals: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
+
+      const map = new Map<string, DbAvuWithdrawal>();
+      for (const item of [...withdrawalsData, ...localWithdrawals]) {
+        if (!item || !item.id) continue;
+        if (!map.has(item.id)) {
+          map.set(item.id, item);
+        }
+      }
+
+      // Filter explicitly for pending items to guarantee clean display
+      const merged = Array.from(map.values())
+        .filter(w => String(w.status || "Pending").toLowerCase() === "pending")
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      // Unified debugging trace logging specific ambassador_id list and query verification
+      logWithdrawalFetchTrace({
+        caller: "AdminPortal",
+        targetAmbassadorId: merged.map(w => w.ambassador_id),
+        filterStatus: "pending",
+        tableQueried: "avu_withdrawals",
+        matchedCount: merged.length,
+        totalCount: map.size,
+        sampleIds: merged.slice(0, 5).map(w => `${w.id}:${w.ambassador_id}:${w.ambassador_name}`)
+      });
+
+      setWithdrawals(merged);
+      logDbOperation("Admin Portal Fetch Pending Withdrawals Joined Success", { count: merged.length }, null);
+      return merged;
+    } catch (err: any) {
+      console.error("[ADMIN PORTAL] Error loading AVU withdrawals:", err);
+      logDbOperation("Admin Portal Fetch Pending Withdrawals Joined Error", {}, err);
+      return [];
+    }
+  }, []);
+
+  const fetchWithdrawals = fetchPendingWithdrawals;
+
   useEffect(() => {
     if (selectedAmbassador) {
       setEditName(selectedAmbassador.name);
@@ -288,12 +466,83 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           loadDbData();
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "avu_withdrawals" },
+        () => {
+          console.info("Realtime Postgres update received on 'avu_withdrawals' table, refetching fresh records...");
+          fetchWithdrawals();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "AvuWithdrawals" },
+        () => {
+          console.info("Realtime Postgres update received on 'AvuWithdrawals' table, refetching fresh records...");
+          fetchWithdrawals();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated]);
+
+  // Setup real-time listeners for withdrawals & pending queue updates
+  useEffect(() => {
+    fetchPendingWithdrawals();
+
+    const handleWithdrawalsUpdated = (event?: any) => {
+      console.log("[ADMIN PORTAL] Realtime withdrawal event received, refreshing queue...", event?.detail);
+      fetchPendingWithdrawals();
+    };
+    window.addEventListener("advaltad_withdrawals_updated", handleWithdrawalsUpdated);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === "advaltad_withdrawals_sync_ping" ||
+        e.key === "advaltad_withdrawals_db" ||
+        e.key === AVU_WITHDRAWALS_LOCAL_STORAGE_KEY ||
+        e.key === "advaltad_wallet_sync_ping"
+      ) {
+        console.log("[ADMIN PORTAL] Cross-tab storage sync triggered for withdrawals queue");
+        fetchPendingWithdrawals();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    // Supabase Realtime subscription ensuring admin UI updates automatically on status change
+    let realtimeWithdrawalsChannel: any = null;
+    if (isSupabaseConfigured && supabase) {
+      realtimeWithdrawalsChannel = supabase
+        .channel("withdrawals")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "avu_withdrawals" },
+          (payload) => {
+            console.info("[ADMIN PORTAL] Realtime Postgres change on 'avu_withdrawals':", payload);
+            fetchPendingWithdrawals();
+          }
+        )
+        .subscribe();
+    }
+
+    const interval = setInterval(() => {
+      if (isAuthenticated && (activeTab === "withdrawals" || activeTab === "overview")) {
+        fetchPendingWithdrawals();
+      }
+    }, 4000);
+
+    return () => {
+      window.removeEventListener("advaltad_withdrawals_updated", handleWithdrawalsUpdated);
+      window.removeEventListener("storage", handleStorage);
+      if (realtimeWithdrawalsChannel && supabase) {
+        supabase.removeChannel(realtimeWithdrawalsChannel);
+      }
+      clearInterval(interval);
+    };
+  }, [fetchPendingWithdrawals, isAuthenticated, activeTab]);
 
   // Reload data on tab change, view change, or authentication status change
   useEffect(() => {
@@ -458,8 +707,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         logDbOperation("Admin Portal Fetch Sent Emails Error", {}, emErr);
       }
       try {
-        const withdrawalsData = await db.getAvuWithdrawals();
-        setWithdrawals(withdrawalsData);
+        const withdrawalsData = await fetchWithdrawals();
         logDbOperation("Admin Portal Fetch Withdrawals Success", { count: withdrawalsData.length }, null);
       } catch (wErr) {
         console.error("Failed to load AVU withdrawals inside admin portal:", wErr);
@@ -696,6 +944,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   const executeApproveAmbassador = async (id: string, name: string) => {
+    logAmbassadorApprovalLifecycle({
+      stage: "INITIATED",
+      ambassadorId: id,
+      ambassadorName: name,
+      adminId: currentAdmin?.id,
+      adminName: currentAdmin?.name,
+      action: "approve"
+    });
+
     try {
       const amb = ambassadors.find(a => 
         a.id === id || 
@@ -704,6 +961,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         (a.user_id && a.user_id === id)
       );
       const effectiveName = amb?.name || amb?.professional_name || name || "Ambassador";
+
+      logAmbassadorApprovalLifecycle({
+        stage: "VALIDATING",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        ambassadorEmail: amb?.email,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "approve",
+        details: { foundAmbassador: Boolean(amb), currentStatus: amb?.status }
+      });
 
       setAmbassadors(prev =>
         prev.map(a =>
@@ -720,6 +988,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         name: effectiveName
       });
 
+      logAmbassadorApprovalLifecycle({
+        stage: "DB_UPDATE",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "approve"
+      });
+
       addToast(
         "Ambassador Approved",
         `Successfully approved and verified ${effectiveName}.`,
@@ -729,11 +1006,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       // Dispatch transactional email notification
       if (amb) {
         try {
-          console.log("[ADMIN PORTAL] Dispatching transactional email notification for approved ambassador:", effectiveName);
+          logAmbassadorApprovalLifecycle({
+            stage: "EMAIL_DISPATCH",
+            ambassadorId: id,
+            ambassadorName: effectiveName,
+            ambassadorEmail: amb.email,
+            action: "approve"
+          });
           const mailRes = await triggerApprovalEmail(amb);
-          console.log("[ADMIN PORTAL] Transactional email notification dispatched successfully:", mailRes);
+          logAmbassadorApprovalLifecycle({
+            stage: "EMAIL_SUCCESS",
+            ambassadorId: id,
+            ambassadorName: effectiveName,
+            ambassadorEmail: amb.email,
+            action: "approve",
+            details: mailRes
+          });
         } catch (mailErr) {
-          console.error("[ADMIN PORTAL] Failed to dispatch transactional email:", mailErr);
+          logAmbassadorApprovalLifecycle({
+            stage: "EMAIL_FAILED",
+            ambassadorId: id,
+            ambassadorName: effectiveName,
+            ambassadorEmail: amb.email,
+            action: "approve",
+            error: mailErr
+          });
         }
       }
 
@@ -751,12 +1048,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         ambassador_name: effectiveName,
         action: "approved"
       });
+
+      logAmbassadorApprovalLifecycle({
+        stage: "AUDIT_LOGGED",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "approve"
+      });
+
       loadDbData();
       if (selectedAmbassador?.id === id || (amb && selectedAmbassador?.id === amb.id)) {
         setSelectedAmbassador(prev => prev ? { ...prev, status: "approved", badge_status: "approved", is_approved: true } : null);
       }
+
+      logAmbassadorApprovalLifecycle({
+        stage: "COMPLETED",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "approve"
+      });
     } catch (err) {
-      console.error(err);
+      logAmbassadorApprovalLifecycle({
+        stage: "FAILED",
+        ambassadorId: id,
+        ambassadorName: name,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "approve",
+        error: err
+      });
       addToast("Approval Warning", "Updated locally; please verify database connection.", "warning");
     }
   };
@@ -766,6 +1090,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   const executeDisapproveAmbassador = async (id: string, name: string) => {
+    logAmbassadorApprovalLifecycle({
+      stage: "INITIATED",
+      ambassadorId: id,
+      ambassadorName: name,
+      adminId: currentAdmin?.id,
+      adminName: currentAdmin?.name,
+      action: "disapprove"
+    });
+
     try {
       const amb = ambassadors.find(a => 
         a.id === id || 
@@ -790,6 +1123,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         name: effectiveName
       });
 
+      logAmbassadorApprovalLifecycle({
+        stage: "DB_UPDATE",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "disapprove"
+      });
+
       addToast(
         "Ambassador Disapproved",
         `Credentials for ${effectiveName} set to disapproved.`,
@@ -810,12 +1152,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         ambassador_name: effectiveName,
         action: "disapproved"
       });
+
+      logAmbassadorApprovalLifecycle({
+        stage: "AUDIT_LOGGED",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "disapprove"
+      });
+
       loadDbData();
       if (selectedAmbassador?.id === id || (amb && selectedAmbassador?.id === amb.id)) {
         setSelectedAmbassador(prev => prev ? { ...prev, status: "disapproved", badge_status: "disapproved", is_approved: false } : null);
       }
+
+      logAmbassadorApprovalLifecycle({
+        stage: "COMPLETED",
+        ambassadorId: id,
+        ambassadorName: effectiveName,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "disapprove"
+      });
     } catch (err) {
-      console.error(err);
+      logAmbassadorApprovalLifecycle({
+        stage: "FAILED",
+        ambassadorId: id,
+        ambassadorName: name,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: "disapprove",
+        error: err
+      });
       addToast("Status Warning", "Updated locally; please check your network connection.", "warning");
     }
   };
@@ -866,6 +1235,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
 
       if (result.success) {
+        setWithdrawals(prev =>
+          prev.map(w =>
+            w.id === withdrawalId
+              ? {
+                  ...w,
+                  status: newStatus,
+                  reviewed_by: currentAdmin?.name || "Admin",
+                  reviewed_at: new Date().toISOString(),
+                  admin_note: adminNotes[withdrawalId] || w.admin_note
+                }
+              : w
+          )
+        );
+
         if (newStatus === "Approved") {
           addToast(
             "Withdrawal Approved",
@@ -877,6 +1260,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             `Disapproved withdrawal request for ${withdrawal.ambassador_name}. Balance left untouched.`
           );
         }
+        await fetchWithdrawals();
         await loadDbData();
       } else {
         addToast(
@@ -898,6 +1282,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   const executeBulkStatusUpdate = async (ids: string[], action: "approve" | "disapprove") => {
+    ids.forEach(id => {
+      const amb = ambassadors.find(a => a.id === id || a.email === id || a.db_id === id);
+      logAmbassadorApprovalLifecycle({
+        stage: "INITIATED",
+        ambassadorId: id,
+        ambassadorName: amb?.name || amb?.professional_name || "Ambassador",
+        ambassadorEmail: amb?.email,
+        adminId: currentAdmin?.id,
+        adminName: currentAdmin?.name,
+        action: action === "approve" ? "bulk_approve" : "bulk_disapprove"
+      });
+    });
+
     try {
       const statusValue = action === "approve" ? "approved" : "disapproved";
       setAmbassadors(prev =>
@@ -919,10 +1316,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         
         if (action === "approve" && amb) {
           try {
-            console.log("[ADMIN PORTAL] Bulk dispatching transactional email notification for:", name);
-            await triggerApprovalEmail(amb);
+            logAmbassadorApprovalLifecycle({
+              stage: "EMAIL_DISPATCH",
+              ambassadorId: id,
+              ambassadorName: name,
+              ambassadorEmail: amb.email,
+              action: "bulk_approve"
+            });
+            const mailRes = await triggerApprovalEmail(amb);
+            logAmbassadorApprovalLifecycle({
+              stage: "EMAIL_SUCCESS",
+              ambassadorId: id,
+              ambassadorName: name,
+              ambassadorEmail: amb.email,
+              action: "bulk_approve",
+              details: mailRes
+            });
           } catch (mailErr) {
-            console.error("[ADMIN PORTAL] Failed to dispatch bulk transactional email:", mailErr);
+            logAmbassadorApprovalLifecycle({
+              stage: "EMAIL_FAILED",
+              ambassadorId: id,
+              ambassadorName: name,
+              ambassadorEmail: amb.email,
+              action: "bulk_approve",
+              error: mailErr
+            });
           }
         }
 
@@ -939,6 +1357,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           ambassador_name: name,
           action: action === "approve" ? "approved" : "disapproved"
         });
+
+        logAmbassadorApprovalLifecycle({
+          stage: "COMPLETED",
+          ambassadorId: id,
+          ambassadorName: name,
+          adminId: currentAdmin?.id,
+          adminName: currentAdmin?.name,
+          action: action === "approve" ? "bulk_approve" : "bulk_disapprove"
+        });
       }
       setSelectedAmbassadorIds([]);
       loadDbData();
@@ -949,6 +1376,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       );
     } catch (err) {
       console.error("Bulk status update failed:", err);
+      ids.forEach(id => {
+        logAmbassadorApprovalLifecycle({
+          stage: "FAILED",
+          ambassadorId: id,
+          adminId: currentAdmin?.id,
+          adminName: currentAdmin?.name,
+          action: action === "approve" ? "bulk_approve" : "bulk_disapprove",
+          error: err
+        });
+      });
       addToast("Bulk Update Warning", "Updated locally; please check your network connection.", "warning");
     }
   };
@@ -1277,13 +1714,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const approvedCount = ambassadors.filter(a => (a as any).is_approved === true || (a as any).is_approved === "true" || (a as any).is_approved === 1 || a.status === "approved" || a.badge_status === "approved").length;
   const pendingCount = ambassadors.filter(a => !((a as any).is_approved === true || (a as any).is_approved === "true" || (a as any).is_approved === 1 || a.status === "approved" || a.badge_status === "approved") && a.status !== "disapproved" && a.badge_status !== "disapproved").length;
 
-  const pendingWithdrawalsCount = withdrawals.filter(w => w.status === "Pending").length;
-  const approvedWithdrawalsCount = withdrawals.filter(w => w.status === "Approved").length;
+  const pendingWithdrawalsCount = withdrawals.filter(w => (w.status || "").toLowerCase() === "pending").length;
+  const approvedWithdrawalsCount = withdrawals.filter(w => (w.status || "").toLowerCase() === "approved").length;
+  const disapprovedWithdrawalsCount = withdrawals.filter(w => (w.status || "").toLowerCase() === "disapproved" || (w.status || "").toLowerCase() === "rejected").length;
   const totalApprovedAvuLiquidated = withdrawals
-    .filter(w => w.status === "Approved")
+    .filter(w => (w.status || "").toLowerCase() === "approved")
     .reduce((acc, w) => acc + (w.avu_amount || 0), 0);
   const totalApprovedNairaDisbursed = withdrawals
-    .filter(w => w.status === "Approved")
+    .filter(w => (w.status || "").toLowerCase() === "approved")
     .reduce((acc, w) => acc + (w.naira_equivalent || 0), 0);
 
   const filteredWithdrawals = withdrawals.filter(w => {
@@ -1305,7 +1743,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       refId.includes(search);
 
     if (withdrawalFilter === "all") return matchesSearch;
-    return matchesSearch && w.status === withdrawalFilter;
+    return matchesSearch && (w.status || "").toLowerCase() === withdrawalFilter.toLowerCase();
   });
 
   return (
@@ -1565,7 +2003,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                 }`}
               >
                 <Activity size={16} className="flex-shrink-0" />
-                {!sidebarCollapsed && <span>Ledger & Activities</span>}
+                {!sidebarCollapsed && <span>Overview & Ledger</span>}
               </button>
 
               <button
@@ -1716,7 +2154,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             {/* Mobile Navigation sub-bar */}
             <div className="md:hidden bg-slate-900/95 backdrop-blur-md border-b border-slate-800 p-2 flex items-center gap-2 overflow-x-auto scrollbar-none sticky top-[53px] z-30">
               {[
-                { id: "overview", label: "Ledger & Activities", icon: Activity },
+                { id: "overview", label: "Overview & Ledger", icon: Activity },
                 { id: "ambassadors", label: `Ambassadors ${pendingCount > 0 ? `(${pendingCount})` : ''}`, icon: Users },
                 { id: "blogs", label: "Blog Management", icon: Compass },
                 { id: "wallets", label: "Financial Overview", icon: Coins },
@@ -1840,6 +2278,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-6"
                   >
+                    {/* Visual Overview Summary: Registered, Approved vs Pending, and Disbursed AVU */}
+                    <OverviewSummaryCharts
+                      ambassadors={ambassadors}
+                      withdrawals={withdrawals}
+                    />
+
                     <RegionalGrowthChart ambassadors={ambassadors} />
 
                     <div className="flex items-center justify-between border-b border-slate-100 pb-4 pt-2">
@@ -2457,7 +2901,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                       <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/80 shadow-sm space-y-1">
                         <span className="text-[10px] font-extrabold text-rose-700 uppercase tracking-wider block">Disapproved</span>
-                        <p className="text-xl font-black text-rose-900 font-mono">{withdrawals.filter(w => w.status === "Disapproved").length}</p>
+                        <p className="text-xl font-black text-rose-900 font-mono">{disapprovedWithdrawalsCount}</p>
                       </div>
                     </div>
 
@@ -2465,7 +2909,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 text-left">
                       <PendingWithdrawalsTable
                         adminId={currentAdmin?.id}
-                        onSuccessNotification={(msg) => addToast("Withdrawal Processed", msg, "success")}
+                        onSuccessNotification={(msg) => {
+                          addToast("Withdrawal Processed", msg, "success");
+                          fetchWithdrawals();
+                          loadDbData();
+                        }}
                         onErrorNotification={(msg) => addToast("Action Failed", msg, "error")}
                       />
                     </div>
@@ -2478,7 +2926,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                           { id: "all", label: `All (${withdrawals.length})` },
                           { id: "Pending", label: `Pending (${pendingWithdrawalsCount})` },
                           { id: "Approved", label: `Approved (${approvedWithdrawalsCount})` },
-                          { id: "Disapproved", label: `Disapproved (${withdrawals.filter(w => w.status === "Disapproved").length})` },
+                          { id: "Disapproved", label: `Disapproved (${disapprovedWithdrawalsCount})` },
                         ].map((f) => (
                           <button
                             key={f.id}
@@ -2528,9 +2976,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       ) : (
                         <div className="divide-y divide-slate-100">
                           {filteredWithdrawals.map((w) => {
-                            const isPending = w.status === "Pending";
-                            const isApproved = w.status === "Approved";
-                            const isDisapproved = w.status === "Disapproved";
+                            const isPending = (w.status || "").toLowerCase() === "pending";
+                            const isApproved = (w.status || "").toLowerCase() === "approved";
+                            const isDisapproved = (w.status || "").toLowerCase() === "disapproved" || (w.status || "").toLowerCase() === "rejected";
                             const isUpdating = isUpdatingWithdrawal === w.id;
 
                             const statusBadge = isApproved ? (
