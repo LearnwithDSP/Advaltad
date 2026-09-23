@@ -15,7 +15,8 @@ import {
   Copy,
   Check
 } from "lucide-react";
-import { supabase, isSupabaseConfigured, db } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, db, handleApprove as executeApprove, handleReject as executeReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY } from "../lib/supabase";
+import { logWithdrawalFetchTrace } from "../lib/db-logger";
 
 export interface PendingWithdrawal {
   id: string;
@@ -83,98 +84,133 @@ export const PendingWithdrawalsTable: React.FC<PendingWithdrawalsTableProps> = (
   // --------------------------------------------------------------------------
   // Query pending withdrawals joined with Ambassador profile
   // --------------------------------------------------------------------------
+  // Query pending withdrawals with ambassador details
+  // --------------------------------------------------------------------------
   const fetchPendingWithdrawals = useCallback(async () => {
     setIsLoading(true);
     try {
-      if (!isSupabaseConfigured || !supabase) {
-        // Fallback to local DB store if Supabase is offline
-        const localList = await db.getAvuWithdrawals();
-        const pending = (localList || []).filter(
-          (w) => w.status?.toLowerCase() === "pending"
-        );
-        setWithdrawals(pending as any);
-        return;
-      }
+      // 1. Fetch from db.getAvuWithdrawals() which combines Supabase query with ambassador join and local storage fallback
+      const allWithdrawals = await db.getAvuWithdrawals();
+      const pendingList = (allWithdrawals || []).filter(
+        (w) => (w.status || "Pending").toLowerCase() === "pending"
+      );
 
-      // Query from avu_withdrawals joined with ambassadors
-      const { data, error } = await supabase
-        .from("avu_withdrawals")
-        .select(`
-          id,
-          ambassador_id,
-          amount,
-          requested_avu,
-          bank_name,
-          account_number,
-          account_name,
-          status,
-          created_at,
-          naira_equivalent,
-          current_balance,
-          email,
-          ambassador_name,
-          ambassadors:ambassador_id (
-            id,
-            professional_name,
-            name,
-            email,
-            avu_balance
-          )
-        `)
-        .ilike("status", "pending")
-        .order("created_at", { ascending: false });
+      const formatted: PendingWithdrawal[] = pendingList.map((w) => {
+        const reqAmount = Number(w.requested_avu ?? w.avu_amount ?? 0);
+        const convRate = Number(w.conversion_rate || 1000);
+        const nairaEq = Number(w.naira_equivalent || reqAmount * convRate);
+        const ambName = w.ambassador_name || w.account_name || "Ambassador";
+        const ambEmail = w.email || w.ambassador_email || "";
 
-      if (error) {
-        console.warn("[PendingWithdrawalsTable] Error querying pending withdrawals:", error);
-        // Secondary fallback to unjoined query
-        const { data: rawData, error: rawError } = await supabase
-          .from("avu_withdrawals")
-          .select("*")
-          .ilike("status", "pending")
-          .order("created_at", { ascending: false });
+        return {
+          id: w.id,
+          ambassador_id: w.ambassador_id,
+          amount: reqAmount,
+          requested_avu: reqAmount,
+          bank_name: w.bank_name || "",
+          account_number: w.account_number || "",
+          account_name: w.account_name || ambName,
+          status: w.status,
+          created_at: w.created_at,
+          naira_equivalent: nairaEq,
+          current_balance: Number(w.current_balance || 0),
+          email: ambEmail,
+          ambassador_name: ambName,
+          ambassadors: {
+            id: w.ambassador_id,
+            professional_name: ambName,
+            name: ambName,
+            email: ambEmail,
+            avu_balance: Number(w.current_balance || 0)
+          }
+        };
+      });
 
-        if (!rawError && rawData) {
-          setWithdrawals(rawData as any);
-        }
-      } else if (data) {
-        setWithdrawals(data as any);
-      }
+      logWithdrawalFetchTrace({
+        caller: "PendingWithdrawalsTable",
+        targetAmbassadorId: formatted.map(w => w.ambassador_id),
+        filterStatus: "pending",
+        tableQueried: "avu_withdrawals",
+        matchedCount: formatted.length,
+        totalCount: (allWithdrawals || []).length,
+        sampleIds: formatted.slice(0, 3).map(w => `${w.id}:${w.ambassador_id}:${w.ambassador_name}`)
+      });
+
+      setWithdrawals(formatted);
     } catch (err: any) {
       console.error("[PendingWithdrawalsTable] Fetch exception:", err);
-      notifyError("Failed to fetch pending withdrawals queue.");
+      // Fallback directly to local storage cache if available
+      try {
+        const localData = typeof window !== "undefined" ? localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY) : null;
+        if (localData) {
+          const list = JSON.parse(localData);
+          const pending = list.filter((w: any) => (w.status || "Pending").toLowerCase() === "pending");
+          setWithdrawals(pending);
+        }
+      } catch (_) {}
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Initial fetch and Realtime subscription
+  // Initial fetch, Realtime subscription, and cross-tab storage sync
   useEffect(() => {
     fetchPendingWithdrawals();
 
-    if (!isSupabaseConfigured || !supabase) return;
-
-    const channel = supabase
-      .channel("admin-pending-withdrawals-channel")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "avu_withdrawals" },
-        () => {
-          fetchPendingWithdrawals();
-        }
-      )
-      .subscribe();
-
     const handleLocalEvent = () => fetchPendingWithdrawals();
     window.addEventListener("advaltad_withdrawals_updated", handleLocalEvent);
+    window.addEventListener("advaltad_wallet_updated", handleLocalEvent);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === "advaltad_withdrawals_sync_ping" ||
+        e.key === AVU_WITHDRAWALS_LOCAL_STORAGE_KEY ||
+        e.key === "advaltad_wallet_sync_ping"
+      ) {
+        fetchPendingWithdrawals();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    let channel: any = null;
+    if (isSupabaseConfigured && supabase) {
+      channel = supabase
+        .channel("admin-pending-withdrawals-channel")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "avu_withdrawals" },
+          () => {
+            fetchPendingWithdrawals();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "AvuWithdrawals" },
+          () => {
+            fetchPendingWithdrawals();
+          }
+        )
+        .subscribe();
+    }
+
+    // Auto background poll every 3.5s to ensure live state
+    const pollInterval = setInterval(() => {
+      fetchPendingWithdrawals();
+    }, 3500);
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
       window.removeEventListener("advaltad_withdrawals_updated", handleLocalEvent);
+      window.removeEventListener("advaltad_wallet_updated", handleLocalEvent);
+      window.removeEventListener("storage", handleStorage);
+      clearInterval(pollInterval);
     };
   }, [fetchPendingWithdrawals]);
 
   // --------------------------------------------------------------------------
-  // ACTION: APPROVE WITHDRAWAL
+  // ACTION: APPROVE WITHDRAWAL & DEDUCT AMBASSADOR BALANCE
   // --------------------------------------------------------------------------
   const handleApprove = async (withdrawal: PendingWithdrawal) => {
     const withdrawalId = withdrawal.id;
@@ -193,64 +229,14 @@ export const PendingWithdrawalsTable: React.FC<PendingWithdrawalsTableProps> = (
         ? adminId
         : "00000000-0000-0000-0000-000000000000";
 
-      // 1. Primary execution: Call deployed RPC function approve_avu_withdrawal
-      let { data, error } = await supabase.rpc("approve_avu_withdrawal", {
-        p_withdrawal_id: withdrawalId,
-        p_admin_id: effectiveAdminId
-      });
-
-      // 2. Concise error-handling logic & schema discrepancy fallback:
-      // (Handles missing column 'amount' or 'processed_by' if database trigger schema differs)
-      if (error) {
-        console.warn("[handleApprove] RPC invocation notice:", error.message);
-
-        // Check if error is specifically an insufficient balance error from DB
-        if (
-          error.message?.toLowerCase().includes("insufficient") ||
-          error.code === "P0001"
-        ) {
-          throw new Error(`Insufficient wallet balance: ${error.message}`);
-        }
-
-        // Fallback: Perform atomic update on ambassador_wallet and status
-        const { error: updateError } = await supabase
-          .from("avu_withdrawals")
-          .update({
-            status: "Approved",
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", withdrawalId);
-
-        if (updateError) {
-          throw updateError;
-        }
-
-        // Deduct ambassador wallet
-        if (withdrawal.ambassador_id) {
-          const { data: wRow } = await supabase
-            .from("ambassador_wallet")
-            .select("balance")
-            .eq("ambassador_id", withdrawal.ambassador_id)
-            .maybeSingle();
-
-          if (wRow && wRow.balance !== undefined) {
-            const nextBal = Math.max(0, Number(wRow.balance) - requestedAmount);
-            await supabase
-              .from("ambassador_wallet")
-              .update({ balance: nextBal, updated_at: new Date().toISOString() })
-              .eq("ambassador_id", withdrawal.ambassador_id);
-          }
-        }
-
-        // Also record in local database mirror
-        await db.updateAvuWithdrawalStatus(withdrawalId, "Approved", undefined, effectiveAdminId);
-        error = null;
+      const result = await executeApprove(withdrawalId, effectiveAdminId);
+      if (!result.success) {
+        throw result.error || new Error("Failed to process approval.");
       }
 
-      // 3. On success: Remove item from pending list immediately
+      // Remove item from pending list immediately
       setWithdrawals((prev) => prev.filter((item) => item.id !== withdrawalId));
 
-      // 4. Success notification confirming exact balance deduction
       notifySuccess(
         `Withdrawal approved! Exact balance of ${requestedAmount.toLocaleString()} AVU was deducted from ${ambName}'s wallet.`
       );
@@ -260,7 +246,11 @@ export const PendingWithdrawalsTable: React.FC<PendingWithdrawalsTableProps> = (
         window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated"));
         window.dispatchEvent(
           new CustomEvent("advaltad_wallet_updated", {
-            detail: { ambassadorId: withdrawal.ambassador_id, deductedAmount: requestedAmount }
+            detail: {
+              ambassadorId: withdrawal.ambassador_id,
+              deductedAmount: requestedAmount,
+              newBalance: result.newBalance
+            }
           })
         );
       }
@@ -292,38 +282,15 @@ export const PendingWithdrawalsTable: React.FC<PendingWithdrawalsTableProps> = (
         ? adminId
         : "00000000-0000-0000-0000-000000000000";
 
-      // 1. Primary execution: Call deployed RPC function reject_avu_withdrawal
-      let { data, error } = await supabase.rpc("reject_avu_withdrawal", {
-        p_withdrawal_id: withdrawalId,
-        p_admin_id: effectiveAdminId
-      });
-
-      // 2. Fallback if schema RPC has column mismatch
-      if (error) {
-        console.warn("[handleReject] RPC invocation notice:", error.message);
-        const { error: updateError } = await supabase
-          .from("avu_withdrawals")
-          .update({
-            status: "Disapproved",
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", withdrawalId);
-
-        if (updateError) {
-          throw updateError;
-        }
-
-        await db.updateAvuWithdrawalStatus(withdrawalId, "Disapproved", undefined, effectiveAdminId);
-        error = null;
+      const result = await executeReject(withdrawalId, effectiveAdminId);
+      if (!result.success) {
+        throw result.error || new Error("Failed to reject withdrawal.");
       }
 
-      // 3. On success: Remove item from pending list immediately
+      // Remove item from pending list immediately
       setWithdrawals((prev) => prev.filter((item) => item.id !== withdrawalId));
 
-      // 4. Success notification confirming rejection with zero deduction
-      notifySuccess(
-        `Withdrawal request for ${ambName} rejected. Ambassador balance left untouched (0 AVU deducted).`
-      );
+      notifySuccess(`Withdrawal request for ${ambName} was disapproved. Balance was left untouched.`);
 
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated"));
