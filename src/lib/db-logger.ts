@@ -229,4 +229,13 @@ export function logWithdrawalFetchTrace(params: WithdrawalFetchTraceParams): voi
   }
 }
 
+export default {
+  traceDbOperation,
+  traceGenericOperation,
+  logDbOperation,
+  logAmbassadorApprovalLifecycle,
+  logWithdrawalFetchTrace
+};
+
+
 
