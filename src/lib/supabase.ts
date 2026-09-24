@@ -241,6 +241,7 @@ export interface DbAvuWithdrawal {
   ambassador_email: string;
   current_balance?: number;
   requested_avu?: number;
+  amount?: number;
   bank_name: string;
   account_number: string;
   account_name: string;
@@ -2559,38 +2560,16 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        // Attempt Supabase query joining avu_withdrawals with ambassadors
-        let { data, error } = await client
-          .from("avu_withdrawals")
-          .select(`
-            *,
-            ambassadors:ambassador_id (
-              id,
-              user_id,
-              professional_name,
-              name,
-              email,
-              phone_number,
-              phone,
-              base_city,
-              city,
-              base_country,
-              country,
-              avu_balance,
-              ledger_balance,
-              status,
-              badge_status,
-              is_approved
-            )
-          `)
-          .order("created_at", { ascending: false });
+        let data: any[] | null = null;
+        let error: any = null;
 
-        if (error || !data) {
-          const fallbackJoin = await client
+        // 1. Attempt Supabase query joining avu_withdrawals with ambassadors
+        try {
+          const res1 = await client
             .from("avu_withdrawals")
             .select(`
               *,
-              ambassadors (
+              ambassadors:ambassador_id (
                 id,
                 user_id,
                 professional_name,
@@ -2610,49 +2589,70 @@ export const db = {
               )
             `)
             .order("created_at", { ascending: false });
-          if (!fallbackJoin.error && fallbackJoin.data) {
-            data = fallbackJoin.data;
-            error = null;
+
+          if (!res1.error && res1.data && res1.data.length > 0) {
+            data = res1.data;
+          } else {
+            error = res1.error;
+          }
+        } catch (e1) {
+          error = e1;
+        }
+
+        // 2. Direct flat query across candidate table names if relation join was absent
+        if (!data || data.length === 0) {
+          for (const tName of ["avu_withdrawals", "withdrawals", "AvuWithdrawals"]) {
+            try {
+              const res2 = await client.from(tName).select("*").order("created_at", { ascending: false });
+              if (!res2.error && res2.data && res2.data.length > 0) {
+                // Programmatic join with ambassadors table
+                try {
+                  const ambRes = await client.from("ambassadors").select("*");
+                  const ambMap = new Map<string, any>();
+                  (ambRes.data || []).forEach((a: any) => {
+                    if (a.id) ambMap.set(String(a.id).toLowerCase(), a);
+                    if (a.user_id) ambMap.set(String(a.user_id).toLowerCase(), a);
+                    if (a.email) ambMap.set(String(a.email).toLowerCase(), a);
+                  });
+                  data = res2.data.map((row: any) => {
+                    const amb =
+                      ambMap.get(String(row.ambassador_id || "").toLowerCase()) ||
+                      ambMap.get(String(row.email || row.ambassador_email || "").toLowerCase()) ||
+                      null;
+                    return { ...row, ambassadors: amb };
+                  });
+                  error = null;
+                  break;
+                } catch (_) {
+                  data = res2.data;
+                  error = null;
+                  break;
+                }
+              }
+            } catch (_) {}
           }
         }
 
-        // Programmatic join fallback if foreign key relation is not registered in PostgREST
-        if (error || !data) {
-          const [rawW, rawA] = await Promise.all([
-            client.from("avu_withdrawals").select("*").order("created_at", { ascending: false }),
-            client.from("ambassadors").select("*")
-          ]);
-          if (rawW.data) {
-            const ambMap = new Map<string, any>();
-            (rawA.data || []).forEach((a: any) => {
-              if (a.id) ambMap.set(String(a.id).toLowerCase(), a);
-              if (a.user_id) ambMap.set(String(a.user_id).toLowerCase(), a);
-              if (a.email) ambMap.set(String(a.email).toLowerCase(), a);
-            });
-            data = rawW.data.map((row: any) => {
-              const amb =
-                ambMap.get(String(row.ambassador_id || "").toLowerCase()) ||
-                ambMap.get(String(row.email || row.ambassador_email || "").toLowerCase()) ||
-                null;
-              return { ...row, ambassadors: amb };
-            });
-            error = null;
-          }
-        }
-
-        if (!error && data) {
+        if (data && data.length > 0) {
           supabaseWithdrawals = data.map((row: any) => {
             const amb = Array.isArray(row.ambassadors) ? row.ambassadors[0] : row.ambassadors;
-            const reqAmount = Number(row.avu_amount ?? row.requested_avu ?? row.amount_avu ?? row.amount ?? 0);
+            const reqAmount = Number(row.amount ?? row.avu_amount ?? row.requested_avu ?? row.amount_avu ?? 0);
             const convRate = Number(row.conversion_rate || 1000);
             const nairaEq = Number(row.naira_equivalent || row.amount_naira || (reqAmount * convRate));
-            const ambName = amb?.professional_name || amb?.name || row.ambassador_name || row.full_name || row.account_name || "Ambassador";
+            const ambName =
+              amb?.professional_name ||
+              amb?.name ||
+              row.ambassador_name ||
+              row.full_name ||
+              row.account_name ||
+              "Ambassador";
             const ambEmail = amb?.email || row.ambassador_email || row.email || "";
-            const currentBal = amb?.avu_balance !== undefined && amb?.avu_balance !== null
-              ? Number(amb.avu_balance)
-              : amb?.ledger_balance !== undefined && amb?.ledger_balance !== null
-              ? Number(amb.ledger_balance)
-              : Number(row.current_balance ?? row.avu_balance ?? 0);
+            const currentBal =
+              amb?.avu_balance !== undefined && amb?.avu_balance !== null
+                ? Number(amb.avu_balance)
+                : amb?.ledger_balance !== undefined && amb?.ledger_balance !== null
+                ? Number(amb.ledger_balance)
+                : Number(row.current_balance ?? row.avu_balance ?? 0);
 
             const rawStatus = (row.status || "pending").toString().trim();
             let normStatus: "Pending" | "Approved" | "Disapproved" = "Pending";
@@ -2684,7 +2684,7 @@ export const db = {
           });
         }
       } catch (err) {
-        console.warn("Error getting Supabase AVU withdrawals joined:", err);
+        console.warn("Error getting Supabase AVU withdrawals:", err);
       }
     }
 
@@ -2740,11 +2740,11 @@ export const db = {
       ? crypto.randomUUID()
       : "00000000-0000-4000-8000-" + Date.now().toString(16).padStart(12, '0');
     const timestamp = new Date().toISOString();
-    const reqAmount = Number(withdrawal.requested_avu || withdrawal.avu_amount || 0);
+    const reqAmount = Number(withdrawal.requested_avu || withdrawal.avu_amount || withdrawal.amount || 0);
     const convRate = Number(withdrawal.conversion_rate || 1000);
     const nairaEq = Number(withdrawal.naira_equivalent || (reqAmount * convRate));
 
-    const fresh: DbAvuWithdrawal = {
+    let fresh: DbAvuWithdrawal = {
       id: generatedUuid,
       ambassador_id: withdrawal.ambassador_id,
       ambassador_name: withdrawal.ambassador_name,
@@ -2753,6 +2753,7 @@ export const db = {
       current_balance: withdrawal.current_balance,
       requested_avu: reqAmount,
       avu_amount: reqAmount,
+      amount: reqAmount,
       naira_equivalent: nairaEq,
       bank_name: withdrawal.bank_name,
       account_number: withdrawal.account_number,
@@ -2762,69 +2763,101 @@ export const db = {
       created_at: timestamp
     };
 
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      try {
-        const client = supabaseAdmin || supabase;
-        // Primary full payload adhering to public.avu_withdrawals schema
-        const primaryPayload: any = {
-          id: fresh.id,
-          ambassador_id: fresh.ambassador_id,
-          ambassador_name: fresh.ambassador_name,
-          email: fresh.email,
-          ambassador_email: fresh.ambassador_email,
-          current_balance: fresh.current_balance,
-          requested_avu: fresh.requested_avu,
-          avu_amount: fresh.avu_amount,
-          amount: fresh.requested_avu,
-          naira_equivalent: fresh.naira_equivalent,
-          conversion_rate: fresh.conversion_rate,
-          bank_name: fresh.bank_name,
-          account_number: fresh.account_number,
-          account_name: fresh.account_name,
-          status: "Pending",
-          created_at: timestamp
-        };
+    let serverSaved = false;
 
-        const { data: insertedRow, error } = await client.from("avu_withdrawals").insert([primaryPayload]).select().maybeSingle();
-        if (insertedRow && insertedRow.id) {
-          fresh.id = insertedRow.id;
-        } else if (error) {
-          // Retry with compact schema if custom schema omits secondary column aliases
-          const compactPayload: any = {
-            ambassador_id: fresh.ambassador_id,
-            ambassador_name: fresh.ambassador_name,
-            email: fresh.email,
-            current_balance: fresh.current_balance,
-            requested_avu: fresh.requested_avu,
-            naira_equivalent: fresh.naira_equivalent,
-            bank_name: fresh.bank_name,
-            account_number: fresh.account_number,
-            account_name: fresh.account_name,
+    // 1. Primary: Server-side API route (/api/withdraw) using SUPABASE_SERVICE_ROLE_KEY to bypass RLS and foreign-key snags
+    try {
+      const res = await fetch("/api/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: reqAmount,
+          requested_avu: reqAmount,
+          bank_name: withdrawal.bank_name,
+          account_number: withdrawal.account_number,
+          account_name: withdrawal.account_name,
+          ambassador_id: withdrawal.ambassador_id,
+          ambassador_name: withdrawal.ambassador_name,
+          email: withdrawal.email || withdrawal.ambassador_email,
+          ambassador_email: withdrawal.ambassador_email || withdrawal.email,
+          current_balance: withdrawal.current_balance
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && json?.data) {
+          fresh = {
+            ...fresh,
+            ...json.data,
+            id: json.data.id || fresh.id,
             status: "Pending"
           };
-          const res2 = await client.from("avu_withdrawals").insert([compactPayload]).select().maybeSingle();
-          if (res2.data && res2.data.id) {
-            fresh.id = res2.data.id;
-          } else if (res2.error) {
-            await client.from("AvuWithdrawals").insert([primaryPayload]);
-          }
+          serverSaved = true;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Secondary direct Supabase insertion fallback
+    if (!serverSaved && isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || "").trim());
+        const validAmbId = isUuid(fresh.ambassador_id) ? fresh.ambassador_id : undefined;
+
+        for (const tName of ["avu_withdrawals", "withdrawals", "AvuWithdrawals"]) {
+          try {
+            const payload: any = {
+              id: fresh.id,
+              amount: reqAmount,
+              requested_avu: reqAmount,
+              avu_amount: reqAmount,
+              naira_equivalent: nairaEq,
+              conversion_rate: 1000,
+              bank_name: fresh.bank_name,
+              account_number: fresh.account_number,
+              account_name: fresh.account_name,
+              ambassador_name: fresh.ambassador_name,
+              email: fresh.email,
+              ambassador_email: fresh.email,
+              status: "pending",
+              created_at: timestamp
+            };
+            if (validAmbId) payload.ambassador_id = validAmbId;
+
+            const { data: inserted, error: insErr } = await client.from(tName).insert([payload]).select().maybeSingle();
+            if (!insErr && inserted) {
+              if (inserted.id) fresh.id = inserted.id;
+              serverSaved = true;
+              break;
+            } else {
+              // Retry with title-case status
+              payload.status = "Pending";
+              const r2 = await client.from(tName).insert([payload]).select().maybeSingle();
+              if (r2.data) {
+                if (r2.data.id) fresh.id = r2.data.id;
+                serverSaved = true;
+                break;
+              }
+            }
+          } catch (_) {}
         }
       } catch (err) {
-        console.warn("Error inserting into public.avu_withdrawals:", err);
+        console.warn("Direct Supabase insertion notice:", err);
       }
     }
 
-    // Save to local storage
+    // 3. Save to local storage mirror
     if (typeof window !== "undefined") {
       const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
       const list: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
       list.unshift(fresh);
       localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
       localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
-      window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: fresh.id, status: "Pending" } }));
+      window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: fresh }));
     }
 
-    // Log Activity
+    // 4. Log Activity
     await this.logActivity({
       ambassador_id: fresh.ambassador_id,
       ambassador_name: fresh.ambassador_name,
@@ -2857,50 +2890,58 @@ export interface WithdrawalFormData {
   bankName: string;
   accountNumber: string;
   accountName: string;
+  ambassadorId?: string;
+  ambassadorEmail?: string;
+  ambassadorName?: string;
+  currentBalance?: number;
 }
 
 /**
  * Ambassador Submitting Withdrawal Request (Form Submission)
  * 
- * - Inserts a new withdrawal request into 'avu_withdrawals' with status 'pending' / 'Pending'.
+ * - Submits withdrawal to backend API / direct database tables.
  * - Leaves balance intact until Admin approves.
  */
-export async function handleWithdrawalSubmit(formData: {
-  amount: number;
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
-}): Promise<{ success: boolean; error?: any; data?: any }> {
+export async function handleWithdrawalSubmit(formData: WithdrawalFormData): Promise<{ success: boolean; error?: any; data?: any }> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    // Check session or local fallback
-    let currentUserId = session?.user?.id;
-    let currentUserEmail = session?.user?.email;
+    let currentUserId: string | undefined = formData.ambassadorId;
+    let currentUserEmail: string | undefined = formData.ambassadorEmail;
+    let ambassadorName: string = formData.ambassadorName || formData.accountName || "Ambassador";
+    let currentBalance: number = formData.currentBalance ?? 0;
 
-    if (!currentUserId && typeof window !== "undefined") {
-      currentUserEmail = localStorage.getItem("advaltad_session_email") || undefined;
-      currentUserId = localStorage.getItem("advaltad_session_user_id") || undefined;
-    }
+    // Check session or local fallback if not explicitly provided
+    if (!currentUserId || !currentUserEmail) {
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            currentUserId = currentUserId || session.user.id;
+            currentUserEmail = currentUserEmail || session.user.email;
+            ambassadorName = ambassadorName !== "Ambassador" ? ambassadorName : (session.user.user_metadata?.name || ambassadorName);
+          }
+        } catch (_) {}
+      }
 
-    if (!session?.user && !currentUserId && !currentUserEmail) {
-      alert("Please log in as an ambassador to submit a withdrawal request.");
-      return { success: false, error: new Error("Authentication session required.") };
+      if (!currentUserId && typeof window !== "undefined") {
+        currentUserId = localStorage.getItem("advaltad_session_user_id") || undefined;
+      }
+      if (!currentUserEmail && typeof window !== "undefined") {
+        currentUserEmail = localStorage.getItem("advaltad_session_email") || undefined;
+      }
     }
 
     // Resolve ambassador row for foreign key & metadata compatibility
     let targetAmbassadorId = currentUserId || "00000000-0000-0000-0000-000000000000";
-    let ambassadorName = formData.accountName || session?.user?.user_metadata?.name || "Ambassador";
-    let ambassadorEmail = currentUserEmail || "";
-    let currentBalance = 0;
+    let ambassadorEmail = currentUserEmail || "ambassador@advaltad.org";
 
-    if (isSupabaseConfigured && (currentUserId || currentUserEmail)) {
+    if (isSupabaseConfigured && (supabaseAdmin || supabase) && (currentUserId || currentUserEmail)) {
       try {
+        const client = supabaseAdmin || supabase;
         const filterOr = currentUserId
           ? `id.eq.${currentUserId},user_id.eq.${currentUserId}` + (currentUserEmail ? `,email.ilike.${currentUserEmail}` : "")
           : `email.ilike.${currentUserEmail}`;
 
-        const { data: amb } = await supabase
+        const { data: amb } = await client
           .from("ambassadors")
           .select("id, professional_name, name, email, avu_balance")
           .or(filterOr)
@@ -2910,7 +2951,9 @@ export async function handleWithdrawalSubmit(formData: {
           targetAmbassadorId = amb.id;
           ambassadorName = amb.professional_name || amb.name || ambassadorName;
           ambassadorEmail = amb.email || ambassadorEmail;
-          currentBalance = Number(amb.avu_balance || 0);
+          if (currentBalance === 0) {
+            currentBalance = Number(amb.avu_balance || 0);
+          }
         }
       } catch (err) {
         console.warn("[handleWithdrawalSubmit] Failed to query ambassador profile:", err);
@@ -2934,29 +2977,8 @@ export async function handleWithdrawalSubmit(formData: {
       status: "Pending" as const
     };
 
-    // 1. Create using db.createAvuWithdrawal to ensure full persistence and activity logging
+    // 1. Create using db.createAvuWithdrawal (handles /api/withdraw, direct Supabase, and local storage mirror)
     const createdRecord = await db.createAvuWithdrawal(compatiblePayload);
-
-    // 2. Also ensure direct insertion into avu_withdrawals table if Supabase is connected
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      try {
-        const client = supabaseAdmin || supabase;
-        await client.from("avu_withdrawals").upsert({
-          id: createdRecord.id,
-          ambassador_id: targetAmbassadorId,
-          amount: formData.amount,
-          requested_avu: formData.amount,
-          avu_amount: formData.amount,
-          bank_name: formData.bankName,
-          account_number: formData.accountNumber,
-          account_name: formData.accountName,
-          ambassador_name: ambassadorName,
-          email: ambassadorEmail,
-          ambassador_email: ambassadorEmail,
-          status: "Pending"
-        });
-      } catch (_) {}
-    }
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: createdRecord }));
@@ -2989,6 +3011,50 @@ export async function handleApprove(
       : "00000000-0000-0000-0000-000000000000";
     const reviewer = adminEmail || "Executive Treasury Admin";
     const timestamp = new Date().toISOString();
+
+    // 0. Primary attempt via serverless /api/withdraw-action
+    try {
+      const apiRes = await fetch("/api/withdraw-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approve",
+          withdrawal_id: withdrawalId,
+          admin_id: effectiveAdminId,
+          admin_email: reviewer,
+          admin_note: adminNote
+        })
+      });
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json?.success) {
+          if (typeof window !== "undefined") {
+            const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+            if (localData) {
+              try {
+                const list: DbAvuWithdrawal[] = JSON.parse(localData);
+                const idx = list.findIndex(w => w.id === withdrawalId);
+                if (idx !== -1) {
+                  list[idx].status = "Approved";
+                  list[idx].reviewed_by = reviewer;
+                  list[idx].reviewed_at = timestamp;
+                  if (adminNote) list[idx].admin_note = adminNote;
+                  list[idx].updated_at = timestamp;
+                  localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+                }
+              } catch (_) {}
+            }
+            if (json.newBalance !== undefined) {
+              localStorage.setItem("advaltad_cached_wallet_balance", String(json.newBalance));
+            }
+            localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
+            window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: withdrawalId, status: "Approved" } }));
+            window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", { detail: { balance: json.newBalance } }));
+          }
+          return { success: true, newBalance: json.newBalance, requestedAmount: json.requestedAmount };
+        }
+      }
+    } catch (_) {}
 
     // 1. Locate the withdrawal request record
     const allWithdrawals = await db.getAvuWithdrawals();
@@ -3270,6 +3336,46 @@ export async function handleReject(
       : "00000000-0000-0000-0000-000000000000";
     const reviewer = adminEmail || "Executive Treasury Admin";
     const timestamp = new Date().toISOString();
+
+    // 0. Primary attempt via serverless /api/withdraw-action
+    try {
+      const apiRes = await fetch("/api/withdraw-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reject",
+          withdrawal_id: withdrawalId,
+          admin_id: effectiveAdminId,
+          admin_email: reviewer,
+          admin_note: adminNote
+        })
+      });
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json?.success) {
+          if (typeof window !== "undefined") {
+            const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+            if (localData) {
+              try {
+                const list: DbAvuWithdrawal[] = JSON.parse(localData);
+                const idx = list.findIndex(w => w.id === withdrawalId);
+                if (idx !== -1) {
+                  list[idx].status = "Disapproved";
+                  list[idx].reviewed_by = reviewer;
+                  list[idx].reviewed_at = timestamp;
+                  if (adminNote) list[idx].admin_note = adminNote;
+                  list[idx].updated_at = timestamp;
+                  localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+                }
+              } catch (_) {}
+            }
+            localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
+            window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: withdrawalId, status: "Disapproved" } }));
+          }
+          return { success: true };
+        }
+      }
+    } catch (_) {}
 
     const allWithdrawals = await db.getAvuWithdrawals();
     const target = allWithdrawals.find(w => w.id === withdrawalId);
