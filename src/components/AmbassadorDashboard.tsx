@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
-import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance, handleWithdrawalSubmit, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY } from "../lib/supabase";
+import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance, handleWithdrawalSubmit, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace } from "../lib/supabase";
 import { useAmbassadorWallet } from "../hooks/useAmbassadorWallet";
 import { useWalletBalance, useWalletState } from "../hooks/useWalletBalance";
 import { convertNairaToAvu, convertAvuToNaira, initializePayment } from "../lib/paystack";
@@ -10,7 +10,6 @@ import { AmbassadorProfile } from "./AmbassadorProfile";
 import { AmbassadorCertificate, getAmbassadorDisplayName } from "./AmbassadorCertificate";
 import { WithdrawalTrackerCard } from "./WithdrawalTrackerCard";
 import { WithdrawalModal } from "./WithdrawalModal";
-import { logWithdrawalFetchTrace } from "../lib/db-logger";
 import logoUrl from "../assets/images/Advaltad Logo.jpeg";
 import {
   ResponsiveContainer,
