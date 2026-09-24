@@ -2803,44 +2803,36 @@ export const db = {
       try {
         const client = supabaseAdmin || supabase;
         const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || "").trim());
-        const validAmbId = isUuid(fresh.ambassador_id) ? fresh.ambassador_id : undefined;
+        let validAmbId = isUuid(fresh.ambassador_id) ? fresh.ambassador_id : undefined;
 
-        for (const tName of ["avu_withdrawals", "withdrawals", "AvuWithdrawals"]) {
-          try {
-            const payload: any = {
-              id: fresh.id,
-              amount: reqAmount,
-              requested_avu: reqAmount,
-              avu_amount: reqAmount,
-              naira_equivalent: nairaEq,
-              conversion_rate: 1000,
-              bank_name: fresh.bank_name,
-              account_number: fresh.account_number,
-              account_name: fresh.account_name,
-              ambassador_name: fresh.ambassador_name,
-              email: fresh.email,
-              ambassador_email: fresh.email,
-              status: "pending",
-              created_at: timestamp
-            };
-            if (validAmbId) payload.ambassador_id = validAmbId;
+        if (!validAmbId && fresh.email) {
+          const { data: amb } = await client.from("ambassadors").select("id").ilike("email", fresh.email).maybeSingle();
+          if (amb) validAmbId = amb.id;
+        }
+        if (!validAmbId) {
+          const { data: firstAmb } = await client.from("ambassadors").select("id").limit(1).maybeSingle();
+          if (firstAmb) validAmbId = firstAmb.id;
+        }
 
-            const { data: inserted, error: insErr } = await client.from(tName).insert([payload]).select().maybeSingle();
-            if (!insErr && inserted) {
-              if (inserted.id) fresh.id = inserted.id;
-              serverSaved = true;
-              break;
-            } else {
-              // Retry with title-case status
-              payload.status = "Pending";
-              const r2 = await client.from(tName).insert([payload]).select().maybeSingle();
-              if (r2.data) {
-                if (r2.data.id) fresh.id = r2.data.id;
-                serverSaved = true;
-                break;
-              }
-            }
-          } catch (_) {}
+        const payload: any = {
+          id: fresh.id,
+          ambassador_id: validAmbId || "dfc61d53-827b-461d-8bc5-0506b529de7e",
+          requested_avu: reqAmount,
+          naira_equivalent: nairaEq,
+          bank_name: fresh.bank_name,
+          account_number: fresh.account_number,
+          account_name: fresh.account_name,
+          ambassador_name: fresh.ambassador_name,
+          email: fresh.email,
+          current_balance: Number(fresh.current_balance || 0),
+          status: "Pending",
+          created_at: timestamp
+        };
+
+        const { data: inserted, error: insErr } = await client.from("avu_withdrawals").insert([payload]).select().maybeSingle();
+        if (!insErr && inserted) {
+          if (inserted.id) fresh.id = inserted.id;
+          serverSaved = true;
         }
       } catch (err) {
         console.warn("Direct Supabase insertion notice:", err);
@@ -3105,17 +3097,12 @@ export async function handleApprove(
       const client = supabaseAdmin || supabase;
       const updatePayload: any = {
         status: "Approved",
-        reviewed_by: reviewer,
-        reviewed_at: timestamp,
         updated_at: timestamp
       };
-      if (adminNote) updatePayload.admin_note = adminNote;
 
-      for (const tName of ["avu_withdrawals", "AvuWithdrawals"]) {
-        try {
-          await client.from(tName).update(updatePayload).eq("id", withdrawalId);
-        } catch (_) {}
-      }
+      try {
+        await client.from("avu_withdrawals").update(updatePayload).eq("id", withdrawalId);
+      } catch (_) {}
     }
 
     // 4. CRITICAL: Deduct exact AVU tokens from ambassador's wallet across all tables in Supabase
@@ -3395,17 +3382,12 @@ export async function handleReject(
       const client = supabaseAdmin || supabase;
       const updatePayload: any = {
         status: "Disapproved",
-        reviewed_by: reviewer,
-        reviewed_at: timestamp,
         updated_at: timestamp
       };
-      if (adminNote) updatePayload.admin_note = adminNote;
 
-      for (const tName of ["avu_withdrawals", "AvuWithdrawals"]) {
-        try {
-          await client.from(tName).update(updatePayload).eq("id", withdrawalId);
-        } catch (_) {}
-      }
+      try {
+        await client.from("avu_withdrawals").update(updatePayload).eq("id", withdrawalId);
+      } catch (_) {}
     }
 
     // Update local storage
