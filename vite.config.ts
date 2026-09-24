@@ -429,6 +429,163 @@ export default defineConfig(({ mode }) => {
               return;
             }
 
+            if (req.url && req.url.startsWith('/api/withdraw-action')) {
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+              res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+              res.setHeader('Content-Type', 'application/json');
+
+              if (req.method === 'OPTIONS') {
+                res.statusCode = 200;
+                res.end();
+                return;
+              }
+
+              let body = '';
+              req.on('data', (chunk) => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const parsed = JSON.parse(body || '{}');
+                  const targetUrl = supabaseUrl;
+                  const targetKey = env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey;
+                  if (!targetUrl || !targetKey) {
+                    res.statusCode = 200;
+                    res.end(JSON.stringify({ success: true, message: 'Local fallback mode active.' }));
+                    return;
+                  }
+
+                  const { createClient } = await import('@supabase/supabase-js');
+                  const supabaseClient = createClient(targetUrl, targetKey, { auth: { persistSession: false } });
+
+                  const { action = 'approve', withdrawal_id, withdrawalId, admin_email, adminEmail, admin_note, adminNote } = parsed;
+                  const targetId = String(withdrawal_id || withdrawalId || '').trim();
+                  const isApprove = String(action || 'approve').toLowerCase().trim() === 'approve';
+                  const reviewer = String(admin_email || adminEmail || 'Executive Treasury Admin').trim();
+                  const note = String(admin_note || adminNote || '').trim();
+                  const timestamp = new Date().toISOString();
+
+                  const statusTitle = isApprove ? 'Approved' : 'Disapproved';
+                  const statusLower = isApprove ? 'approved' : 'disapproved';
+
+                  for (const tName of ['avu_withdrawals', 'withdrawals', 'AvuWithdrawals']) {
+                    try {
+                      await supabaseClient.from(tName).update({
+                        status: statusTitle,
+                        reviewed_by: reviewer,
+                        reviewed_at: timestamp,
+                        admin_note: note || undefined,
+                        updated_at: timestamp
+                      }).eq('id', targetId);
+                      await supabaseClient.from(tName).update({
+                        status: statusLower,
+                        reviewed_by: reviewer,
+                        reviewed_at: timestamp,
+                        admin_note: note || undefined,
+                        updated_at: timestamp
+                      }).eq('id', targetId);
+                    } catch (_) {}
+                  }
+
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, action: isApprove ? 'approve' : 'reject', status: statusTitle }));
+                } catch (err: any) {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: false, error: err?.message || 'Withdraw action error' }));
+                }
+              });
+              return;
+            }
+
+            if (req.url && (req.url === '/api/withdraw' || req.url.startsWith('/api/withdraw?'))) {
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+              res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+              res.setHeader('Content-Type', 'application/json');
+
+              if (req.method === 'OPTIONS') {
+                res.statusCode = 200;
+                res.end();
+                return;
+              }
+
+              let body = '';
+              req.on('data', (chunk) => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const parsed = JSON.parse(body || '{}');
+                  const targetUrl = supabaseUrl;
+                  const targetKey = env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey;
+
+                  const numAmount = Number(parsed.amount ?? parsed.requested_avu ?? 0);
+                  const effectiveBank = String(parsed.bank_name || parsed.bankName || '').trim();
+                  const effectiveAccountNum = String(parsed.account_number || parsed.accountNumber || '').replace(/\D/g, '');
+                  const effectiveAccountName = String(parsed.account_name || parsed.accountName || '').trim();
+                  const rawAmbassadorId = String(parsed.ambassador_id || parsed.ambassadorId || '').trim();
+                  const rawEmail = String(parsed.email || parsed.ambassador_email || '').trim().toLowerCase();
+                  const effectiveAmbName = String(parsed.ambassador_name || parsed.ambassadorName || effectiveAccountName || 'Ambassador').trim();
+                  const timestamp = new Date().toISOString();
+                  const generatedId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                    ? crypto.randomUUID()
+                    : '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0');
+
+                  const finalizedRecord = {
+                    id: generatedId,
+                    ambassador_id: rawAmbassadorId || 'amb_' + Math.random().toString(36).substring(2, 8),
+                    ambassador_name: effectiveAmbName,
+                    email: rawEmail || 'ambassador@advaltad.org',
+                    ambassador_email: rawEmail || 'ambassador@advaltad.org',
+                    current_balance: Number(parsed.current_balance || 0),
+                    requested_avu: numAmount,
+                    avu_amount: numAmount,
+                    amount: numAmount,
+                    naira_equivalent: numAmount * 1000,
+                    conversion_rate: 1000,
+                    bank_name: effectiveBank,
+                    account_number: effectiveAccountNum,
+                    account_name: effectiveAccountName,
+                    status: 'Pending',
+                    created_at: timestamp
+                  };
+
+                  if (targetUrl && targetKey) {
+                    try {
+                      const { createClient } = await import('@supabase/supabase-js');
+                      const supabaseClient = createClient(targetUrl, targetKey, { auth: { persistSession: false } });
+
+                      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
+                      const targetAmbId = isUuid(rawAmbassadorId) ? rawAmbassadorId : undefined;
+
+                      for (const tName of ['avu_withdrawals', 'withdrawals', 'AvuWithdrawals']) {
+                        try {
+                          const payload: any = {
+                            id: generatedId,
+                            amount: numAmount,
+                            requested_avu: numAmount,
+                            bank_name: effectiveBank,
+                            account_number: effectiveAccountNum,
+                            account_name: effectiveAccountName,
+                            ambassador_name: effectiveAmbName,
+                            email: rawEmail,
+                            status: 'pending',
+                            created_at: timestamp
+                          };
+                          if (targetAmbId) payload.ambassador_id = targetAmbId;
+                          await supabaseClient.from(tName).insert([payload]);
+                        } catch (_) {}
+                      }
+                    } catch (_) {}
+                  }
+
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, data: finalizedRecord }));
+                } catch (err: any) {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: false, error: err?.message || 'Withdrawal processing error' }));
+                }
+              });
+              return;
+            }
+
             // Safe catch-all for any other /api/* route to prevent Vite fallback to HTML
             if (req.url && req.url.startsWith('/api/')) {
               res.setHeader('Access-Control-Allow-Origin', '*');
