@@ -15,8 +15,7 @@ import {
   Copy,
   Check
 } from "lucide-react";
-import { supabase, isSupabaseConfigured, db, handleApprove as executeApprove, handleReject as executeReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY } from "../lib/supabase";
-import { logWithdrawalFetchTrace } from "../lib/db-logger";
+import { supabase, isSupabaseConfigured, db, handleApprove as executeApprove, handleReject as executeReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace } from "../lib/supabase";
 
 export interface PendingWithdrawal {
   id: string;
