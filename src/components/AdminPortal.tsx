@@ -31,14 +31,14 @@ import {
   X,
   Send
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
 import { OverviewSummaryCharts } from "./OverviewSummaryCharts";
 import { PendingWithdrawalsTable } from "./PendingWithdrawalsTable";
-import { traceDbOperation, traceGenericOperation, logDbOperation, logAmbassadorApprovalLifecycle, logWithdrawalFetchTrace } from "../lib/db-logger";
+import { traceDbOperation, traceGenericOperation, logDbOperation, logAmbassadorApprovalLifecycle } from "../lib/db-logger";
 
 interface AdminPortalProps {
   onLogout: () => void;
