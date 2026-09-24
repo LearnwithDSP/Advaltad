@@ -37,6 +37,7 @@ import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailS
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
 import { OverviewSummaryCharts } from "./OverviewSummaryCharts";
+import { PendingWithdrawals } from "./PendingWithdrawals";
 import { PendingWithdrawalsTable } from "./PendingWithdrawalsTable";
 import { traceDbOperation, traceGenericOperation, logDbOperation, logAmbassadorApprovalLifecycle } from "../lib/db-logger";
 
@@ -2758,7 +2759,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
                     {/* Dedicated Production Pending Queue Component */}
                     <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 text-left">
-                      <PendingWithdrawalsTable
+                      <PendingWithdrawals
                         adminId={currentAdmin?.id}
                         onSuccessNotification={(msg) => {
                           addToast("Withdrawal Processed", msg, "success");
