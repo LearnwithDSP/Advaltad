@@ -1,5 +1,56 @@
 import { createClient } from "@supabase/supabase-js";
-import { logWithdrawalFetchTrace } from "./db-logger";
+
+/**
+ * Unified debugging function for logging the specific 'ambassador_id' being used during
+ * the 'avu_withdrawals' fetch call to verify that queries correctly filter and join the data.
+ */
+export interface WithdrawalFetchTraceParams {
+  caller: "AdminPortal" | "AmbassadorDashboard" | "PendingWithdrawalsTable" | "db.getAvuWithdrawals" | string;
+  targetAmbassadorId?: string | string[];
+  filterStatus?: string;
+  tableQueried?: string;
+  matchedCount?: number;
+  totalCount?: number;
+  sampleIds?: string[];
+  error?: any;
+}
+
+export function logWithdrawalFetchTrace(params: WithdrawalFetchTraceParams): void {
+  const timestamp = new Date().toISOString();
+  const callerColor = params.caller === "AdminPortal" ? "#f59e0b" : params.caller === "AmbassadorDashboard" ? "#10b981" : "#8b5cf6";
+
+  if (params.error) {
+    console.error(
+      `%c[WITHDRAWAL FETCH TRACE: ${params.caller}]%c [${timestamp}] Error during avu_withdrawals fetch`,
+      `background: ${callerColor}; color: #000; font-weight: bold; padding: 2px 6px; border-radius: 4px;`,
+      "color: #ef4444; font-weight: bold;",
+      {
+        timestamp,
+        caller: params.caller,
+        targetAmbassadorId: params.targetAmbassadorId,
+        filterStatus: params.filterStatus,
+        tableQueried: params.tableQueried,
+        error: params.error?.message || params.error
+      }
+    );
+  } else {
+    console.log(
+      `%c[WITHDRAWAL FETCH TRACE: ${params.caller}]%c [${timestamp}] Target ID: ${JSON.stringify(params.targetAmbassadorId || "ALL")} | Matched: ${params.matchedCount ?? 0}/${params.totalCount ?? 0}`,
+      `background: ${callerColor}; color: #000; font-weight: bold; padding: 2px 6px; border-radius: 4px;`,
+      "color: #0284c7; font-weight: bold;",
+      {
+        timestamp,
+        caller: params.caller,
+        targetAmbassadorId: params.targetAmbassadorId,
+        filterStatus: params.filterStatus,
+        tableQueried: params.tableQueried || "avu_withdrawals",
+        matchedCount: params.matchedCount,
+        totalCount: params.totalCount,
+        sampleIds: params.sampleIds
+      }
+    );
+  }
+}
 
 // Supabase configuration
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (process as any).env?.VITE_SUPABASE_URL || "";
