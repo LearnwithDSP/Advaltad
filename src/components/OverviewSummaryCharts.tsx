@@ -298,3 +298,5 @@ export const OverviewSummaryCharts: React.FC<OverviewSummaryChartsProps> = ({
     </div>
   );
 };
+
+export default OverviewSummaryCharts;
