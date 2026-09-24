@@ -248,7 +248,11 @@ export const AvuWithdrawalModal: React.FC<AvuWithdrawalModalProps> = ({
         amount: Number(withdrawalAvu),
         bankName: effectiveBank,
         accountNumber: accountNumber.trim(),
-        accountName: accountName.trim()
+        accountName: accountName.trim(),
+        ambassadorId: profile?.id || profile?.user_id,
+        ambassadorEmail: profile?.email,
+        ambassadorName: profile?.name,
+        currentBalance: currentAvuBalance
       });
 
       if (result.success) {
