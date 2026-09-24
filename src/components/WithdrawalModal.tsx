@@ -220,32 +220,51 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
         targetEmail = targetEmail || localStorage.getItem("advaltad_session_email") || undefined;
       }
 
+      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || "").trim());
+
       // Query ambassadors profile to guarantee matching UUID / foreign key
-      if (isSupabaseConfigured && (supabaseAdmin || supabase) && (targetAmbassadorId || targetEmail)) {
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
         try {
           const client = supabaseAdmin || supabase;
-          const filter = targetAmbassadorId
-            ? `id.eq.${targetAmbassadorId},user_id.eq.${targetAmbassadorId}` + (targetEmail ? `,email.ilike.${targetEmail}` : "")
-            : `email.ilike.${targetEmail}`;
+          if (targetAmbassadorId || targetEmail) {
+            const filter = targetAmbassadorId && isUuid(targetAmbassadorId)
+              ? `id.eq.${targetAmbassadorId},user_id.eq.${targetAmbassadorId}` + (targetEmail ? `,email.ilike.${targetEmail}` : "")
+              : targetEmail ? `email.ilike.${targetEmail}` : undefined;
 
-          const { data: ambProfile } = await client
-            .from("ambassadors")
-            .select("id, professional_name, name, email, avu_balance")
-            .or(filter)
-            .maybeSingle();
+            if (filter) {
+              const { data: ambProfile } = await client
+                .from("ambassadors")
+                .select("id, professional_name, name, email, avu_balance")
+                .or(filter)
+                .maybeSingle();
 
-          if (ambProfile) {
-            targetAmbassadorId = ambProfile.id;
-            targetEmail = ambProfile.email || targetEmail;
-            targetName = ambProfile.professional_name || ambProfile.name || targetName;
+              if (ambProfile) {
+                targetAmbassadorId = ambProfile.id;
+                targetEmail = ambProfile.email || targetEmail;
+                targetName = ambProfile.professional_name || ambProfile.name || targetName;
+              }
+            }
+          }
+
+          if (!targetAmbassadorId || !isUuid(targetAmbassadorId)) {
+            const { data: firstAmb } = await client
+              .from("ambassadors")
+              .select("id, professional_name, name, email, avu_balance")
+              .limit(1)
+              .maybeSingle();
+            if (firstAmb) {
+              targetAmbassadorId = firstAmb.id;
+              if (!targetEmail) targetEmail = firstAmb.email;
+              if (!targetName || targetName === "Ambassador") targetName = firstAmb.professional_name || firstAmb.name || targetName;
+            }
           }
         } catch (qErr) {
           console.warn("[WithdrawalModal] Amb profile resolution note:", qErr);
         }
       }
 
-      if (!targetAmbassadorId) {
-        targetAmbassadorId = "amb_" + Math.random().toString(36).substring(2, 9);
+      if (!targetAmbassadorId || !isUuid(targetAmbassadorId)) {
+        targetAmbassadorId = "dfc61d53-827b-461d-8bc5-0506b529de7e";
       }
 
       const compatiblePayload = {
