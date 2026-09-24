@@ -1647,6 +1647,14 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
       )
       .on(
         "postgres_changes",
+        { event: "*", schema: "public", table: "withdrawals" },
+        () => {
+          fetchAmbassadorData(false);
+          refetchWalletBalance();
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "AvuWithdrawals" },
         () => {
           fetchAmbassadorData(false);
