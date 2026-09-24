@@ -1,10 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
-function isUuid(val: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -46,7 +42,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const effectiveAction = String(action || 'approve').toLowerCase().trim();
     const isApprove = effectiveAction === 'approve';
     const reviewerEmail = String(admin_email || adminEmail || 'Executive Treasury Admin').trim();
-    const reviewerId = String(admin_id || adminId || '00000000-0000-0000-0000-000000000000').trim();
     const noteText = String(admin_note || adminNote || '').trim();
     const timestamp = new Date().toISOString();
 
@@ -60,172 +55,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 1. Locate the withdrawal request record
     let withdrawalRecord: any = null;
-    let foundTable = 'avu_withdrawals';
+    try {
+      const { data } = await supabaseClient
+        .from('avu_withdrawals')
+        .select('*')
+        .eq('id', targetWithdrawalId)
+        .maybeSingle();
+      if (data) withdrawalRecord = data;
+    } catch (_) {}
 
-    for (const tName of ['avu_withdrawals', 'withdrawals', 'AvuWithdrawals']) {
-      try {
-        const { data } = await supabaseClient.from(tName).select('*').eq('id', targetWithdrawalId).maybeSingle();
-        if (data) {
-          withdrawalRecord = data;
-          foundTable = tName;
-          break;
-        }
-      } catch (_) {}
-    }
-
-    const reqAmount = Number(
-      withdrawalRecord?.amount ??
-      withdrawalRecord?.requested_avu ??
-      withdrawalRecord?.avu_amount ??
-      0
-    );
-    const targetAmbassadorId = String(withdrawalRecord?.ambassador_id || '').trim();
-    const targetEmail = String(withdrawalRecord?.email || withdrawalRecord?.ambassador_email || '').trim().toLowerCase();
-    const targetName = String(
-      withdrawalRecord?.ambassador_name ||
-      withdrawalRecord?.account_name ||
-      'Ambassador'
-    ).trim();
-
-    // 2. Update status in withdrawal table
+    // 2. Target status to update
     const targetStatus = isApprove ? 'Approved' : 'Disapproved';
-    const targetStatusLower = isApprove ? 'approved' : 'disapproved';
 
-    for (const tName of ['avu_withdrawals', 'withdrawals', 'AvuWithdrawals']) {
-      try {
-        await supabaseClient
-          .from(tName)
-          .update({
-            status: targetStatus,
-            reviewed_by: reviewerEmail,
-            reviewed_at: timestamp,
-            admin_note: noteText || undefined,
-            updated_at: timestamp
-          })
-          .eq('id', targetWithdrawalId);
+    // In avu_withdrawals table, the columns are:
+    // id, ambassador_id, requested_avu, naira_equivalent, bank_name, account_number, account_name,
+    // ambassador_name, email, current_balance, status, created_at, updated_at
+    // NOTE: Setting status = 'Approved' fires a database trigger that checks ambassador's balance and deducts it.
+    let updateResult: any = null;
+    let updateError: any = null;
 
-        // Also try lowercase status
-        await supabaseClient
-          .from(tName)
-          .update({
-            status: targetStatusLower,
-            reviewed_by: reviewerEmail,
-            reviewed_at: timestamp,
-            admin_note: noteText || undefined,
-            updated_at: timestamp
-          })
-          .eq('id', targetWithdrawalId);
-      } catch (_) {}
+    try {
+      const { data, error } = await supabaseClient
+        .from('avu_withdrawals')
+        .update({
+          status: targetStatus,
+          updated_at: timestamp
+        })
+        .eq('id', targetWithdrawalId)
+        .select()
+        .maybeSingle();
+
+      if (!error && data) {
+        updateResult = data;
+      } else if (error) {
+        updateError = error;
+      }
+    } catch (e: any) {
+      updateError = e;
     }
 
-    let computedNewBal: number | undefined = undefined;
-
-    // 3. If approving: Deduct exact AVU tokens from wallet
-    if (isApprove && reqAmount > 0) {
-      // Deduct in ambassadors table
-      for (const tName of ['ambassadors', 'Ambassadors']) {
-        try {
-          let ambRow: any = null;
-          if (targetAmbassadorId && isUuid(targetAmbassadorId)) {
-            const { data } = await supabaseClient
-              .from(tName)
-              .select('*')
-              .or(`id.eq.${targetAmbassadorId},user_id.eq.${targetAmbassadorId}`)
-              .maybeSingle();
-            ambRow = data;
-          }
-          if (!ambRow && targetEmail) {
-            const { data } = await supabaseClient
-              .from(tName)
-              .select('*')
-              .ilike('email', targetEmail)
-              .maybeSingle();
-            ambRow = data;
-          }
-
-          if (ambRow) {
-            const curBal = Number(ambRow.avu_balance ?? ambRow.wallet_balance ?? ambRow.balance ?? 0);
-            computedNewBal = Math.max(0, Number((curBal - reqAmount).toFixed(3)));
-
-            await supabaseClient.from(tName).update({
-              avu_balance: computedNewBal,
-              wallet_balance: computedNewBal,
-              ledger_balance: computedNewBal
-            }).eq('id', ambRow.id);
-          }
-        } catch (_) {}
+    if (updateError) {
+      console.warn('[/api/withdraw-action] Update error:', updateError);
+      // If error is insufficient balance from trigger
+      if (
+        updateError.message?.toLowerCase().includes('insufficient') ||
+        updateError.details?.toLowerCase().includes('insufficient') ||
+        updateError.code === 'P0001'
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Insufficient AVU balance in ambassador wallet to approve this withdrawal request.',
+          code: 'INSUFFICIENT_BALANCE'
+        });
       }
 
-      // Deduct in ambassador_wallets table
-      try {
-        let wRow: any = null;
-        if (targetEmail) {
-          const { data } = await supabaseClient.from('ambassador_wallets').select('*').ilike('email', targetEmail).maybeSingle();
-          wRow = data;
-        }
-        if (!wRow && targetAmbassadorId && isUuid(targetAmbassadorId)) {
-          const { data } = await supabaseClient.from('ambassador_wallets').select('*').eq('ambassador_id', targetAmbassadorId).maybeSingle();
-          wRow = data;
-        }
-        if (wRow) {
-          const curBal = Number(wRow.balance || 0);
-          const newB = Math.max(0, Number((curBal - reqAmount).toFixed(3)));
-          await supabaseClient.from('ambassador_wallets').update({ balance: newB }).eq('id', wRow.id);
-        }
-      } catch (_) {}
-
-      // Deduct in ambassador_wallet table
-      try {
-        if (targetAmbassadorId && isUuid(targetAmbassadorId)) {
-          const { data: wRow } = await supabaseClient.from('ambassador_wallet').select('*').eq('ambassador_id', targetAmbassadorId).maybeSingle();
-          if (wRow) {
-            const curBal = Number(wRow.balance || 0);
-            const newB = Math.max(0, Number((curBal - reqAmount).toFixed(3)));
-            await supabaseClient.from('ambassador_wallet').update({ balance: newB }).eq('id', wRow.id);
-          }
-        }
-      } catch (_) {}
+      return res.status(500).json({
+        success: false,
+        error: updateError.message || 'Database update failed.'
+      });
     }
 
-    // 4. Log in activities and audit_logs
-    try {
-      await supabaseClient.from('activities').insert([
-        {
-          id: 'ACT-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-          ambassador_id: targetAmbassadorId || '',
-          ambassador_name: targetName,
-          type: 'avu_transfer',
-          desc: isApprove
-            ? `Treasury approved AVU liquidation of ${reqAmount} AVU. Account debited & disbursed.`
-            : `Treasury rejected AVU liquidation request of ${reqAmount} AVU.${noteText ? ` Note: ${noteText}` : ''}`,
-          amount: isApprove ? `-${reqAmount} AVU` : `0 AVU`,
-          created_at: timestamp
-        }
-      ]);
-    } catch (_) {}
-
-    try {
-      await supabaseClient.from('audit_logs').insert([
-        {
-          id: 'AUD-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-          admin_id: reviewerId,
-          admin_name: reviewerEmail,
-          admin_email: reviewerEmail,
-          ambassador_id: targetAmbassadorId || '',
-          ambassador_name: targetName,
-          action: isApprove ? `APPROVE_WITHDRAWAL: ${targetWithdrawalId}` : `REJECT_WITHDRAWAL: ${targetWithdrawalId}`,
-          created_at: timestamp
-        }
-      ]);
-    } catch (_) {}
+    // 3. Fetch latest ambassador balance if approved
+    let newBalance: number | undefined = undefined;
+    const ambId = withdrawalRecord?.ambassador_id || updateResult?.ambassador_id;
+    if (ambId) {
+      try {
+        const { data: amb } = await supabaseClient
+          .from('ambassadors')
+          .select('avu_balance')
+          .eq('id', ambId)
+          .maybeSingle();
+        if (amb) newBalance = Number(amb.avu_balance || 0);
+      } catch (_) {}
+    }
 
     return res.status(200).json({
       success: true,
       action: isApprove ? 'approve' : 'reject',
       status: targetStatus,
-      newBalance: computedNewBal,
-      requestedAmount: reqAmount,
-      withdrawalId: targetWithdrawalId
+      withdrawalId: targetWithdrawalId,
+      newBalance,
+      updatedRecord: updateResult,
+      reviewedBy: reviewerEmail,
+      reviewedAt: timestamp,
+      adminNote: noteText
     });
   } catch (error: any) {
     console.error('[/api/withdraw-action] Exception:', error);
