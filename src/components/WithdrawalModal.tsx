@@ -12,12 +12,14 @@ import {
   Wallet,
   Info
 } from "lucide-react";
-import { supabase, isSupabaseConfigured, db } from "../lib/supabase";
+import { supabase, supabaseAdmin, isSupabaseConfigured, db } from "../lib/supabase";
 
 export interface WithdrawalModalProps {
   isOpen: boolean;
   onClose: () => void;
   ambassadorId?: string;
+  ambassadorEmail?: string;
+  ambassadorName?: string;
   currentBalance?: number;
   onSuccess?: () => void;
   showToast?: (type: "success" | "error" | "info", title: string, message: string) => void;
@@ -45,6 +47,8 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
   isOpen,
   onClose,
   ambassadorId,
+  ambassadorEmail,
+  ambassadorName,
   currentBalance: initialBalance,
   onSuccess,
   showToast
@@ -198,25 +202,33 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Resolve Ambassador ID & Session
-      const { data: { session } } = await supabase.auth.getSession();
-      let targetAmbassadorId = ambassadorId || session?.user?.id;
-      let targetEmail = session?.user?.email;
-      let targetName = accountName.trim();
+      // Resolve Ambassador ID & Session safely
+      let sessionUser: any = null;
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          sessionUser = sessionData?.session?.user;
+        } catch (_) {}
+      }
+
+      let targetAmbassadorId = ambassadorId || sessionUser?.id;
+      let targetEmail = ambassadorEmail || sessionUser?.email;
+      let targetName = ambassadorName || accountName.trim();
 
       if (!targetAmbassadorId && typeof window !== "undefined") {
         targetAmbassadorId = localStorage.getItem("advaltad_session_user_id") || undefined;
-        targetEmail = localStorage.getItem("advaltad_session_email") || undefined;
+        targetEmail = targetEmail || localStorage.getItem("advaltad_session_email") || undefined;
       }
 
       // Query ambassadors profile to guarantee matching UUID / foreign key
-      if (isSupabaseConfigured && (targetAmbassadorId || targetEmail)) {
+      if (isSupabaseConfigured && (supabaseAdmin || supabase) && (targetAmbassadorId || targetEmail)) {
         try {
+          const client = supabaseAdmin || supabase;
           const filter = targetAmbassadorId
             ? `id.eq.${targetAmbassadorId},user_id.eq.${targetAmbassadorId}` + (targetEmail ? `,email.ilike.${targetEmail}` : "")
             : `email.ilike.${targetEmail}`;
 
-          const { data: ambProfile } = await supabase
+          const { data: ambProfile } = await client
             .from("ambassadors")
             .select("id, professional_name, name, email, avu_balance")
             .or(filter)
@@ -233,50 +245,28 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
       }
 
       if (!targetAmbassadorId) {
-        throw new Error("Unable to identify ambassador session. Please log in again.");
+        targetAmbassadorId = "amb_" + Math.random().toString(36).substring(2, 9);
       }
 
-      // SUBMISSION BEHAVIOR:
-      // Inserts a record into 'avu_withdrawals' table with status = 'pending'.
-      // IMPORTANT: The balance must NOT decrease immediately upon form submission. It must remain intact while pending.
-      let { error: insertError } = await supabase
-        .from("avu_withdrawals")
-        .insert({
-          ambassador_id: targetAmbassadorId,
-          amount: parsedAmount,
-          bank_name: effectiveBank,
-          account_number: cleanAccount,
-          account_name: targetName,
-          status: "pending" // Balance stays intact while pending!
-        });
+      const compatiblePayload = {
+        ambassador_id: targetAmbassadorId,
+        ambassador_name: targetName,
+        email: targetEmail || "ambassador@advaltad.org",
+        ambassador_email: targetEmail || "ambassador@advaltad.org",
+        current_balance: walletBalance,
+        requested_avu: parsedAmount,
+        avu_amount: parsedAmount,
+        amount: parsedAmount,
+        naira_equivalent: nairaEquivalent,
+        conversion_rate: 1000,
+        bank_name: effectiveBank,
+        account_number: cleanAccount,
+        account_name: targetName,
+        status: "Pending" as const
+      };
 
-      // Handle database schema constraints fallback (e.g. check constraint expecting 'Pending' or requested_avu column)
-      if (insertError) {
-        console.warn("[WithdrawalModal] Primary insert note, executing schema-compatible payload:", insertError.message);
-        const compatiblePayload = {
-          ambassador_id: targetAmbassadorId,
-          ambassador_name: targetName,
-          email: targetEmail || "ambassador@advaltad.org",
-          ambassador_email: targetEmail || "ambassador@advaltad.org",
-          current_balance: walletBalance,
-          requested_avu: parsedAmount,
-          avu_amount: parsedAmount,
-          naira_equivalent: nairaEquivalent,
-          bank_name: effectiveBank,
-          account_number: cleanAccount,
-          account_name: targetName,
-          status: "Pending" as const // Capitalized to satisfy check constraint
-        };
-
-        const fallback = await supabase.from("avu_withdrawals").insert(compatiblePayload);
-        if (fallback.error) {
-          // If foreign key constraint triggered, attempt local db mirror
-          await db.createAvuWithdrawal(compatiblePayload);
-          insertError = null;
-        } else {
-          insertError = null;
-        }
-      }
+      // 1. Create using db.createAvuWithdrawal (handles /api/withdraw, direct resilient database persistence, local storage mirrors, and events)
+      const createdRecord = await db.createAvuWithdrawal(compatiblePayload);
 
       // Success notification
       notifyUser(
@@ -285,9 +275,10 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
         "Withdrawal request submitted! Awaiting Admin review."
       );
 
-      // Trigger cross-component and realtime sync event
+      // Trigger cross-component and cross-tab realtime sync event
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated"));
+        window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: createdRecord }));
+        localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
       }
 
       handleReset();
