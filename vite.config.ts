@@ -465,26 +465,19 @@ export default defineConfig(({ mode }) => {
                   const timestamp = new Date().toISOString();
 
                   const statusTitle = isApprove ? 'Approved' : 'Disapproved';
-                  const statusLower = isApprove ? 'approved' : 'disapproved';
 
-                  for (const tName of ['avu_withdrawals', 'withdrawals', 'AvuWithdrawals']) {
-                    try {
-                      await supabaseClient.from(tName).update({
-                        status: statusTitle,
-                        reviewed_by: reviewer,
-                        reviewed_at: timestamp,
-                        admin_note: note || undefined,
-                        updated_at: timestamp
-                      }).eq('id', targetId);
-                      await supabaseClient.from(tName).update({
-                        status: statusLower,
-                        reviewed_by: reviewer,
-                        reviewed_at: timestamp,
-                        admin_note: note || undefined,
-                        updated_at: timestamp
-                      }).eq('id', targetId);
-                    } catch (_) {}
-                  }
+                  try {
+                    const upRes = await supabaseClient.from('avu_withdrawals').update({
+                      status: statusTitle,
+                      updated_at: timestamp
+                    }).eq('id', targetId);
+
+                    if (upRes.error && (upRes.error.message?.includes('insufficient') || upRes.error.code === 'P0001')) {
+                      res.statusCode = 400;
+                      res.end(JSON.stringify({ success: false, error: 'Insufficient AVU balance in ambassador wallet to approve this withdrawal request.' }));
+                      return;
+                    }
+                  } catch (_) {}
 
                   res.statusCode = 200;
                   res.end(JSON.stringify({ success: true, action: isApprove ? 'approve' : 'reject', status: statusTitle }));
@@ -528,13 +521,59 @@ export default defineConfig(({ mode }) => {
                     ? crypto.randomUUID()
                     : '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0');
 
+                  let resolvedAmbId = rawAmbassadorId;
+                  let balanceNum = Number(parsed.current_balance ?? parsed.currentBalance ?? 0);
+
+                  if (targetUrl && targetKey) {
+                    try {
+                      const { createClient } = await import('@supabase/supabase-js');
+                      const supabaseClient = createClient(targetUrl, targetKey, { auth: { persistSession: false } });
+
+                      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
+                      
+                      // Resolve valid ambassador ID
+                      if (rawEmail) {
+                        const { data: amb } = await supabaseClient.from('ambassadors').select('id, avu_balance').ilike('email', rawEmail).maybeSingle();
+                        if (amb) {
+                          resolvedAmbId = amb.id;
+                          if (balanceNum === 0 && amb.avu_balance !== undefined) balanceNum = Number(amb.avu_balance);
+                        }
+                      }
+                      if (!resolvedAmbId || !isUuid(resolvedAmbId)) {
+                        const { data: firstAmb } = await supabaseClient.from('ambassadors').select('id, avu_balance').limit(1).maybeSingle();
+                        if (firstAmb) {
+                          resolvedAmbId = firstAmb.id;
+                          if (balanceNum === 0 && firstAmb.avu_balance !== undefined) balanceNum = Number(firstAmb.avu_balance);
+                        }
+                      }
+
+                      // avu_withdrawals valid schema
+                      const payload = {
+                        id: generatedId,
+                        ambassador_id: resolvedAmbId,
+                        requested_avu: numAmount,
+                        naira_equivalent: numAmount * 1000,
+                        bank_name: effectiveBank,
+                        account_number: effectiveAccountNum,
+                        account_name: effectiveAccountName,
+                        ambassador_name: effectiveAmbName,
+                        email: rawEmail || 'ambassador@advaltad.org',
+                        current_balance: balanceNum,
+                        status: 'Pending',
+                        created_at: timestamp
+                      };
+
+                      await supabaseClient.from('avu_withdrawals').insert([payload]);
+                    } catch (_) {}
+                  }
+
                   const finalizedRecord = {
                     id: generatedId,
-                    ambassador_id: rawAmbassadorId || 'amb_' + Math.random().toString(36).substring(2, 8),
+                    ambassador_id: resolvedAmbId || 'amb_' + Math.random().toString(36).substring(2, 8),
                     ambassador_name: effectiveAmbName,
                     email: rawEmail || 'ambassador@advaltad.org',
                     ambassador_email: rawEmail || 'ambassador@advaltad.org',
-                    current_balance: Number(parsed.current_balance || 0),
+                    current_balance: balanceNum,
                     requested_avu: numAmount,
                     avu_amount: numAmount,
                     amount: numAmount,
@@ -546,35 +585,6 @@ export default defineConfig(({ mode }) => {
                     status: 'Pending',
                     created_at: timestamp
                   };
-
-                  if (targetUrl && targetKey) {
-                    try {
-                      const { createClient } = await import('@supabase/supabase-js');
-                      const supabaseClient = createClient(targetUrl, targetKey, { auth: { persistSession: false } });
-
-                      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
-                      const targetAmbId = isUuid(rawAmbassadorId) ? rawAmbassadorId : undefined;
-
-                      for (const tName of ['avu_withdrawals', 'withdrawals', 'AvuWithdrawals']) {
-                        try {
-                          const payload: any = {
-                            id: generatedId,
-                            amount: numAmount,
-                            requested_avu: numAmount,
-                            bank_name: effectiveBank,
-                            account_number: effectiveAccountNum,
-                            account_name: effectiveAccountName,
-                            ambassador_name: effectiveAmbName,
-                            email: rawEmail,
-                            status: 'pending',
-                            created_at: timestamp
-                          };
-                          if (targetAmbId) payload.ambassador_id = targetAmbId;
-                          await supabaseClient.from(tName).insert([payload]);
-                        } catch (_) {}
-                      }
-                    } catch (_) {}
-                  }
 
                   res.statusCode = 200;
                   res.end(JSON.stringify({ success: true, data: finalizedRecord }));
