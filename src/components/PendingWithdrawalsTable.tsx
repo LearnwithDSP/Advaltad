@@ -184,6 +184,13 @@ export const PendingWithdrawalsTable: React.FC<PendingWithdrawalsTableProps> = (
         )
         .on(
           "postgres_changes",
+          { event: "*", schema: "public", table: "withdrawals" },
+          () => {
+            fetchPendingWithdrawals();
+          }
+        )
+        .on(
+          "postgres_changes",
           { event: "*", schema: "public", table: "AvuWithdrawals" },
           () => {
             fetchPendingWithdrawals();
