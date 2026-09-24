@@ -342,7 +342,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         }
       }
 
-      // Merge with local fallback and ensure pending status filtering
+      // Merge with local fallback
       const localData = typeof window !== "undefined" ? localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY) : null;
       const localWithdrawals: DbAvuWithdrawal[] = localData ? JSON.parse(localData) : [];
 
@@ -354,25 +354,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         }
       }
 
-      // Filter explicitly for pending items to guarantee clean display
-      const merged = Array.from(map.values())
-        .filter(w => String(w.status || "Pending").toLowerCase() === "pending")
+      // Store all withdrawals so metric cards and tabs (All, Pending, Approved, Disapproved) work correctly
+      const allWithdrawalsList = Array.from(map.values())
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
       // Unified debugging trace logging specific ambassador_id list and query verification
       logWithdrawalFetchTrace({
         caller: "AdminPortal",
-        targetAmbassadorId: merged.map(w => w.ambassador_id),
-        filterStatus: "pending",
+        targetAmbassadorId: allWithdrawalsList.map(w => w.ambassador_id),
+        filterStatus: "all",
         tableQueried: "avu_withdrawals",
-        matchedCount: merged.length,
+        matchedCount: allWithdrawalsList.length,
         totalCount: map.size,
-        sampleIds: merged.slice(0, 5).map(w => `${w.id}:${w.ambassador_id}:${w.ambassador_name}`)
+        sampleIds: allWithdrawalsList.slice(0, 5).map(w => `${w.id}:${w.ambassador_id}:${w.ambassador_name}`)
       });
 
-      setWithdrawals(merged);
-      logDbOperation("Admin Portal Fetch Pending Withdrawals Joined Success", { count: merged.length }, null);
-      return merged;
+      setWithdrawals(allWithdrawalsList);
+      logDbOperation("Admin Portal Fetch Pending Withdrawals Joined Success", { count: allWithdrawalsList.length }, null);
+      return allWithdrawalsList;
     } catch (err: any) {
       console.error("[ADMIN PORTAL] Error loading AVU withdrawals:", err);
       logDbOperation("Admin Portal Fetch Pending Withdrawals Joined Error", {}, err);
