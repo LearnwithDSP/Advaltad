@@ -1,17 +1,48 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { IncomingMessage, ServerResponse } from 'http';
 import { createClient } from '@supabase/supabase-js';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+// Self-contained Vercel serverless request/response types
+// Avoids hard build-time dependency on external @vercel/node module definitions
+export type VercelApiRequest = IncomingMessage & {
+  body?: any;
+  query?: Record<string, string | string[]>;
+  cookies?: Record<string, string>;
+  [key: string]: any;
+};
+
+export type VercelApiResponse = ServerResponse & {
+  status: (statusCode: number) => VercelApiResponse;
+  json: (data: any) => any;
+  send?: (data: any) => any;
+  [key: string]: any;
+};
+
+export default async function handler(req: VercelApiRequest, res: VercelApiResponse) {
+  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    if (typeof res.status === 'function') {
+      return res.status(200).end();
+    }
+    res.statusCode = 200;
+    return res.end();
   }
 
+  // Safe JSON responder helper supporting both Vercel and standard Node HTTP
+  const sendJson = (statusCode: number, data: any) => {
+    if (typeof res.status === 'function' && typeof res.json === 'function') {
+      return res.status(statusCode).json(data);
+    }
+    res.statusCode = statusCode;
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(JSON.stringify(data));
+  };
+
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return sendJson(405, { error: 'Method Not Allowed' });
   }
 
   try {
@@ -23,8 +54,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       '';
 
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ error: 'Missing Supabase credentials in server environment.' });
+      return sendJson(500, { error: 'Missing Supabase credentials in server environment.' });
     }
+
+    // Safely parse body if passed as string
+    let parsedBody = req.body;
+    if (typeof parsedBody === 'string') {
+      try {
+        parsedBody = JSON.parse(parsedBody);
+      } catch (_) {}
+    }
+    parsedBody = parsedBody || {};
 
     const {
       action = 'approve', // 'approve' | 'reject' | 'disapprove'
@@ -36,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       adminEmail,
       admin_note,
       adminNote
-    } = req.body || {};
+    } = parsedBody;
 
     const targetWithdrawalId = String(withdrawal_id || withdrawalId || '').trim();
     const effectiveAction = String(action || 'approve').toLowerCase().trim();
@@ -46,7 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timestamp = new Date().toISOString();
 
     if (!targetWithdrawalId) {
-      return res.status(400).json({ error: 'withdrawal_id is required.' });
+      return sendJson(400, { error: 'withdrawal_id is required.' });
     }
 
     const supabaseClient = createClient(supabaseUrl, supabaseKey, {
@@ -64,13 +104,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (data) withdrawalRecord = data;
     } catch (_) {}
 
-    // 2. Target status to update
+    // 2. Target status to update: 'Approved' or 'Disapproved'
     const targetStatus = isApprove ? 'Approved' : 'Disapproved';
 
-    // In avu_withdrawals table, the columns are:
-    // id, ambassador_id, requested_avu, naira_equivalent, bank_name, account_number, account_name,
-    // ambassador_name, email, current_balance, status, created_at, updated_at
-    // NOTE: Setting status = 'Approved' fires a database trigger that checks ambassador's balance and deducts it.
     let updateResult: any = null;
     let updateError: any = null;
 
@@ -96,20 +132,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (updateError) {
       console.warn('[/api/withdraw-action] Update error:', updateError);
-      // If error is insufficient balance from trigger
       if (
         updateError.message?.toLowerCase().includes('insufficient') ||
         updateError.details?.toLowerCase().includes('insufficient') ||
         updateError.code === 'P0001'
       ) {
-        return res.status(400).json({
+        return sendJson(400, {
           success: false,
           error: 'Insufficient AVU balance in ambassador wallet to approve this withdrawal request.',
           code: 'INSUFFICIENT_BALANCE'
         });
       }
 
-      return res.status(500).json({
+      return sendJson(500, {
         success: false,
         error: updateError.message || 'Database update failed.'
       });
@@ -129,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (_) {}
     }
 
-    return res.status(200).json({
+    return sendJson(200, {
       success: true,
       action: isApprove ? 'approve' : 'reject',
       status: targetStatus,
@@ -142,7 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error('[/api/withdraw-action] Exception:', error);
-    return res.status(500).json({
+    return sendJson(500, {
       error: error?.message || 'Internal server error processing withdrawal action.'
     });
   }
