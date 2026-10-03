@@ -24,14 +24,14 @@ export const About: React.FC = () => {
             </h2>
             
             <p className="text-brand-charcoal font-semibold text-lg max-w-[550px] leading-relaxed font-sans">
-              "We believe that true empowerment originates from within. Our strategy replaces top-down aid pipelines with durable local infrastructure."
+              "Building a generation of empowered and innovative young African leaders who lead sustainable development, social transformation, environmental protection, and inclusive prosperity."
             </p>
           </div>
 
           {/* Right Column: Narrative Action & Highlights */}
           <div className="lg:col-span-6 flex flex-col justify-center space-y-6">
             <p className="text-slate-600 text-base leading-relaxed max-w-[650px] font-sans">
-              Unlike classical emergency relief, Advaltad establishes durable grassroots foundations across Sub-Saharan climates. By partnering directly with local architects, regional healthcare clinics, and native youth-led technology centers, we build clean power networks and high-demand developer toolkits that promote permanent self-reliance.
+              Advaltad empowers and equips young people with the knowledge, skills, networks, and opportunities needed to become active ambassadors and changemakers. Together, we address environmental and social challenges, promote inclusive development, and drive sustainable solutions across Nigeria and Africa.
             </p>
 
             <div className="grid grid-cols-2 gap-6 pt-4">
