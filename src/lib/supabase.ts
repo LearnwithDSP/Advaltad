@@ -52,9 +52,23 @@ export function logWithdrawalFetchTrace(params: WithdrawalFetchTraceParams): voi
   }
 }
 
-// Supabase configuration
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (process as any).env?.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || (process as any).env?.VITE_SUPABASE_ANON_KEY || "";
+// Safe universal env helper to prevent "process is not defined" in browser/Vite/Vercel builds
+const getEnvVar = (key: string): string => {
+  try {
+    if (typeof import.meta !== "undefined" && (import.meta as any)?.env?.[key]) {
+      return (import.meta as any).env[key];
+    }
+  } catch (_) {}
+  try {
+    if (typeof process !== "undefined" && process?.env?.[key]) {
+      return process.env[key] || "";
+    }
+  } catch (_) {}
+  return "";
+};
+
+const supabaseUrl = getEnvVar("VITE_SUPABASE_URL") || getEnvVar("SUPABASE_URL");
+const supabaseAnonKey = getEnvVar("VITE_SUPABASE_ANON_KEY") || getEnvVar("SUPABASE_ANON_KEY");
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
@@ -91,7 +105,7 @@ export const supabase = isSupabaseConfigured
     })
   : null;
 
-const supabaseServiceRole = (import.meta as any).env?.SUPABASE_SERVICE_ROLE_KEY || (process as any).env?.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseServiceRole = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
 
 export const supabaseAdmin = isSupabaseConfigured && supabaseServiceRole
   ? createClient(supabaseUrl, supabaseServiceRole, {
@@ -3447,3 +3461,5 @@ export async function handleReject(
     return { success: false, error: err };
   }
 }
+
+export default db;
