@@ -74,10 +74,10 @@ export interface DiagnosticError {
 export function getAmbassadorDisplayName(item: AvuWithdrawalRecord): string {
   const amb = item.ambassadors;
   return (
-    amb?.full_name ||
-    amb?.professional_name ||
-    amb?.name ||
     item.ambassador_name ||
+    amb?.professional_name ||
+    amb?.full_name ||
+    amb?.name ||
     item.account_name ||
     item.ambassador_id
   );
@@ -88,7 +88,7 @@ export function getAmbassadorDisplayName(item: AvuWithdrawalRecord): string {
  * record-level email fields.
  */
 export function getAmbassadorEmail(item: AvuWithdrawalRecord): string {
-  return item.ambassadors?.email || item.email || "";
+  return item.email || item.ambassadors?.email || "";
 }
 
 /**
@@ -171,26 +171,26 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
         .select(`
           id,
           ambassador_id,
+          ambassador_name,
+          email,
+          current_balance,
           requested_avu,
-          amount,
-          avu_amount,
           naira_equivalent,
           bank_name,
           account_number,
           account_name,
-          ambassador_name,
-          email,
-          current_balance,
           status,
           created_at,
           updated_at,
           ambassadors:ambassador_id (
             id,
             professional_name,
-            email
+            email,
+            phone_number,
+            base_city
           )
         `)
-        .or("status.eq.pending,status.eq.Pending,status.eq.pending_approval")
+        .or("status.eq.Pending,status.eq.pending,status.eq.pending_approval")
         .order("created_at", { ascending: false });
 
       // Diagnostic & RLS Error Handling
@@ -214,7 +214,7 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
         const fallbackRes = await supabase
           .from("avu_withdrawals")
           .select("*")
-          .or("status.eq.pending,status.eq.Pending,status.eq.pending_approval")
+          .or("status.eq.Pending,status.eq.pending,status.eq.pending_approval")
           .order("created_at", { ascending: false });
 
         if (fallbackRes.error) {
@@ -254,10 +254,10 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
           bank_name: row.bank_name || "Bank Not Specified",
           account_number: row.account_number || "N/A",
           account_name: row.account_name || "",
-          ambassador_name: row.ambassador_name || "",
-          email: row.email || "",
+          ambassador_name: row.ambassador_name || joinedAmb?.professional_name || row.account_name || "",
+          email: row.email || joinedAmb?.email || "",
           current_balance: Number(row.current_balance ?? 0),
-          status: row.status || "pending",
+          status: row.status || "Pending",
           created_at: row.created_at || new Date().toISOString(),
           updated_at: row.updated_at,
           ambassadors: joinedAmb
@@ -265,7 +265,7 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
                 id: joinedAmb.id,
                 full_name: joinedAmb.full_name || joinedAmb.professional_name || joinedAmb.name || null,
                 professional_name: joinedAmb.professional_name || null,
-                name: joinedAmb.name || null,
+                name: joinedAmb.name || joinedAmb.professional_name || null,
                 email: joinedAmb.email || null
               }
             : null
@@ -325,7 +325,12 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
 
     // Cross-tab broadcast listener
     const handleStorageSync = (e: StorageEvent) => {
-      if (e.key === "advaltad_withdrawals_updated" || e.key === "advaltad_wallet_sync_ping") {
+      if (
+        e.key === "advaltad_withdrawals_updated" ||
+        e.key === "advaltad_wallet_sync_ping" ||
+        e.key === "advaltad_withdrawals_sync_ping" ||
+        e.key === "advaltad_avu_withdrawals_db"
+      ) {
         fetchPendingWithdrawals(true);
       }
     };
@@ -334,11 +339,17 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
     const handleCustomEvent = () => fetchPendingWithdrawals(true);
     window.addEventListener("advaltad_withdrawals_updated", handleCustomEvent);
 
+    // Periodic polling backup so requests are captured even if WebSockets are interrupted
+    const pollInterval = setInterval(() => {
+      fetchPendingWithdrawals(true);
+    }, 5000);
+
     return () => {
       console.log("[Admin/PendingWithdrawals] Cleaning up Realtime channel on unmount.");
       if (channel) {
         supabase.removeChannel(channel);
       }
+      clearInterval(pollInterval);
       window.removeEventListener("storage", handleStorageSync);
       window.removeEventListener("advaltad_withdrawals_updated", handleCustomEvent);
     };
