@@ -3390,13 +3390,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                 await loadPaystackScript();
                                 const paystackPop = (window as any).PaystackPop;
                                 
-                                const envKey = (import.meta as any)?.env?.VITE_PAYSTACK_PUBLIC_KEY;
-                                const parsedPublicKey = (envKey && typeof envKey === "string" && envKey.trim()) ? envKey.trim() : getPaystackPublicKey();
+                                const parsedPublicKey = getPaystackPublicKey();
 
                                 console.log("[AdminPortal Paystack] Verifying Paystack Public Key before PaystackPop.setup:", {
                                   keyExists: Boolean(parsedPublicKey),
                                   publicKey: parsedPublicKey ? `${parsedPublicKey.substring(0, 10)}... (length: ${parsedPublicKey.length})` : "NOT_FOUND",
-                                  rawEnvKey: envKey,
                                   amountKobo: Math.round(depAmt * 100),
                                   ambassadorId: selectedAmbId,
                                   ambassadorName: ambName
