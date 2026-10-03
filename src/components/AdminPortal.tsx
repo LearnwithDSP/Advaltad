@@ -37,13 +37,8 @@ import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailS
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
 import { RegionalGrowthChart } from "./RegionalGrowthChart";
 import { OverviewSummaryCharts } from "./OverviewSummaryCharts";
-import * as PendingWithdrawalsModule from "./PendingWithdrawals";
+import PendingWithdrawals from "./PendingWithdrawals";
 import { traceDbOperation, traceGenericOperation, logDbOperation, logAmbassadorApprovalLifecycle } from "../lib/db-logger";
-
-const PendingWithdrawals: React.FC<any> =
-  (PendingWithdrawalsModule as any)?.PendingWithdrawals ||
-  (PendingWithdrawalsModule as any)?.default ||
-  PendingWithdrawalsModule;
 
 interface AdminPortalProps {
   onLogout: () => void;
