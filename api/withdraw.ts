@@ -1,21 +1,53 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { IncomingMessage, ServerResponse } from 'http';
+import * as crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+
+// Self-contained Vercel serverless request/response types
+// Avoids hard build-time dependency on external @vercel/node module definitions
+export type VercelApiRequest = IncomingMessage & {
+  body?: any;
+  query?: Record<string, string | string[]>;
+  cookies?: Record<string, string>;
+  [key: string]: any;
+};
+
+export type VercelApiResponse = ServerResponse & {
+  status: (statusCode: number) => VercelApiResponse;
+  json: (data: any) => any;
+  send?: (data: any) => any;
+  [key: string]: any;
+};
 
 function isUuid(val: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelApiRequest, res: VercelApiResponse) {
+  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    if (typeof res.status === 'function') {
+      return res.status(200).end();
+    }
+    res.statusCode = 200;
+    return res.end();
   }
 
+  // Safe JSON responder helper supporting both Vercel and standard Node HTTP
+  const sendJson = (statusCode: number, data: any) => {
+    if (typeof res.status === 'function' && typeof res.json === 'function') {
+      return res.status(statusCode).json(data);
+    }
+    res.statusCode = statusCode;
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(JSON.stringify(data));
+  };
+
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return sendJson(405, { error: 'Method Not Allowed' });
   }
 
   try {
@@ -27,8 +59,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       '';
 
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ error: 'Missing Supabase credentials in server environment.' });
+      return sendJson(500, { error: 'Missing Supabase credentials in server environment.' });
     }
+
+    // Safely parse body if sent as string
+    let parsedBody = req.body;
+    if (typeof parsedBody === 'string') {
+      try {
+        parsedBody = JSON.parse(parsedBody);
+      } catch (_) {}
+    }
+    parsedBody = parsedBody || {};
 
     const {
       amount,
@@ -47,7 +88,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ambassadorName,
       current_balance,
       currentBalance
-    } = req.body || {};
+    } = parsedBody;
 
     const numAmount = Number(amount ?? requested_avu ?? 0);
     const effectiveBank = String(bank_name || bankName || '').trim();
@@ -58,19 +99,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const effectiveAmbName = String(ambassador_name || ambassadorName || effectiveAccountName || 'Ambassador').trim();
 
     if (isNaN(numAmount) || numAmount <= 0) {
-      return res.status(400).json({ error: 'A positive withdrawal amount is required.' });
+      return sendJson(400, { error: 'A positive withdrawal amount is required.' });
     }
 
     if (!effectiveBank) {
-      return res.status(400).json({ error: 'Bank name is required.' });
+      return sendJson(400, { error: 'Bank name is required.' });
     }
 
     if (effectiveAccountNum.length < 10) {
-      return res.status(400).json({ error: 'A valid 10-digit NUBAN account number is required.' });
+      return sendJson(400, { error: 'A valid 10-digit NUBAN account number is required.' });
     }
 
     if (!effectiveAccountName) {
-      return res.status(400).json({ error: 'Beneficiary account name is required.' });
+      return sendJson(400, { error: 'Beneficiary account name is required.' });
     }
 
     const supabaseClient = createClient(supabaseUrl, supabaseKey, {
@@ -102,7 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (_) {}
     }
 
-    // Fallback: If still not found, search by name or grab the first active ambassador in DB to avoid FK violation
+    // Fallback search by name or first registered ambassador
     if (!ambassador) {
       try {
         if (effectiveAmbName && effectiveAmbName !== 'Ambassador') {
@@ -127,7 +168,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (_) {}
     }
 
-    const targetAmbassadorId = ambassador?.id || (isUuid(rawAmbassadorId) ? rawAmbassadorId : 'dfc61d53-827b-461d-8bc5-0506b529de7e');
+    const targetAmbassadorId =
+      ambassador?.id || (isUuid(rawAmbassadorId) ? rawAmbassadorId : 'dfc61d53-827b-461d-8bc5-0506b529de7e');
     const targetEmail = ambassador?.email || rawEmail || 'ambassador@advaltad.org';
     const targetName = ambassador?.professional_name || ambassador?.name || effectiveAmbName;
     const balanceNum = Number(current_balance ?? currentBalance ?? ambassador?.avu_balance ?? 0);
@@ -139,9 +181,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timestamp = new Date().toISOString();
     const nairaEquivalent = numAmount * 1000;
 
-    // In Supabase, avu_withdrawals has specific columns:
-    // id, ambassador_id, requested_avu, naira_equivalent, bank_name, account_number, account_name,
-    // ambassador_name, email, current_balance, status, created_at, updated_at
     const cleanPayload = {
       id: generatedId,
       ambassador_id: targetAmbassadorId,
@@ -178,7 +217,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.warn('[/api/withdraw] Insert exception:', e?.message);
     }
 
-    // Build finalized returned record
     const finalizedRecord = {
       id: insertedRecord?.id || generatedId,
       ambassador_id: targetAmbassadorId,
@@ -198,7 +236,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       created_at: timestamp
     };
 
-    return res.status(200).json({
+    return sendJson(200, {
       success: true,
       message: 'Withdrawal request submitted successfully.',
       data: finalizedRecord,
@@ -207,7 +245,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error('[/api/withdraw] Exception:', error);
-    return res.status(500).json({
+    return sendJson(500, {
       error: error?.message || 'Internal server error processing withdrawal request.'
     });
   }
