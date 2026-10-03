@@ -80,24 +80,29 @@ export const AboutPage: React.FC = () => {
 
   const CORE_VALUES = [
     {
-      title: "Radical Transparency",
-      desc: "Every single dollar donated is verified downwards to specific modules. Bypassing administrative friction and middlemen bureaucracy.",
-      icon: "ShieldAlert"
+      title: "Youth Leadership",
+      desc: "We believe young people are powerful agents of change. We create opportunities for youth to develop leadership skills, take initiative, participate in decision-making, and lead solutions to challenges in their communities.",
+      icon: "Award"
     },
     {
-      title: "Community Autonomy",
-      desc: "We do not run facilities forever. All technology labs, solar water boreholes, and community centers are managed and operated by graduates.",
-      icon: "Users"
+      title: "Sustainability",
+      desc: "We promote solutions that protect the environment while advancing social and economic development. We encourage climate action, responsible resource management, and sustainable practices for present and future generations.",
+      icon: "Sprout"
     },
     {
-      title: "Ecological Integration",
-      desc: "We build with native elements block-by-block. Compressed adobe brick, hybrid solar grids, and clean water basins with zero impact emissions.",
-      icon: "Leaf"
-    },
-    {
-      title: "Dignified Partnership",
-      desc: "Replacing classic aid dependency of the past with certified learning pipelines and career mentorship. Shifting power back to the communities.",
+      title: "Inclusion & Equality",
+      desc: "We believe every young person deserves an opportunity to participate, contribute, and thrive regardless of background, gender, disability, socioeconomic status, or location. We promote diversity and meaningful participation.",
       icon: "HeartHandshake"
+    },
+    {
+      title: "Innovation & Impact",
+      desc: "We encourage young people to think creatively, develop practical solutions, and use innovation, technology, and entrepreneurship to address environmental and social challenges.",
+      icon: "Lightbulb"
+    },
+    {
+      title: "Integrity & Accountability",
+      desc: "We are committed to transparency, ethical leadership, responsible use of resources, and accountability to the young people, communities, partners, and stakeholders we serve.",
+      icon: "Shield"
     }
   ];
 
@@ -164,33 +169,33 @@ export const AboutPage: React.FC = () => {
           <section id="mission-vision" className="py-24 bg-[#F8FAF9] text-left">
             <div className="max-w-[1200px] mx-auto px-6 lg:px-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-12 items-stretch">
               
-              <div className="bg-white p-8 sm:p-12 rounded-[32px] border border-slate-100 flex flex-col justify-between h-full shadow-[0_12px_45px_rgba(0,0,0,0.01)]">
+              <div className="bg-white p-8 sm:p-12 rounded-[32px] border border-slate-100 flex flex-col justify-between h-full shadow-[0_12px_45px_rgba(0,0,0,0.01)] hover:shadow-md transition-shadow">
                 <div className="space-y-6">
                   <div className="w-12 h-12 bg-[#E1EFEB] text-brand-primary rounded-2xl flex items-center justify-center font-bold">
                     <Icon name="Compass" size={24} />
                   </div>
                   <h2 className="text-2xl font-display font-black text-brand-charcoal tracking-tight">Our Mission</h2>
                   <p className="text-slate-600 text-sm leading-relaxed font-sans">
-                    To deliver highly specialized regional learning laboratories, clean renewable grid setups, sustainable modular housings, and clinical systems that empower families across developing communities in Sub-Saharan Africa to lead autonomous, proud, and secure futures.
+                    To empower and equip young people with the knowledge, skills, networks, and opportunities needed to become active ambassadors and changemakers who address environmental and social challenges in their communities, promote inclusive development, and drive sustainable solutions across Africa.
                   </p>
                 </div>
                 <div className="mt-8 border-t border-slate-150 pt-4 text-xs font-bold text-brand-primary uppercase tracking-wide">
-                  Autonomous Local Progress 
+                  Active Ambassadors &amp; Sustainable Solutions
                 </div>
               </div>
 
-              <div className="bg-white p-8 sm:p-12 rounded-[32px] border border-slate-100 flex flex-col justify-between h-full shadow-[0_12px_45px_rgba(0,0,0,0.01)]">
+              <div className="bg-white p-8 sm:p-12 rounded-[32px] border border-slate-100 flex flex-col justify-between h-full shadow-[0_12px_45px_rgba(0,0,0,0.01)] hover:shadow-md transition-shadow">
                 <div className="space-y-6">
                   <div className="w-12 h-12 bg-[#E1EFEB] text-brand-primary rounded-2xl flex items-center justify-center font-bold">
                     <Icon name="Eye" size={24} />
                   </div>
                   <h2 className="text-2xl font-display font-black text-brand-charcoal tracking-tight">Our Vision</h2>
                   <p className="text-slate-600 text-sm leading-relaxed font-sans">
-                    To catalyze an epoch where external dependency is replaced by internal design — where native African innovators build, co-operate, and expand their local infrastructures independently of global relief cycles. Setting new global standards of self-determination.
+                    To build a generation of empowered and innovative young African leaders who leads sustainable development, social transformation, environmental protection, and inclusive prosperity across Nigeria and Africa.
                   </p>
                 </div>
                 <div className="mt-8 border-t border-slate-150 pt-4 text-xs font-bold text-brand-primary uppercase tracking-wide">
-                  Co-Operated Green Infrastructure
+                  Empowered Leaders &amp; Inclusive Prosperity
                 </div>
               </div>
 
@@ -271,29 +276,43 @@ export const AboutPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
                   <span className="text-xs uppercase font-extrabold tracking-widest text-brand-primary font-display">
-                    OPERATIONAL ETHICS
+                    OUR CORE VALUES
                   </span>
                 </div>
                 
                 <h2 className="text-3xl font-display font-black text-brand-charcoal tracking-tight">
-                  Our Uncompromising Values
+                  Our Core Values
                 </h2>
                 <p className="text-slate-500 font-sans text-sm leading-relaxed">
-                  We don't talk value; we code it. How we govern operations, verify field targets, and empower our local advocates.
+                  The foundational principles guiding how we govern operations, support communities, and empower young leaders across Nigeria and Africa.
                 </p>
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-8">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
                 {CORE_VALUES.map((c, idx) => (
-                  <div key={idx} className="bg-white p-8 rounded-3xl border border-slate-100 flex items-start gap-5 shadow-[0_4px_20px_rgba(0,0,0,0.01)] hover:-translate-y-1 transition-transform duration-200">
-                    <div className="p-3 bg-[#EBF4F0] text-brand-primary rounded-xl flex-shrink-0 mt-1">
-                      <Icon name={c.icon as any} size={20} />
-                    </div>
-                    <div className="space-y-2">
-                      <h3 className="font-display font-black text-base text-[#1E293B]">{c.title}</h3>
-                      <p className="text-slate-500 text-xs leading-relaxed font-sans">
-                        {c.desc}
-                      </p>
+                  <div
+                    key={idx}
+                    className={`bg-white p-8 rounded-3xl border border-slate-100 flex flex-col justify-between shadow-[0_4px_20px_rgba(0,0,0,0.01)] hover:-translate-y-1 transition-transform duration-200 ${
+                      idx === 4 ? "sm:col-span-2 lg:col-span-1" : ""
+                    }`}
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="p-3 bg-[#EBF4F0] text-brand-primary rounded-2xl flex-shrink-0">
+                          <Icon name={c.icon as any} size={22} />
+                        </div>
+                        <span className="text-xs font-black text-brand-primary/60 font-mono bg-[#EBF4F0]/60 px-2.5 py-1 rounded-full">
+                          0{idx + 1}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="font-display font-black text-lg text-[#1E293B]">
+                          {c.title}
+                        </h3>
+                        <p className="text-slate-600 text-xs leading-relaxed font-sans">
+                          {c.desc}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -307,3 +326,5 @@ export const AboutPage: React.FC = () => {
     </div>
   );
 };
+
+export default AboutPage;
