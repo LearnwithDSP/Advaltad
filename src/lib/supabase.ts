@@ -2568,24 +2568,28 @@ export const db = {
           const res1 = await client
             .from("avu_withdrawals")
             .select(`
-              *,
+              id,
+              ambassador_id,
+              ambassador_name,
+              email,
+              current_balance,
+              requested_avu,
+              naira_equivalent,
+              bank_name,
+              account_number,
+              account_name,
+              status,
+              created_at,
+              updated_at,
               ambassadors:ambassador_id (
                 id,
                 user_id,
                 professional_name,
-                name,
                 email,
                 phone_number,
-                phone,
                 base_city,
-                city,
-                base_country,
-                country,
                 avu_balance,
-                ledger_balance,
-                status,
-                badge_status,
-                is_approved
+                badge_status
               )
             `)
             .order("created_at", { ascending: false });
@@ -2805,13 +2809,28 @@ export const db = {
         const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || "").trim());
         let validAmbId = isUuid(fresh.ambassador_id) ? fresh.ambassador_id : undefined;
 
+        if (validAmbId) {
+          try {
+            const { data: ambCheck } = await client
+              .from("ambassadors")
+              .select("id")
+              .or(`id.eq.${validAmbId},user_id.eq.${validAmbId}`)
+              .maybeSingle();
+            if (ambCheck) validAmbId = ambCheck.id;
+          } catch (_) {}
+        }
+
         if (!validAmbId && fresh.email) {
-          const { data: amb } = await client.from("ambassadors").select("id").ilike("email", fresh.email).maybeSingle();
-          if (amb) validAmbId = amb.id;
+          try {
+            const { data: amb } = await client.from("ambassadors").select("id").ilike("email", fresh.email).maybeSingle();
+            if (amb) validAmbId = amb.id;
+          } catch (_) {}
         }
         if (!validAmbId) {
-          const { data: firstAmb } = await client.from("ambassadors").select("id").limit(1).maybeSingle();
-          if (firstAmb) validAmbId = firstAmb.id;
+          try {
+            const { data: firstAmb } = await client.from("ambassadors").select("id").limit(1).maybeSingle();
+            if (firstAmb) validAmbId = firstAmb.id;
+          } catch (_) {}
         }
 
         const payload: any = {
@@ -2833,6 +2852,8 @@ export const db = {
         if (!insErr && inserted) {
           if (inserted.id) fresh.id = inserted.id;
           serverSaved = true;
+        } else if (insErr) {
+          console.warn("[db.createAvuWithdrawal] Insert error:", insErr.message);
         }
       } catch (err) {
         console.warn("Direct Supabase insertion notice:", err);
