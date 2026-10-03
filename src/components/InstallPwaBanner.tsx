@@ -6,26 +6,22 @@ import {
   PlusSquare,
   X,
   Smartphone,
-  CheckCircle2,
-  Sparkles,
-  ExternalLink,
-  MoreVertical,
-  Laptop
+  CheckCircle2
 } from "lucide-react";
 import { usePWAInstall } from "../hooks/usePWAInstall";
 
 const SESSION_DISMISS_KEY = "advaltad_pwa_bar_dismissed_session";
 
 export const InstallPwaBanner: React.FC = () => {
-  const { isInstallable, isInstalled, isIOS, isAndroid, isMobile, install } = usePWAInstall();
-  const [showGuideModal, setShowGuideModal] = useState<"ios" | "android" | "desktop" | null>(null);
+  const { isInstallable, isInstalled, isIOS, isAndroid, install } = usePWAInstall();
+  const [showIOSModal, setShowIOSModal] = useState<boolean>(false);
   const [isDismissed, setIsDismissed] = useState<boolean>(true);
   const [isInstalling, setIsInstalling] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check if user dismissed the bar during this session
+    // Check if dismissed in this current browser session
     const dismissed = sessionStorage.getItem(SESSION_DISMISS_KEY);
     if (!dismissed) {
       setIsDismissed(false);
@@ -39,43 +35,34 @@ export const InstallPwaBanner: React.FC = () => {
     }
   };
 
-  // If already running as an installed PWA, do not render anything
+  // If already running as an installed PWA or standalone mode, completely hide the banner
   if (isInstalled) {
     return null;
   }
 
+  // 1-Tap Handler: Native prompt for Android/Chromium, guide modal ONLY for iOS Safari
   const handleInstallClick = async () => {
-    // 1. If native beforeinstallprompt is ready, trigger native prompt first
-    if (isInstallable) {
-      setIsInstalling(true);
-      try {
-        const success = await install();
-        if (success) {
-          return;
-        }
-      } catch (e) {
-        console.warn("[PWA] Install prompt failed, falling back to guide modal:", e);
-      } finally {
-        setIsInstalling(false);
-      }
+    if (isIOS) {
+      // iOS WebKit does not support beforeinstallprompt; show visual iOS instruction modal
+      setShowIOSModal(true);
+      return;
     }
 
-    // 2. Fallback to device-specific visual guide modal
-    if (isIOS) {
-      setShowGuideModal("ios");
-    } else if (isAndroid) {
-      setShowGuideModal("android");
-    } else {
-      setShowGuideModal("desktop");
+    // Android / Chromium / Desktop: 1-Tap native installation prompt
+    setIsInstalling(true);
+    try {
+      await install();
+    } catch (err) {
+      console.warn("[PWA] 1-Tap install error:", err);
+    } finally {
+      setIsInstalling(false);
     }
   };
-
-  const effectiveIcon = "/pwa-192x192.png";
 
   return (
     <>
       {/* ========================================================================= */}
-      {/* 1. VISITOR INSTALL BAR (STICKY BOTTOM DOCK ON MOBILE / FLOATING BAR ON DESKTOP) */}
+      {/* 1. VISITOR INSTALL BAR (STICKY DOCK ON MOBILE / FLOATING BAR ON DESKTOP) */}
       {/* ========================================================================= */}
       <AnimatePresence>
         {!isDismissed && (
@@ -89,7 +76,7 @@ export const InstallPwaBanner: React.FC = () => {
             className="fixed bottom-3 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-5 sm:max-w-md z-50 pointer-events-auto"
           >
             <div className="relative overflow-hidden rounded-2xl bg-[#0A5C36] text-white shadow-[0_12px_40px_rgba(10,92,54,0.45)] border border-emerald-500/40 p-3.5 sm:p-4 backdrop-blur-xl">
-              {/* Background ambient decorative shapes */}
+              {/* Background ambient lighting */}
               <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-emerald-400/20 blur-2xl pointer-events-none" />
               <div className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full bg-amber-400/15 blur-xl pointer-events-none" />
 
@@ -98,13 +85,9 @@ export const InstallPwaBanner: React.FC = () => {
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="relative shrink-0">
                     <img
-                      src={effectiveIcon}
+                      src="/pwa-192x192.png"
                       alt="Advaltad Growth Foundation"
                       className="w-12 h-12 rounded-xl object-cover bg-white p-0.5 border border-white/30 shadow-md"
-                      onError={(e) => {
-                        // Fallback to static root public icon
-                        (e.currentTarget as HTMLImageElement).src = "/pwa-192x192.png";
-                      }}
                     />
                     <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400 text-[9px] font-black text-[#0A5C36] ring-2 ring-[#0A5C36]">
                       ✓
@@ -117,16 +100,16 @@ export const InstallPwaBanner: React.FC = () => {
                         Advaltad App
                       </span>
                       <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-700/90 border border-emerald-400/40 text-emerald-100 px-1.5 py-0.5 rounded-full shrink-0">
-                        {isIOS ? "iOS" : isAndroid ? "Android" : "Mobile App"}
+                        {isIOS ? "iOS" : isAndroid ? "Android" : "PWA"}
                       </span>
                     </div>
                     <p className="text-xs text-emerald-100/90 truncate mt-0.5">
-                      Install on your phone for offline & fast access
+                      Install for fast offline access & updates
                     </p>
                   </div>
                 </div>
 
-                {/* Actions: Install CTA & Dismiss */}
+                {/* Actions: 1-Tap Install & Dismiss */}
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
@@ -170,17 +153,14 @@ export const InstallPwaBanner: React.FC = () => {
           >
             <button
               type="button"
-              onClick={() => setShowGuideModal(isIOS ? "ios" : isAndroid ? "android" : "desktop")}
+              onClick={handleInstallClick}
               className="flex items-center gap-2 px-3 py-2 rounded-full bg-[#0A5C36] text-white text-xs font-bold shadow-xl border border-emerald-500/40 hover:bg-[#084a2c] active:scale-95 transition-all cursor-pointer"
               title="Install Advaltad App"
             >
               <img
-                src={effectiveIcon}
+                src="/pwa-192x192.png"
                 alt=""
                 className="w-5 h-5 rounded-md object-cover bg-white"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = "/pwa-192x192.png";
-                }}
               />
               <span className="hidden sm:inline">Install App</span>
               <Download size={13} className="stroke-[2.5]" />
@@ -190,17 +170,17 @@ export const InstallPwaBanner: React.FC = () => {
       </AnimatePresence>
 
       {/* ========================================================================= */}
-      {/* 3. STEP-BY-STEP INSTALLATION GUIDES (IOS / ANDROID / DESKTOP) */}
+      {/* 3. STEP-BY-STEP INSTRUCTION MODAL — EXCLUSIVELY FOR IOS SAFARI */}
       {/* ========================================================================= */}
       <AnimatePresence>
-        {showGuideModal && (
+        {showIOSModal && isIOS && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.65 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowGuideModal(null)}
+              onClick={() => setShowIOSModal(false)}
               className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
             />
 
@@ -216,152 +196,75 @@ export const InstallPwaBanner: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-white p-1 border border-slate-200 shadow-sm shrink-0">
                     <img
-                      src={effectiveIcon}
+                      src="/pwa-192x192.png"
                       alt="Advaltad App"
                       className="w-full h-full object-cover rounded-xl"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = "/pwa-192x192.png";
-                      }}
                     />
                   </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
-                      {showGuideModal === "ios"
-                        ? "Install on iPhone / iPad"
-                        : showGuideModal === "android"
-                        ? "Install on Android Phone"
-                        : "Install Advaltad App"}
+                      Install on iPhone / iPad
                     </h3>
                     <p className="text-xs text-slate-500 font-medium">
-                      Official Progressive Web Application
+                      Safari Home Screen Web App
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowGuideModal(null)}
+                  onClick={() => setShowIOSModal(false)}
                   className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              {/* ---------------- iOS Instructions ---------------- */}
-              {showGuideModal === "ios" && (
-                <div className="space-y-3.5 text-xs text-slate-600">
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
-                    <div className="p-2 rounded-xl bg-blue-500 text-white shrink-0 mt-0.5 shadow-sm">
-                      <Share2 size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900">Step 1: Tap the Share Icon</p>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        In Safari's bottom toolbar (or top on iPad), tap the <strong>Share</strong> button.
-                      </p>
-                    </div>
+              {/* iOS 3-Step Guided Instructions */}
+              <div className="space-y-3.5 text-xs text-slate-600">
+                <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                  <div className="p-2 rounded-xl bg-blue-500 text-white shrink-0 mt-0.5 shadow-sm">
+                    <Share2 size={16} />
                   </div>
-
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
-                    <div className="p-2 rounded-xl bg-[#0A5C36] text-white shrink-0 mt-0.5 shadow-sm">
-                      <PlusSquare size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900">Step 2: Add to Home Screen</p>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        Scroll down the options list and select <strong>"Add to Home Screen"</strong>.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
-                    <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5 shadow-sm">
-                      <CheckCircle2 size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900">Step 3: Tap "Add"</p>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        Tap <strong>"Add"</strong> in the top-right corner. The app icon will be added to your home screen!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ---------------- Android Instructions ---------------- */}
-              {showGuideModal === "android" && (
-                <div className="space-y-3.5 text-xs text-slate-600">
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
-                    <div className="p-2 rounded-xl bg-[#0A5C36] text-white shrink-0 mt-0.5 shadow-sm">
-                      <MoreVertical size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900">Step 1: Tap the Chrome Menu</p>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        Tap the three dots (<strong>⋮</strong>) in the top-right corner of Chrome or your browser.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
-                    <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5 shadow-sm">
-                      <Download size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900">Step 2: Tap "Install App"</p>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        Select <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong> from the menu.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
-                    <div className="p-2 rounded-xl bg-teal-600 text-white shrink-0 mt-0.5 shadow-sm">
-                      <CheckCircle2 size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900">Step 3: Confirm Installation</p>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        Tap <strong>Install</strong>. Advaltad will be added to your phone's app launcher!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ---------------- Desktop Instructions ---------------- */}
-              {showGuideModal === "desktop" && (
-                <div className="space-y-3.5 text-xs text-slate-600">
-                  <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                    <Smartphone size={28} className="mx-auto text-[#0A5C36] mb-2" />
-                    <p className="font-bold text-slate-900">Scan or Open on your Phone</p>
-                    <p className="text-[11px] text-slate-600 mt-1">
-                      Open <strong>{typeof window !== "undefined" ? window.location.host : "advaltad.org"}</strong> on your mobile Safari or Chrome to install directly to your device.
+                  <div>
+                    <p className="font-bold text-slate-900">Step 1: Tap the Share Button</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      In Safari's bottom toolbar (or top right on iPad), tap the <strong>Share</strong> button.
                     </p>
                   </div>
-
-                  {isInstallable && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await install();
-                        setShowGuideModal(null);
-                      }}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0A5C36] hover:bg-[#084a2c] text-white text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-98 cursor-pointer"
-                    >
-                      <Download size={14} />
-                      <span>Install on this Computer</span>
-                    </button>
-                  )}
                 </div>
-              )}
+
+                <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                  <div className="p-2 rounded-xl bg-[#0A5C36] text-white shrink-0 mt-0.5 shadow-sm">
+                    <PlusSquare size={16} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">Step 2: Add to Home Screen</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Scroll down the options list and select <strong>"Add to Home Screen"</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                  <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5 shadow-sm">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">Step 3: Tap "Add"</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Tap <strong>"Add"</strong> in the top-right corner to place Advaltad on your Home Screen!
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               {/* Close Button */}
               <button
                 type="button"
-                onClick={() => setShowGuideModal(null)}
-                className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold uppercase tracking-wider transition-all cursor-pointer text-center"
+                onClick={() => setShowIOSModal(false)}
+                className="w-full py-3 rounded-xl bg-[#0A5C36] hover:bg-[#084a2c] text-white text-xs font-extrabold uppercase tracking-wider transition-all cursor-pointer text-center shadow-md active:scale-98"
               >
-                Close
+                Got It
               </button>
             </motion.div>
           </div>
