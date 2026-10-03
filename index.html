@@ -25,6 +25,21 @@
     <meta property="og:title" content="Advaltad Growth Foundation" />
     <meta property="og:description" content="NGO Ambassador & Social web platform - Advaltad Growth and Support Foundation" />
     <meta property="og:image" content="/pwa-512x512.png" />
+
+    <!-- Early PWA Native Prompt Listener (Captures event before React mounts) -->
+    <script>
+      (function() {
+        window.addEventListener('beforeinstallprompt', function(e) {
+          e.preventDefault();
+          window.__deferredPwaPrompt = e;
+          window.dispatchEvent(new CustomEvent('pwa-prompt-ready'));
+        });
+        window.addEventListener('appinstalled', function() {
+          window.__pwaInstalled = true;
+          window.dispatchEvent(new CustomEvent('pwa-installed'));
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
