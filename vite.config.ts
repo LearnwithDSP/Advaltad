@@ -610,12 +610,50 @@ export default defineConfig(({ mode }) => {
             next();
           });
         }
+      },
+      {
+        name: 'case-insensitive-resolver',
+        resolveId(source) {
+          if (!source) return null;
+          if (
+            source === '../components/about' ||
+            source === './about' ||
+            source === './About' ||
+            source === '../components/About' ||
+            source === '@/components/about' ||
+            source === '@/components/About'
+          ) {
+            return path.resolve(__dirname, './src/components/About.tsx');
+          }
+          if (
+            source === '../pages/about' ||
+            source === './pages/about' ||
+            source === './AboutPage' ||
+            source === '../pages/AboutPage' ||
+            source === '@/pages/about' ||
+            source === '@/pages/About' ||
+            source === '@/pages/AboutPage'
+          ) {
+            return path.resolve(__dirname, './src/pages/AboutPage.tsx');
+          }
+          if (
+            source === './PendingWithdrawals' ||
+            source === '../components/PendingWithdrawals' ||
+            source === './Admin/PendingWithdrawals' ||
+            source === '@/components/PendingWithdrawals'
+          ) {
+            return path.resolve(__dirname, './src/components/PendingWithdrawals.tsx');
+          }
+          return null;
+        }
       }
     ],
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-      },
+      alias: [
+        { find: /^@\/components\/[aA]bout$/, replacement: path.resolve(__dirname, './src/components/About.tsx') },
+        { find: /^@\/pages\/[aA]bout$/, replacement: path.resolve(__dirname, './src/pages/AboutPage.tsx') },
+        { find: '@', replacement: path.resolve(__dirname, './src') },
+      ],
       dedupe: ['react', 'react-dom'],
     },
     define: {
