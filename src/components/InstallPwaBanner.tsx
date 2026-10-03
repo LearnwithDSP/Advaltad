@@ -13,8 +13,6 @@ import {
   Laptop
 } from "lucide-react";
 import { usePWAInstall } from "../hooks/usePWAInstall";
-import pwaIcon192 from "../assets/images/pwa-192x192.png";
-import pwaIcon512 from "../assets/images/pwa-512x512.png";
 
 const SESSION_DISMISS_KEY = "advaltad_pwa_bar_dismissed_session";
 
@@ -72,7 +70,7 @@ export const InstallPwaBanner: React.FC = () => {
     }
   };
 
-  const effectiveIcon = pwaIcon192 || "/pwa-192x192.png";
+  const effectiveIcon = "/pwa-192x192.png";
 
   return (
     <>
