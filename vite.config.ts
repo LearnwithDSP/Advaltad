@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
@@ -15,6 +16,115 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(), 
       tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: [
+          'favicon.ico',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png'
+        ],
+        manifest: {
+          id: '/',
+          name: 'Advaltad Growth Foundation',
+          short_name: 'Advaltad',
+          description: 'NGO Ambassador & Social web platform - Advaltad Growth and Support Foundation',
+          theme_color: '#0A5C36',
+          background_color: '#FFFFFF',
+          display: 'standalone',
+          orientation: 'portrait',
+          start_url: '/',
+          scope: '/',
+          icons: [
+            {
+              src: '/pwa-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: '/pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: '/pwa-maskable-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
+            }
+          ]
+        },
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpeg,jpg,webp,woff,woff2}'],
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'supabase-api-cache',
+                networkTimeoutSeconds: 5,
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 // 24 hours
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            {
+              urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'supabase-storage-avatars-cache',
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            {
+              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'images-cache',
+                expiration: {
+                  maxEntries: 60,
+                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                }
+              }
+            }
+          ]
+        },
+        devOptions: {
+          enabled: true,
+          type: 'module'
+        }
+      }),
       {
         name: 'api-routes',
         configureServer(server) {
@@ -539,11 +649,20 @@ export default defineConfig(({ mode }) => {
                           if (balanceNum === 0 && amb.avu_balance !== undefined) balanceNum = Number(amb.avu_balance);
                         }
                       }
+                      if (rawAmbassadorId) {
+                        const { data: ambById } = await supabaseClient.from('ambassadors').select('id, avu_balance').or(`id.eq.${rawAmbassadorId},user_id.eq.${rawAmbassadorId}`).maybeSingle();
+                        if (ambById) {
+                          resolvedAmbId = ambById.id;
+                          if (balanceNum === 0 && ambById.avu_balance !== undefined) balanceNum = Number(ambById.avu_balance);
+                        }
+                      }
                       if (!resolvedAmbId || !isUuid(resolvedAmbId)) {
                         const { data: firstAmb } = await supabaseClient.from('ambassadors').select('id, avu_balance').limit(1).maybeSingle();
                         if (firstAmb) {
                           resolvedAmbId = firstAmb.id;
                           if (balanceNum === 0 && firstAmb.avu_balance !== undefined) balanceNum = Number(firstAmb.avu_balance);
+                        } else {
+                          resolvedAmbId = 'dfc61d53-827b-461d-8bc5-0506b529de7e';
                         }
                       }
 
@@ -563,8 +682,15 @@ export default defineConfig(({ mode }) => {
                         created_at: timestamp
                       };
 
-                      await supabaseClient.from('avu_withdrawals').insert([payload]);
-                    } catch (_) {}
+                      const { data: insData, error: insErr } = await supabaseClient.from('avu_withdrawals').insert([payload]).select().maybeSingle();
+                      if (insErr) {
+                        console.error('[VITE API /api/withdraw] Insert error:', insErr.message);
+                      } else {
+                        console.log('[VITE API /api/withdraw] Successfully created withdrawal request in Supabase:', insData?.id);
+                      }
+                    } catch (e: any) {
+                      console.error('[VITE API /api/withdraw] Exception:', e?.message);
+                    }
                   }
 
                   const finalizedRecord = {
