@@ -23,6 +23,8 @@ import { MediaPage } from "./pages/MediaPage";
 import { DonatePage } from "./pages/DonatePage";
 import { AmbassadorPage } from "./pages/AmbassadorPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { InstallPwaBanner } from "./components/InstallPwaBanner";
+import { ReloadPrompt } from "./components/ReloadPrompt";
 
 export default function App() {
   const [route, setRoute] = useState<string>("#home");
@@ -48,19 +50,29 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY") {
-        // Prevent global route guards/auth listeners from redirecting to homepage
-        setIsPasswordRecovery(true);
-        setRoute("#/reset-password");
-        if (window.location.pathname !== "/reset-password" && !window.location.hash.includes("reset-password")) {
-          window.location.hash = "#/reset-password";
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          // Prevent global route guards/auth listeners from redirecting to homepage
+          setIsPasswordRecovery(true);
+          setRoute("#/reset-password");
+          if (window.location.pathname !== "/reset-password" && !window.location.hash.includes("reset-password")) {
+            window.location.hash = "#/reset-password";
+          }
         }
-      }
-    });
+      });
+      unsubscribe = data?.subscription?.unsubscribe;
+    } catch (err) {
+      console.warn("[App] onAuthStateChange setup failed:", err);
+    }
 
     return () => {
-      subscription.unsubscribe();
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+        } catch (_) {}
+      }
     };
   }, []);
 
@@ -73,9 +85,14 @@ export default function App() {
       const sessionEmail = localStorage.getItem("advaltad_session_email");
       if (sessionEmail && isAuthenticated) {
         setIsCheckingApproval(true);
-        const approved = await checkApprovalStatus(sessionEmail);
-        setIsApproved(approved);
-        setIsCheckingApproval(false);
+        try {
+          const approved = await checkApprovalStatus(sessionEmail);
+          setIsApproved(approved);
+        } catch (err) {
+          console.warn("[App] verifyUserApproval error:", err);
+        } finally {
+          setIsCheckingApproval(false);
+        }
       } else {
         setIsApproved(false);
         setIsCheckingApproval(false);
@@ -172,9 +189,14 @@ export default function App() {
     const sessionEmail = localStorage.getItem("advaltad_session_email");
     if (sessionEmail) {
       setIsCheckingApproval(true);
-      const approved = await checkApprovalStatus(sessionEmail);
-      setIsApproved(approved);
-      setIsCheckingApproval(false);
+      try {
+        const approved = await checkApprovalStatus(sessionEmail);
+        setIsApproved(approved);
+      } catch (err) {
+        console.warn("[App] handleLoginSuccess approval check error:", err);
+      } finally {
+        setIsCheckingApproval(false);
+      }
     }
   };
 
@@ -182,9 +204,14 @@ export default function App() {
     const sessionEmail = localStorage.getItem("advaltad_session_email");
     if (sessionEmail) {
       setIsCheckingApproval(true);
-      const approved = await checkApprovalStatus(sessionEmail);
-      setIsApproved(approved);
-      setIsCheckingApproval(false);
+      try {
+        const approved = await checkApprovalStatus(sessionEmail);
+        setIsApproved(approved);
+      } catch (err) {
+        console.warn("[App] handleRecheckApproval error:", err);
+      } finally {
+        setIsCheckingApproval(false);
+      }
     }
   };
 
@@ -422,6 +449,9 @@ export default function App() {
         />
       )}
 
+      {/* PWA Service Worker Updates & Install Prompts */}
+      <ReloadPrompt />
+      <InstallPwaBanner />
     </div>
   );
 }
