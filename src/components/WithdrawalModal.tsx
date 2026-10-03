@@ -234,14 +234,14 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
             if (filter) {
               const { data: ambProfile } = await client
                 .from("ambassadors")
-                .select("id, professional_name, name, email, avu_balance")
+                .select("id, professional_name, email, avu_balance")
                 .or(filter)
                 .maybeSingle();
 
               if (ambProfile) {
                 targetAmbassadorId = ambProfile.id;
                 targetEmail = ambProfile.email || targetEmail;
-                targetName = ambProfile.professional_name || ambProfile.name || targetName;
+                targetName = ambProfile.professional_name || targetName;
               }
             }
           }
@@ -249,13 +249,13 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
           if (!targetAmbassadorId || !isUuid(targetAmbassadorId)) {
             const { data: firstAmb } = await client
               .from("ambassadors")
-              .select("id, professional_name, name, email, avu_balance")
+              .select("id, professional_name, email, avu_balance")
               .limit(1)
               .maybeSingle();
             if (firstAmb) {
               targetAmbassadorId = firstAmb.id;
               if (!targetEmail) targetEmail = firstAmb.email;
-              if (!targetName || targetName === "Ambassador") targetName = firstAmb.professional_name || firstAmb.name || targetName;
+              if (!targetName || targetName === "Ambassador") targetName = firstAmb.professional_name || targetName;
             }
           }
         } catch (qErr) {
