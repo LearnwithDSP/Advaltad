@@ -14,9 +14,13 @@ export function usePWAInstall() {
   const [isInstallable, setIsInstallable] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    // 1. Detect if already running in standalone mode (installed)
+    if (typeof window === "undefined") return;
+
+    // 1. Detect if already running in standalone mode (installed PWA)
     const checkStandalone = () => {
       const isStandaloneMode =
         window.matchMedia("(display-mode: standalone)").matches ||
@@ -27,16 +31,21 @@ export function usePWAInstall() {
 
     checkStandalone();
 
-    // 2. Detect iOS / iPadOS Safari
+    // 2. Detect Device Type (iOS vs Android vs Mobile)
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIOSDevice =
       /iphone|ipad|ipod/.test(userAgent) ||
       (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
-    setIsIOS(isIOSDevice);
+    const isAndroidDevice = /android/.test(userAgent);
+    const isMobileDevice = isIOSDevice || isAndroidDevice || /mobile|tablet/.test(userAgent);
 
-    // 3. Listen for Android/Chromium beforeinstallprompt
+    setIsIOS(isIOSDevice);
+    setIsAndroid(isAndroidDevice);
+    setIsMobile(isMobileDevice);
+
+    // 3. Listen for Android / Chromium beforeinstallprompt
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent the mini-infobar from appearing on mobile
+      // Prevent browser default mini-infobar so our custom bar is shown cleanly
       e.preventDefault();
       const installEvent = e as BeforeInstallPromptEvent;
       setDeferredPrompt(installEvent);
@@ -84,7 +93,10 @@ export function usePWAInstall() {
     isInstallable,
     isInstalled,
     isIOS,
+    isAndroid,
+    isMobile,
     install,
     deferredPrompt
   };
 }
+
