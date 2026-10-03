@@ -107,13 +107,13 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
           // 2. Check ambassadors profile to prefill name if empty
           const { data: ambRow } = await supabase
             .from("ambassadors")
-            .select("id, professional_name, name, avu_balance, email")
+            .select("id, professional_name, avu_balance, email")
             .or(effectiveId ? `id.eq.${effectiveId},user_id.eq.${effectiveId}` : `email.ilike.${email}`)
             .maybeSingle();
 
           if (ambRow && isMounted) {
-            if (!accountName && (ambRow.professional_name || ambRow.name)) {
-              setAccountName(ambRow.professional_name || ambRow.name);
+            if (!accountName && ambRow.professional_name) {
+              setAccountName(ambRow.professional_name);
             }
             if (initialBalance === undefined && ambRow.avu_balance !== undefined) {
               setWalletBalance((prev) => Math.max(prev, Number(ambRow.avu_balance)));
@@ -548,3 +548,5 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
     </AnimatePresence>
   );
 };
+
+export default WithdrawalModal;
