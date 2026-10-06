@@ -197,6 +197,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [dbError, setDbError] = useState("");
 
+  // Aggregate KPI Metrics State
+  const [kpiMetrics, setKpiMetrics] = useState<{
+    totalAmbassadors: number;
+    totalAvuInCirculation: number;
+    pendingWithdrawalsCount: number;
+    pendingWithdrawalsValue: number;
+    completedLiquidationsValue: number;
+    completedLiquidationsNaira: number;
+    isLoading: boolean;
+  }>({
+    totalAmbassadors: 0,
+    totalAvuInCirculation: 0,
+    pendingWithdrawalsCount: 0,
+    pendingWithdrawalsValue: 0,
+    completedLiquidationsValue: 0,
+    completedLiquidationsNaira: 0,
+    isLoading: false
+  });
+
+  // RLS / Diagnostic Permission Warning State
+  const [rlsErrorWarning, setRlsErrorWarning] = useState<{
+    message: string;
+    details?: string;
+  } | null>(null);
+
+  // Individual withdrawal action loading state
+  const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
+
   // Bulk action states
   const [selectedAmbassadorIds, setSelectedAmbassadorIds] = useState<string[]>([]);
   const [bulkConfirmModal, setBulkConfirmModal] = useState<{
@@ -204,6 +232,122 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     action: "approve" | "disapprove";
   } | null>(null);
   const [isProcessingStatus, setIsProcessingStatus] = useState(false);
+
+  // Aggregate KPI Metrics Fetcher
+  const fetchDashboardMetrics = useCallback(async () => {
+    try {
+      setKpiMetrics(prev => ({ ...prev, isLoading: true }));
+      const client = supabaseAdmin || supabase;
+
+      if (!client || !isSupabaseConfigured) {
+        setKpiMetrics(prev => ({ ...prev, isLoading: false }));
+        return;
+      }
+
+      // 1. Total Registered Ambassadors Count from ambassadors table
+      let totalAmb = 0;
+      try {
+        const { count, error } = await client
+          .from("ambassadors")
+          .select("*", { count: "exact", head: true });
+        if (error) {
+          console.warn("[Admin Metrics] Ambassadors count query warning:", error);
+          if (error.code === "42501" || error.message?.toLowerCase().includes("permission") || error.message?.toLowerCase().includes("rls")) {
+            setRlsErrorWarning({
+              message: "Row-Level Security (RLS) restriction encountered while counting ambassadors.",
+              details: error.message
+            });
+          }
+        } else if (typeof count === "number") {
+          totalAmb = count;
+        }
+      } catch (err: any) {
+        console.error("[Admin Metrics] Failed to query ambassadors count:", err);
+      }
+
+      // 2. Total AVU in Circulation from ambassador_wallet balances
+      let avuCirculation = 0;
+      try {
+        const { data: walletRows, error: walletErr } = await client
+          .from("ambassador_wallet")
+          .select("balance");
+        if (!walletErr && walletRows && walletRows.length > 0) {
+          avuCirculation = walletRows.reduce((sum, row: any) => sum + (Number(row.balance) || 0), 0);
+        } else {
+          // Fallback to plural table or ambassadors table
+          const { data: pluralRows } = await client.from("ambassador_wallets").select("balance");
+          if (pluralRows && pluralRows.length > 0) {
+            avuCirculation = pluralRows.reduce((sum, row: any) => sum + (Number(row.balance) || 0), 0);
+          } else {
+            const { data: ambBalRows } = await client.from("ambassadors").select("avu_balance");
+            if (ambBalRows && ambBalRows.length > 0) {
+              avuCirculation = ambBalRows.reduce((sum, row: any) => sum + (Number(row.avu_balance) || 0), 0);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("[Admin Metrics] Failed to query wallet circulation:", err);
+      }
+
+      // 3. Pending Withdrawals Count & Value (status = 'pending')
+      let pendingCnt = 0;
+      let pendingVal = 0;
+      try {
+        const { data: pendingRows, error: pendingErr } = await client
+          .from("avu_withdrawals")
+          .select("requested_avu, status")
+          .or("status.eq.pending,status.eq.Pending");
+        if (!pendingErr && pendingRows) {
+          pendingCnt = pendingRows.length;
+          pendingVal = pendingRows.reduce((sum, r: any) => sum + (Number(r.requested_avu) || 0), 0);
+        } else if (pendingErr) {
+          console.warn("[Admin Metrics] Pending withdrawals query error:", pendingErr);
+          if (pendingErr.code === "42501" || pendingErr.message?.toLowerCase().includes("permission")) {
+            setRlsErrorWarning({
+              message: "Permission restriction querying pending withdrawals.",
+              details: pendingErr.message
+            });
+          }
+        }
+      } catch (err: any) {
+        console.error("[Admin Metrics] Failed to query pending withdrawals:", err);
+      }
+
+      // 4. Total Completed Liquidations (status = 'approved')
+      let compVal = 0;
+      let compNaira = 0;
+      try {
+        const { data: approvedRows, error: approvedErr } = await client
+          .from("avu_withdrawals")
+          .select("requested_avu, naira_equivalent, status")
+          .or("status.eq.approved,status.eq.Approved");
+        if (!approvedErr && approvedRows) {
+          compVal = approvedRows.reduce((sum, r: any) => sum + (Number(r.requested_avu) || 0), 0);
+          compNaira = approvedRows.reduce(
+            (sum, r: any) => sum + (Number(r.naira_equivalent) || (Number(r.requested_avu) * 1000) || 0),
+            0
+          );
+        } else if (approvedErr) {
+          console.warn("[Admin Metrics] Approved withdrawals query error:", approvedErr);
+        }
+      } catch (err: any) {
+        console.error("[Admin Metrics] Failed to query completed liquidations:", err);
+      }
+
+      setKpiMetrics({
+        totalAmbassadors: totalAmb,
+        totalAvuInCirculation: Number(avuCirculation.toFixed(2)),
+        pendingWithdrawalsCount: pendingCnt,
+        pendingWithdrawalsValue: Number(pendingVal.toFixed(2)),
+        completedLiquidationsValue: Number(compVal.toFixed(2)),
+        completedLiquidationsNaira: Number(compNaira.toFixed(2)),
+        isLoading: false
+      });
+    } catch (metricError: any) {
+      console.error("[Admin Metrics] Safe fallback caught metric error:", metricError);
+      setKpiMetrics(prev => ({ ...prev, isLoading: false }));
+    }
+  }, []);
 
   const fetchPendingWithdrawals = useCallback(async () => {
     try {
