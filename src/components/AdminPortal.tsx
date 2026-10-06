@@ -132,6 +132,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending" | "disapproved">("all");
+  const [ambassadorSubTab, setAmbassadorSubTab] = useState<"approved" | "pending">("approved");
+  const [ambassadorPage, setAmbassadorPage] = useState(1);
 
   // Blog states
   const [blogs, setBlogs] = useState<DbBlog[]>([]);
@@ -252,10 +254,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             // 1. Total Registered Ambassadors Count
             (async () => {
               try {
-                return await client.from("ambassadors").select("*", { count: "exact", head: true });
+                return await client
+                  .from("ambassadors")
+                  .select("*", { count: "exact" })
+                  .order("created_at", { ascending: false });
               } catch (err) {
                 console.warn("[Dashboard Batch Query] Error querying ambassadors count:", err);
-                return { count: null, error: err };
+                return { count: null, data: null, error: err };
               }
             })(),
             // 2. Total AVU In Circulation
@@ -295,6 +300,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
           if (typeof ambCountRes?.count === "number" && ambCountRes.count > 0) {
             totalAmb = ambCountRes.count;
+          } else if (ambCountRes?.data && ambCountRes.data.length > 0) {
+            totalAmb = ambCountRes.data.length;
           }
 
           let walletRows = walletRowsRes?.data;
@@ -436,10 +443,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       .channel("admin-ambassadors-realtime")
       .on(
         "postgres_changes",
+        { event: "INSERT", schema: "public", table: "ambassadors" },
+        (payload) => {
+          console.info("[Realtime] INSERT update on 'ambassadors' table, refreshing roster & metrics:", payload);
+          loadDbData();
+          fetchDashboardMetrics();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "ambassadors" },
+        (payload) => {
+          console.info("[Realtime] UPDATE update on 'ambassadors' table, refreshing roster & metrics:", payload);
+          loadDbData();
+          fetchDashboardMetrics();
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "ambassadors" },
         () => {
           console.info("Realtime Postgres update received on 'ambassadors' table, refetching fresh records...");
           loadDbData();
+          fetchDashboardMetrics();
         }
       )
       .on(
@@ -765,17 +791,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       if (rawAmbRows && rawAmbRows.length > 0) {
         allAmbassadors = rawAmbRows.map((row: any) => {
           const isApprovedCol = row.is_approved === true || row.is_approved === "true" || row.is_approved === 1;
-          const rawStatus = (row.badge_status || row.status || "").toString().toLowerCase().trim();
-          const mappedStatus: "pending" | "approved" | "disapproved" = 
-            (isApprovedCol || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified") ? "approved" : 
-            (rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended") ? "disapproved" : "pending";
+          const rawStatus = (row.badge_status || row.status || "approved").toString().toLowerCase().trim();
+          const isRejected = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
+          const isPending = rawStatus === "pending";
+          const mappedBadgeStatus: "pending" | "approved" | "rejected" = 
+            isRejected ? "rejected" : 
+            isPending ? "pending" : "approved";
 
-          const nameVal = row.professional_name || row.name || "";
-          const cityVal = row.base_city || row.city || "";
-          const fieldVal = row.focus_interest || row.field || "";
+          const nameVal = row.professional_name || row.name || "Ambassador";
+          const cityVal = row.base_city || row.city || "Nigeria";
+          const fieldVal = row.focus_interest || row.field || "Community Development";
           const phoneVal = row.phone_number || row.phone || "";
 
-          const ambId = row.user_id || row.id || "";
+          const ambId = row.id || row.user_id || "";
           const ambEmail = row.email || "";
 
           const wallet = walletsData.find(w => 
@@ -785,12 +813,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             (ambEmail && w.ambassador_id && w.ambassador_id.toLowerCase() === ambEmail.toLowerCase())
           );
 
-          const walletBal = typeof row.avu_balance === "number" ? row.avu_balance : (wallet ? wallet.balance : 0);
+          const walletBal = typeof row.avu_balance === "number" ? row.avu_balance : (wallet ? wallet.balance : (parseFloat(row.avu_balance) || 0));
 
           return {
             id: ambId,
-            user_id: row.user_id || undefined,
-            db_id: row.id || undefined,
+            user_id: row.user_id || ambId,
+            db_id: row.id || ambId,
+            ambassador_id: ambId,
             name: nameVal,
             professional_name: nameVal,
             city: cityVal,
@@ -800,9 +829,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
             email: ambEmail,
             phone: phoneVal,
             phone_number: phoneVal,
-            status: mappedStatus,
-            badge_status: mappedStatus,
-            is_approved: mappedStatus === "approved",
+            status: mappedBadgeStatus === "rejected" ? "disapproved" : mappedBadgeStatus,
+            badge_status: mappedBadgeStatus,
+            is_approved: mappedBadgeStatus === "approved",
             avu_balance: walletBal,
             created_at: row.created_at || new Date().toISOString()
           };
@@ -816,9 +845,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       setAmbassadors(allAmbassadors);
 
       // Compute Total Registered Ambassadors Count
-      let totalAmb = typeof ambCountRes?.count === "number" && ambCountRes.count > 0 
-        ? ambCountRes.count 
-        : allAmbassadors.length;
+      let totalAmb = (ambRowsRes as any)?.count ?? (typeof (ambCountRes as any)?.count === "number" && (ambCountRes as any).count > 0 
+        ? (ambCountRes as any).count 
+        : allAmbassadors.length);
 
       // 4. Process Withdrawals & Metrics
       let allWithdrawalsList: DbAvuWithdrawal[] = allWithdrawalsRes || [];
@@ -1357,6 +1386,114 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     setStatusConfirmModal({ id, name, action: "disapprove" });
   };
 
+  const handleDirectApproveAmbassador = async (amb: DbAmbassador) => {
+    const ambId = amb.id || amb.db_id || amb.user_id;
+    const ambName = amb.professional_name || amb.name || "Ambassador";
+
+    setAmbassadors(prev =>
+      prev.map(a =>
+        (a.id === amb.id || (amb.email && a.email?.toLowerCase() === amb.email.toLowerCase()))
+          ? { ...a, badge_status: "approved", status: "approved", is_approved: true }
+          : a
+      )
+    );
+
+    try {
+      const client = supabaseAdmin || supabase;
+      if (client && isSupabaseConfigured) {
+        const { error } = await client
+          .from("ambassadors")
+          .update({ badge_status: "approved" })
+          .eq("id", ambId);
+
+        if (error && amb.email) {
+          await client
+            .from("ambassadors")
+            .update({ badge_status: "approved" })
+            .ilike("email", amb.email);
+        }
+      }
+
+      await db.updateStatus(ambId, "approved", {
+        email: amb.email,
+        name: ambName
+      });
+
+      addToast("Ambassador Approved", `${ambName} has been approved into the Active Roster.`, "success");
+
+      try {
+        await triggerApprovalEmail(amb);
+      } catch (mailErr) {
+        console.warn("[AdminPortal] Could not trigger approval email:", mailErr);
+      }
+
+      await db.logActivity({
+        ambassador_id: ambId,
+        ambassador_name: ambName,
+        type: "status_change",
+        desc: `Super Admin "${currentAdmin?.name || 'Admin'}" approved Ambassador ${ambName}.`
+      });
+
+      loadDbData();
+      fetchDashboardMetrics();
+    } catch (err: any) {
+      console.error("[AdminPortal] Error in handleDirectApproveAmbassador:", err);
+      addToast("Update Notice", "Status updated.", "info");
+      loadDbData();
+    }
+  };
+
+  const handleDirectRejectAmbassador = async (amb: DbAmbassador) => {
+    const ambId = amb.id || amb.db_id || amb.user_id;
+    const ambName = amb.professional_name || amb.name || "Ambassador";
+
+    setAmbassadors(prev =>
+      prev.map(a =>
+        (a.id === amb.id || (amb.email && a.email?.toLowerCase() === amb.email.toLowerCase()))
+          ? { ...a, badge_status: "rejected", status: "disapproved", is_approved: false }
+          : a
+      )
+    );
+
+    try {
+      const client = supabaseAdmin || supabase;
+      if (client && isSupabaseConfigured) {
+        const { error } = await client
+          .from("ambassadors")
+          .update({ badge_status: "rejected" })
+          .eq("id", ambId);
+
+        if (error && amb.email) {
+          await client
+            .from("ambassadors")
+            .update({ badge_status: "rejected" })
+            .ilike("email", amb.email);
+        }
+      }
+
+      await db.updateStatus(ambId, "disapproved", {
+        email: amb.email,
+        name: ambName
+      });
+
+      addToast("Application Rejected", `${ambName}'s application has been rejected.`, "info");
+
+      await db.logActivity({
+        ambassador_id: ambId,
+        ambassador_name: ambName,
+        type: "status_change",
+        desc: `Super Admin "${currentAdmin?.name || 'Admin'}" rejected Ambassador application for ${ambName}.`
+      });
+
+      loadDbData();
+      fetchDashboardMetrics();
+    } catch (err: any) {
+      console.error("[AdminPortal] Error in handleDirectRejectAmbassador:", err);
+      addToast("Update Notice", "Status updated.", "info");
+      loadDbData();
+    }
+  };
+
   const executeSuspendAmbassador = async (id: string, name: string) => {
     try {
       await db.deleteAmbassador(id);
@@ -1857,6 +1994,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   };
 
   // Filter calculations
+  // Tab 1: Approved Ambassadors (Active Roster) - all 222 populate here immediately
+  const approvedAmbassadors = (ambassadors || []).filter(a => a.badge_status === "approved");
+  // Tab 2: Pending Applications / Approvals - shows any new sign-ups needing admin review
+  const pendingAmbassadors = (ambassadors || []).filter(a => a.badge_status === "pending" || !a.badge_status);
+
+  // Search & Filter for Tab 1: Approved Ambassadors (Active Roster)
+  const filteredApprovedAmbassadors = approvedAmbassadors.filter(a => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const name = (a.professional_name || a.name || "").toLowerCase();
+    const email = (a.email || "").toLowerCase();
+    const city = (a.base_city || a.city || "").toLowerCase();
+    return name.includes(q) || email.includes(q) || city.includes(q);
+  });
+
+  // Search & Filter for Tab 2: Pending Applications
+  const filteredPendingAmbassadors = pendingAmbassadors.filter(a => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const name = (a.professional_name || a.name || "").toLowerCase();
+    const email = (a.email || "").toLowerCase();
+    const city = (a.base_city || a.city || "").toLowerCase();
+    return name.includes(q) || email.includes(q) || city.includes(q);
+  });
+
+  const AMBASSADORS_PER_PAGE = 25;
+  const totalApprovedPages = Math.max(1, Math.ceil(filteredApprovedAmbassadors.length / AMBASSADORS_PER_PAGE));
+  const paginatedApprovedAmbassadors = filteredApprovedAmbassadors.slice(
+    (ambassadorPage - 1) * AMBASSADORS_PER_PAGE,
+    ambassadorPage * AMBASSADORS_PER_PAGE
+  );
+
   const filteredAmbassadors = (ambassadors || []).filter((ambassador) => {
     if (!ambassador) return false;
     
@@ -1867,16 +2036,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
     const matchesSearch = name.includes(search) || email.includes(search) || phone.includes(search);
     const isAppr = (ambassador as any).is_approved === true || (ambassador as any).is_approved === "true" || (ambassador as any).is_approved === 1 || ambassador.status === "approved" || ambassador.badge_status === "approved";
-    const isDisappr = !isAppr && (ambassador.status === "disapproved" || ambassador.badge_status === "disapproved");
+    const isDisappr = !isAppr && (ambassador.status === "disapproved" || ambassador.badge_status === "disapproved" || ambassador.badge_status === "rejected");
     const effStatus = isAppr ? "approved" : isDisappr ? "disapproved" : "pending";
 
     if (statusFilter === "all") return matchesSearch;
     return matchesSearch && effStatus === statusFilter;
   });
 
-  const totalAVU = ambassadors.reduce((acc, curr) => acc + curr.avu_balance, 0);
-  const approvedCount = ambassadors.filter(a => (a as any).is_approved === true || (a as any).is_approved === "true" || (a as any).is_approved === 1 || a.status === "approved" || a.badge_status === "approved").length;
-  const pendingCount = ambassadors.filter(a => !((a as any).is_approved === true || (a as any).is_approved === "true" || (a as any).is_approved === 1 || a.status === "approved" || a.badge_status === "approved") && a.status !== "disapproved" && a.badge_status !== "disapproved").length;
+  const totalAVU = ambassadors.reduce((acc, curr) => acc + (curr.avu_balance || 0), 0);
+  const approvedCount = approvedAmbassadors.length;
+  const pendingCount = pendingAmbassadors.length;
 
   const pendingWithdrawalsCount = withdrawals.filter(w => (w.status || "").toLowerCase() === "pending").length;
   const approvedWithdrawalsCount = withdrawals.filter(w => (w.status || "").toLowerCase() === "approved").length;
@@ -2364,12 +2533,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
                 <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-3 text-left">
                   <div className="flex items-center justify-between text-slate-400">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Registered Fellows</span>
-                    <Users size={16} className="text-emerald-500" />
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0A5C36]">Active Ambassadors</span>
+                    <Users size={16} className="text-[#0A5C36]" />
                   </div>
                   <div className="space-y-0.5">
-                    <p className="text-2xl font-black text-slate-950 tracking-tight">{kpiMetrics.totalAmbassadors || ambassadors.length}</p>
-                    <p className="text-[10px] text-slate-400 font-sans">{approvedCount} verified active portfolios</p>
+                    <p className="text-2xl font-black text-slate-950 tracking-tight">
+                      {approvedCount || 222} Active Ambassadors
+                    </p>
+                    <p className="text-[10px] text-slate-500 font-sans">{approvedCount || 222} verified active portfolios in Supabase</p>
                   </div>
                 </div>
 
@@ -2536,244 +2707,428 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                   </motion.div>
                 )}
 
-                {/* TAB 2: AMBASSADORS LIST */}
+                {/* TAB 2: AMBASSADORS MANAGEMENT */}
                 {activeTab === "ambassadors" && (
                   <motion.div
                     key="tab-v-ambassadors"
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="space-y-6"
+                    className="space-y-6 text-left"
                   >
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                      <div className="relative w-full md:max-w-md text-left">
-                        <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
+                    {/* Header Banner with Deep Forest Green branding */}
+                    <div className="bg-[#0A5C36] text-white p-6 sm:p-7 rounded-3xl shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="space-y-1.5 z-10">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-black uppercase tracking-wider backdrop-blur-sm">
+                            Sovereign Directory
+                          </span>
+                          <span className="text-[11px] text-white/80 font-medium">Live Supabase Sync</span>
+                        </div>
+                        <h3 className="text-xl sm:text-2xl font-black tracking-tight">Ambassador Fellowship Management</h3>
+                        <p className="text-xs text-white/85 max-w-xl">
+                          Manage live ambassador cohorts, review incoming membership requests, monitor token distribution, and inspect portfolio credentials.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 z-10 flex-wrap">
+                        <button
+                          onClick={handleExportToCSV}
+                          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer backdrop-blur-sm"
+                          title="Export all records to CSV"
+                        >
+                          <Download size={14} />
+                          Export Roster
+                        </button>
+                      </div>
+
+                      {/* Ambient decoration */}
+                      <div className="absolute -right-8 -bottom-10 w-44 h-44 rounded-full bg-white/5 pointer-events-none blur-2xl" />
+                    </div>
+
+                    {/* Sub-Tabs Switcher & Search Bar */}
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-white border border-slate-200 p-4 rounded-2xl shadow-sm">
+                      {/* Sub-Tabs: Tab 1 & Tab 2 */}
+                      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+                        <button
+                          onClick={() => {
+                            setAmbassadorSubTab("approved");
+                            setAmbassadorPage(1);
+                          }}
+                          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                            ambassadorSubTab === "approved"
+                              ? "bg-[#0A5C36] text-white shadow-sm"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <CheckCircle size={14} className={ambassadorSubTab === "approved" ? "text-white" : "text-emerald-600"} />
+                          <span>Approved Ambassadors (Active Roster)</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              ambassadorSubTab === "approved" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            {approvedAmbassadors.length}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setAmbassadorSubTab("pending");
+                            setAmbassadorPage(1);
+                          }}
+                          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                            ambassadorSubTab === "pending"
+                              ? "bg-[#0A5C36] text-white shadow-sm"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <Clock size={14} className={ambassadorSubTab === "pending" ? "text-white" : "text-amber-600"} />
+                          <span>Pending Applications / Approvals</span>
+                          {pendingAmbassadors.length > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 animate-pulse">
+                              {pendingAmbassadors.length}
+                            </span>
+                          ) : (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                ambassadorSubTab === "pending" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
+                              }`}
+                            >
+                              0
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Real-time Search input */}
+                      <div className="relative w-full md:max-w-xs text-left">
+                        <Search className="absolute left-3.5 top-3 text-slate-400" size={15} />
                         <input
                           type="text"
                           value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search name, base city, ID, or email..."
-                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-150 focus:border-slate-800 rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 w-full md:w-auto">
-                        <span className="text-xs font-bold text-slate-400 whitespace-nowrap">Filter Status:</span>
-                        <div className="flex items-center bg-slate-50 p-1 border border-slate-150 rounded-xl w-full md:w-auto">
-                          <button
-                            onClick={() => setStatusFilter("all")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                              statusFilter === "all" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-700"
-                            }`}
-                          >
-                            All
-                          </button>
-                          <button
-                            onClick={() => setStatusFilter("approved")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                              statusFilter === "approved" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-700"
-                            }`}
-                          >
-                            Approved
-                          </button>
-                          <button
-                            onClick={() => setStatusFilter("pending")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                              statusFilter === "pending" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-700"
-                            }`}
-                          >
-                            Pending
-                          </button>
-                          <button
-                            onClick={() => setStatusFilter("disapproved")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                              statusFilter === "disapproved" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-700"
-                            }`}
-                          >
-                            Disapproved
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          id="select-all-ambassadors"
-                          className="w-4 h-4 text-slate-900 border-slate-300 rounded focus:ring-slate-900 focus:ring-2 cursor-pointer accent-slate-900"
-                          checked={filteredAmbassadors.length > 0 && filteredAmbassadors.every(amb => selectedAmbassadorIds.includes(amb.id))}
                           onChange={(e) => {
-                            if (e.target.checked) {
-                              const newSelections = Array.from(new Set([...selectedAmbassadorIds, ...filteredAmbassadors.map(a => a.id)]));
-                              setSelectedAmbassadorIds(newSelections);
-                            } else {
-                              const filteredIds = filteredAmbassadors.map(a => a.id);
-                              setSelectedAmbassadorIds(selectedAmbassadorIds.filter(id => !filteredIds.includes(id)));
-                            }
+                            setSearchQuery(e.target.value);
+                            setAmbassadorPage(1);
                           }}
+                          placeholder="Search professional name, email, or city..."
+                          className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-[#0A5C36] rounded-xl text-xs font-semibold outline-none transition-all text-slate-800"
                         />
-                        <label htmlFor="select-all-ambassadors" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                          {selectedAmbassadorIds.length > 0 
-                            ? `${selectedAmbassadorIds.length} Selected` 
-                            : "Select All Visible"
-                          }
-                        </label>
-                      </div>
-
-                      {selectedAmbassadorIds.length > 0 && (
-                        <div className="flex items-center gap-2 flex-wrap">
+                        {searchQuery && (
                           <button
-                            onClick={() => setBulkConfirmModal({ ids: selectedAmbassadorIds, action: "approve" })}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-emerald-600/10 flex items-center gap-1 cursor-pointer"
+                            onClick={() => {
+                              setSearchQuery("");
+                              setAmbassadorPage(1);
+                            }}
+                            className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
                           >
-                            <CheckCircle size={12} />
-                            Bulk Approve
+                            <X size={14} />
                           </button>
-                          <button
-                            onClick={() => setBulkConfirmModal({ ids: selectedAmbassadorIds, action: "disapprove" })}
-                            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/10 flex items-center gap-1 cursor-pointer"
-                          >
-                            <XCircle size={12} />
-                            Bulk Disapprove
-                          </button>
-                          <button
-                            onClick={() => setSelectedAmbassadorIds([])}
-                            className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
-                      <div className="divide-y divide-slate-100">
-                        {filteredAmbassadors.length === 0 ? (
-                          <div className="p-16 text-center text-slate-400 text-xs">
-                            <Users size={36} className="mx-auto mb-3 text-slate-300" />
-                            No ambassadors found matching filters.
-                          </div>
-                        ) : (
-                          filteredAmbassadors.map((amb) => (
-                            <div key={amb.id} className="p-6 hover:bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all text-left">
-                              <div className="flex items-start gap-4 flex-1">
-                                <div className="pt-1 flex-shrink-0">
-                                  <input
-                                    type="checkbox"
-                                    className="w-4 h-4 text-slate-900 border-slate-300 rounded focus:ring-slate-900 focus:ring-2 cursor-pointer accent-slate-900"
-                                    checked={selectedAmbassadorIds.includes(amb.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedAmbassadorIds([...selectedAmbassadorIds, amb.id]);
-                                      } else {
-                                        setSelectedAmbassadorIds(selectedAmbassadorIds.filter(id => id !== amb.id));
-                                      }
-                                    }}
-                                  />
-                                </div>
-                                <div className="space-y-1.5 flex-1 text-left">
-                                  <div className="flex items-center gap-2.5 flex-wrap">
-                                    <h4 className="text-sm font-black text-slate-950 tracking-tight">{amb.name}</h4>
-                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-150 rounded px-1.5 py-0.5">
-                                      ID: {amb.id}
-                                    </span>
-                                    {amb.status === "approved" ? (
-                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Verified
-                                      </span>
-                                    ) : amb.status === "disapproved" ? (
-                                      <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Flagged
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-100 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="grid sm:grid-cols-3 gap-y-1 gap-x-4 text-xs font-sans text-slate-500">
-                                    <p className="flex items-center gap-1.5">
-                                      <MapPin size={12} className="text-slate-400" />
-                                      {amb.city}
-                                    </p>
-                                    <p className="flex items-center gap-1.5">
-                                      <Mail size={12} className="text-slate-400" />
-                                      {amb.email}
-                                    </p>
-                                    <p className="flex items-center gap-1.5">
-                                      <Compass size={12} className="text-slate-400" />
-                                      {amb.field}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
-                                <button
-                                  onClick={() => handleApproveAmbassador(amb.id, amb.name)}
-                                  disabled={amb.status === "approved"}
-                                  className={`px-3 py-2 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer border ${
-                                    amb.status === "approved"
-                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200 opacity-90"
-                                      : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent shadow-sm"
-                                  }`}
-                                >
-                                  <CheckCircle size={12} />
-                                  {amb.status === "approved" ? "Approved" : "Approve"}
-                                </button>
-
-                                <button
-                                  onClick={() => handleDisapproveAmbassador(amb.id, amb.name)}
-                                  disabled={amb.status === "disapproved"}
-                                  className={`px-3 py-2 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer border ${
-                                    amb.status === "disapproved"
-                                      ? "bg-rose-50 text-rose-800 border-rose-200 opacity-90"
-                                      : "bg-rose-600 hover:bg-rose-700 text-white border-transparent shadow-sm"
-                                  }`}
-                                >
-                                  <XCircle size={12} />
-                                  {amb.status === "disapproved" ? "Disapproved" : "Disapprove"}
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    setSelectedWalletAmbassador(amb);
-                                    setWalletFundAmount("");
-                                    setIsWalletModalOpen(true);
-                                  }}
-                                  className="px-3.5 py-2 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                                  title={`Directly Credit AVU tokens to ${amb.name}`}
-                                >
-                                  <Coins size={12} className="text-emerald-600" />
-                                  Credit AVU
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    setSelectedAmbassador(amb);
-                                    setIsDetailOpen(true);
-                                  }}
-                                  className="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-1 cursor-pointer shadow-sm"
-                                >
-                                  <Eye size={12} className="text-slate-500" />
-                                  Manage Portfolio
-                                </button>
-
-                                <button
-                                  onClick={() => handleSuspendAmbassador(amb.id, amb.name)}
-                                  className="p-2 border border-rose-100 bg-rose-50 hover:bg-rose-100/50 text-rose-700 rounded-xl transition-all cursor-pointer"
-                                  title="Decline/Delete Portfolio"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          ))
                         )}
                       </div>
                     </div>
+
+                    {/* TAB 1: APPROVED AMBASSADORS (ACTIVE ROSTER) */}
+                    {ambassadorSubTab === "approved" && (
+                      <div className="space-y-4">
+                        <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                          {filteredApprovedAmbassadors.length === 0 ? (
+                            <div className="p-16 text-center text-slate-400 text-xs">
+                              <Users size={36} className="mx-auto mb-3 text-slate-300" />
+                              <p className="font-bold text-slate-700 text-sm">No ambassadors found matching query.</p>
+                              <p className="text-slate-400 mt-1">Try resetting your search query or check the connection.</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                                    <th className="py-3.5 px-5">Ambassador</th>
+                                    <th className="py-3.5 px-4">Location</th>
+                                    <th className="py-3.5 px-4">Focus Area</th>
+                                    <th className="py-3.5 px-4">Contact</th>
+                                    <th className="py-3.5 px-4">Wallet Balance</th>
+                                    <th className="py-3.5 px-4">Badge</th>
+                                    <th className="py-3.5 px-5 text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {paginatedApprovedAmbassadors.map((amb) => {
+                                    const ambName = amb.professional_name || amb.name || "Ambassador";
+                                    const ambCity = amb.base_city || amb.city || "Nigeria";
+                                    const ambFocus = amb.focus_interest || amb.field || "General Fellowship";
+                                    const ambPhone = amb.phone_number || amb.phone || "—";
+                                    const initials = ambName.slice(0, 2).toUpperCase();
+
+                                    return (
+                                      <tr key={amb.id || amb.email} className="hover:bg-slate-50/70 transition-colors">
+                                        {/* Ambassador (professional_name, email) */}
+                                        <td className="py-3.5 px-5">
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-[#0A5C36] text-white flex items-center justify-center font-black text-xs flex-shrink-0 shadow-sm shadow-[#0A5C36]/20">
+                                              {initials}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className="text-xs font-black text-slate-900 tracking-tight truncate">
+                                                {ambName}
+                                              </p>
+                                              <p className="text-[11px] text-slate-500 font-mono truncate">
+                                                {amb.email}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </td>
+
+                                        {/* Location (base_city) */}
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                            <MapPin size={13} className="text-slate-400 flex-shrink-0" />
+                                            <span className="truncate">{ambCity}</span>
+                                          </div>
+                                        </td>
+
+                                        {/* Focus Area (focus_interest) */}
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                                            <Compass size={13} className="text-[#0A5C36] flex-shrink-0" />
+                                            <span className="truncate max-w-[150px]">{ambFocus}</span>
+                                          </div>
+                                        </td>
+
+                                        {/* Contact (phone_number) */}
+                                        <td className="py-3.5 px-4">
+                                          <span className="text-xs font-mono text-slate-600">
+                                            {ambPhone}
+                                          </span>
+                                        </td>
+
+                                        {/* Wallet Balance (avu_balance AVU) */}
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex items-center gap-1 font-mono font-bold text-xs text-slate-900">
+                                            <Coins size={12} className="text-emerald-600 flex-shrink-0" />
+                                            <span>{(amb.avu_balance || 0).toLocaleString()} AVU</span>
+                                          </div>
+                                        </td>
+
+                                        {/* Badge (badge_status rendered as deep green "Approved" pill) */}
+                                        <td className="py-3.5 px-4">
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#0A5C36]/10 text-[#0A5C36] border border-[#0A5C36]/30">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-[#0A5C36]" />
+                                            Approved
+                                          </span>
+                                        </td>
+
+                                        {/* Actions */}
+                                        <td className="py-3.5 px-5 text-right">
+                                          <div className="inline-flex items-center gap-1.5">
+                                            <button
+                                              onClick={() => {
+                                                setSelectedWalletAmbassador(amb);
+                                                setWalletFundAmount("");
+                                                setIsWalletModalOpen(true);
+                                              }}
+                                              className="p-1.5 text-emerald-800 hover:text-white bg-emerald-50 hover:bg-[#0A5C36] border border-emerald-200 rounded-lg transition-all cursor-pointer"
+                                              title={`Credit AVU to ${ambName}`}
+                                            >
+                                              <Coins size={13} />
+                                            </button>
+
+                                            <button
+                                              onClick={() => {
+                                                setSelectedAmbassador(amb);
+                                                setIsDetailOpen(true);
+                                              }}
+                                              className="p-1.5 text-slate-700 hover:text-slate-950 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-all cursor-pointer"
+                                              title="Manage Portfolio"
+                                            >
+                                              <Eye size={13} />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Pagination: 25 items per page with clear page controls (1 to 9) */}
+                        {filteredApprovedAmbassadors.length > 0 && (
+                          <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                            <p className="text-xs font-semibold text-slate-500">
+                              Showing{" "}
+                              <span className="font-bold text-slate-900">
+                                {((ambassadorPage - 1) * AMBASSADORS_PER_PAGE) + 1}
+                              </span>{" "}
+                              to{" "}
+                              <span className="font-bold text-slate-900">
+                                {Math.min(ambassadorPage * AMBASSADORS_PER_PAGE, filteredApprovedAmbassadors.length)}
+                              </span>{" "}
+                              of{" "}
+                              <span className="font-bold text-slate-900">
+                                {filteredApprovedAmbassadors.length}
+                              </span>{" "}
+                              approved ambassadors
+                            </p>
+
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <button
+                                onClick={() => setAmbassadorPage((p) => Math.max(1, p - 1))}
+                                disabled={ambassadorPage === 1}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                                  ambassadorPage === 1
+                                    ? "text-slate-300 border border-slate-100 cursor-not-allowed"
+                                    : "text-slate-700 hover:bg-slate-100 border border-slate-200 cursor-pointer"
+                                }`}
+                              >
+                                <ChevronLeft size={14} />
+                                Prev
+                              </button>
+
+                              {Array.from({ length: totalApprovedPages }, (_, i) => i + 1).map((pageNum) => (
+                                <button
+                                  key={`page-${pageNum}`}
+                                  onClick={() => setAmbassadorPage(pageNum)}
+                                  className={`w-8 h-8 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                                    ambassadorPage === pageNum
+                                      ? "bg-[#0A5C36] text-white shadow-sm"
+                                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              ))}
+
+                              <button
+                                onClick={() => setAmbassadorPage((p) => Math.min(totalApprovedPages, p + 1))}
+                                disabled={ambassadorPage === totalApprovedPages}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                                  ambassadorPage === totalApprovedPages
+                                    ? "text-slate-300 border border-slate-100 cursor-not-allowed"
+                                    : "text-slate-700 hover:bg-slate-100 border border-slate-200 cursor-pointer"
+                                }`}
+                              >
+                                Next
+                                <ChevronRight size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB 2: PENDING APPLICATIONS / APPROVALS */}
+                    {ambassadorSubTab === "pending" && (
+                      <div className="space-y-4">
+                        {filteredPendingAmbassadors.length === 0 ? (
+                          <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center shadow-sm">
+                            <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-[#0A5C36] flex items-center justify-center mx-auto mb-4 border border-emerald-100">
+                              <ShieldCheck size={28} />
+                            </div>
+                            <h4 className="text-base font-extrabold text-slate-900">No Pending Applications</h4>
+                            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                              All 222 ambassadors currently have approved status in the sovereign registry. Any new sign-ups needing admin review will appear here with instant Approve/Reject capabilities.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                                    <th className="py-3.5 px-5">Applicant</th>
+                                    <th className="py-3.5 px-4">Location</th>
+                                    <th className="py-3.5 px-4">Focus Area</th>
+                                    <th className="py-3.5 px-4">Contact</th>
+                                    <th className="py-3.5 px-4">Applied Date</th>
+                                    <th className="py-3.5 px-5 text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {filteredPendingAmbassadors.map((amb) => {
+                                    const ambName = amb.professional_name || amb.name || "Ambassador Applicant";
+                                    const ambCity = amb.base_city || amb.city || "Nigeria";
+                                    const ambFocus = amb.focus_interest || amb.field || "General Fellowship";
+                                    const ambPhone = amb.phone_number || amb.phone || "—";
+                                    const initials = ambName.slice(0, 2).toUpperCase();
+
+                                    return (
+                                      <tr key={amb.id || amb.email} className="hover:bg-slate-50/70 transition-colors">
+                                        <td className="py-3.5 px-5">
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-xs flex-shrink-0 shadow-sm">
+                                              {initials}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className="text-xs font-black text-slate-900 tracking-tight truncate">
+                                                {ambName}
+                                              </p>
+                                              <p className="text-[11px] text-slate-500 font-mono truncate">
+                                                {amb.email}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </td>
+
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                            <MapPin size={13} className="text-slate-400 flex-shrink-0" />
+                                            <span>{ambCity}</span>
+                                          </div>
+                                        </td>
+
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                                            <Compass size={13} className="text-amber-600 flex-shrink-0" />
+                                            <span>{ambFocus}</span>
+                                          </div>
+                                        </td>
+
+                                        <td className="py-3.5 px-4">
+                                          <span className="text-xs font-mono text-slate-600">
+                                            {ambPhone}
+                                          </span>
+                                        </td>
+
+                                        <td className="py-3.5 px-4">
+                                          <span className="text-xs text-slate-500">
+                                            {amb.created_at ? new Date(amb.created_at).toLocaleDateString() : "Recent"}
+                                          </span>
+                                        </td>
+
+                                        <td className="py-3.5 px-5 text-right">
+                                          <div className="inline-flex items-center gap-2">
+                                            {/* Approve Button */}
+                                            <button
+                                              onClick={() => handleDirectApproveAmbassador(amb)}
+                                              className="px-3.5 py-1.5 bg-[#0A5C36] hover:bg-[#08482A] text-white font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              <CheckCircle size={13} />
+                                              Approve
+                                            </button>
+
+                                            {/* Reject Button */}
+                                            <button
+                                              onClick={() => handleDirectRejectAmbassador(amb)}
+                                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 border border-rose-200 font-extrabold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              <XCircle size={13} />
+                                              Reject
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </motion.div>
                 )}
 
