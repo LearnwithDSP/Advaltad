@@ -1,4 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  INITIAL_SEED_AMBASSADORS,
+  INITIAL_SEED_WALLETS,
+  INITIAL_SEED_BLOGS,
+  INITIAL_SEED_WITHDRAWALS,
+  INITIAL_SEED_ACTIVITIES,
+  INITIAL_SEED_AUDIT_LOGS,
+  INITIAL_SEED_DEPOSITS
+} from "./seedData";
 
 /**
  * Unified debugging function for logging the specific 'ambassador_id' being used during
@@ -184,6 +193,7 @@ export interface DbAmbassadorWallet {
   email: string;
   balance: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface DbActivity {
@@ -204,6 +214,7 @@ export interface DbAuditLog {
   ambassador_id: string;
   ambassador_name: string;
   action: "approved" | "disapproved" | "updated_portfolio" | "suspended";
+  details?: string;
   created_at: string;
 }
 
@@ -377,9 +388,16 @@ export function extractExactAvuBalance(row: any): number {
 }
 
 function getLocalDb(): DbAmbassador[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined") return INITIAL_SEED_AMBASSADORS;
   const data = localStorage.getItem(LOCAL_STORAGE_KEY);
-  return data ? JSON.parse(data) : [];
+  if (data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length >= 10) return parsed;
+    } catch (_) {}
+  }
+  saveLocalDb(INITIAL_SEED_AMBASSADORS);
+  return INITIAL_SEED_AMBASSADORS;
 }
 
 function saveLocalDb(db: DbAmbassador[]) {
@@ -723,51 +741,15 @@ export const db = {
 
     if (resultList.length === 0) {
       resultList = getLocalDb();
-    }
-
-    // Ensure localDb has seeded defaults if empty (Default AVU balance is 0)
-    if (resultList.length === 0) {
-      resultList = [
-        {
-          id: "AV-73862",
-          user_id: "AV-73862",
-          ambassador_id: "AV-73862",
-          name: "Ramon Bisola",
-          email: "ramon@example.com",
-          city: "Lagos, Nigeria",
-          field: "Enriching African youths initiative",
-          phone: "+234 801 234 5678",
-          status: "approved",
-          avu_balance: 0,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: "AV-94821",
-          user_id: "AV-94821",
-          ambassador_id: "AV-94821",
-          name: "Grace Mombasa",
-          email: "grace@mombasa.org",
-          city: "Mombasa, Kenya",
-          field: "Eco-Housing & Construction",
-          phone: "+254 712 345 678",
-          status: "approved",
-          avu_balance: 0,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: "AV-51209",
-          user_id: "AV-51209",
-          ambassador_id: "AV-51209",
-          name: "Kofi Mensah",
-          email: "kofi@accra.org",
-          city: "Accra, Ghana",
-          field: "NextGen Software Infrastructure",
-          phone: "+233 241 234 567",
-          status: "approved",
-          avu_balance: 0,
-          created_at: new Date().toISOString()
+    } else if (resultList.length < INITIAL_SEED_AMBASSADORS.length) {
+      const existingIds = new Set(resultList.map(a => (a.id || a.email || "").toLowerCase().trim()));
+      for (const seed of INITIAL_SEED_AMBASSADORS) {
+        const seedId = (seed.id || "").toLowerCase().trim();
+        const seedEmail = (seed.email || "").toLowerCase().trim();
+        if (!existingIds.has(seedId) && !existingIds.has(seedEmail)) {
+          resultList.push(seed);
         }
-      ];
+      }
     }
 
     for (const amb of resultList) {
@@ -1182,18 +1164,25 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       try {
         let { data, error } = await supabase.from("blogs").select("*").order("created_at", { ascending: false });
-        if (error || !data) {
+        if (error || !data || data.length === 0) {
           const fallback = await supabase.from("Blogs").select("*").order("created_at", { ascending: false });
           data = fallback.data;
           error = fallback.error;
         }
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) return data;
       } catch (err) {
         console.warn("getBlogs error:", err);
       }
     }
     const data = localStorage.getItem(BLOGS_LOCAL_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    localStorage.setItem(BLOGS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_BLOGS));
+    return INITIAL_SEED_BLOGS;
   },
 
   async getDonations(): Promise<DbDonation[]> {
@@ -1243,18 +1232,25 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       try {
         let { data, error } = await supabase.from("deposits").select("*").order("created_at", { ascending: false });
-        if (error || !data) {
+        if (error || !data || data.length === 0) {
           const fallback = await supabase.from("Deposits").select("*").order("created_at", { ascending: false });
           data = fallback.data;
           error = fallback.error;
         }
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) return data;
       } catch (err) {
         console.warn("getDeposits error:", err);
       }
     }
     const data = localStorage.getItem(DEPOSITS_LOCAL_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    localStorage.setItem(DEPOSITS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_DEPOSITS));
+    return INITIAL_SEED_DEPOSITS;
   },
 
   async createDeposit(deposit: Omit<DbDeposit, "id" | "created_at">): Promise<DbDeposit> {
@@ -1816,13 +1812,22 @@ export const db = {
             }
           }
         }
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) return data;
       } catch (err) {
         console.warn("getWallets error:", err);
       }
     }
     const data = typeof window !== "undefined" ? localStorage.getItem(WALLETS_LOCAL_STORAGE_KEY) : null;
-    return data ? JSON.parse(data) : [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_WALLETS));
+    }
+    return INITIAL_SEED_WALLETS;
   },
 
   async getActivities(): Promise<DbActivity[]> {
@@ -1851,7 +1856,11 @@ export const db = {
         map.set(key, act);
       }
     }
-    const combined = Array.from(map.values());
+    let combined = Array.from(map.values());
+    if (combined.length === 0) {
+      localStorage.setItem(ACTIVITIES_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_ACTIVITIES));
+      combined = [...INITIAL_SEED_ACTIVITIES];
+    }
     combined.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     return combined;
   },
@@ -1860,18 +1869,25 @@ export const db = {
     if (isSupabaseConfigured && supabase) {
       try {
         let { data, error } = await supabase.from("audit_logs").select("*").order("created_at", { ascending: false });
-        if (error || !data) {
+        if (error || !data || data.length === 0) {
           const fallback = await supabase.from("AuditLogs").select("*").order("created_at", { ascending: false });
           data = fallback.data;
           error = fallback.error;
         }
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) return data;
       } catch (err) {
         console.warn("getAuditLogs error:", err);
       }
     }
     const data = localStorage.getItem(AUDIT_LOGS_LOCAL_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    localStorage.setItem(AUDIT_LOGS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_AUDIT_LOGS));
+    return INITIAL_SEED_AUDIT_LOGS;
   },
 
   async createAdmin(admin: Omit<DbAdmin, "id" | "created_at">): Promise<DbAdmin> {
@@ -2717,6 +2733,15 @@ export const db = {
       }
     }
     let all = Array.from(map.values());
+    if (all.length === 0) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_WITHDRAWALS));
+      }
+      for (const item of INITIAL_SEED_WITHDRAWALS) {
+        map.set(item.id, item);
+      }
+      all = [...INITIAL_SEED_WITHDRAWALS];
+    }
     all.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
     if (ambassadorIdOrEmail) {
