@@ -3,7 +3,15 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig, loadEnv } from 'vite';
-import { VitePWA } from 'vite-plugin-pwa';
+
+// Safe dynamic resolution for VitePWA: ensures build succeeds smoothly in all environments (including Vercel)
+let VitePWA: any = null;
+try {
+  const pwaModule: any = await import('vite-plugin-pwa');
+  VitePWA = pwaModule.VitePWA || pwaModule.default?.VitePWA || pwaModule.default;
+} catch (err: any) {
+  console.warn('[vite.config.ts] Note: vite-plugin-pwa resolution fallback activated:', err?.message || err);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,115 +28,119 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(), 
       tailwindcss(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: [
-          'favicon.ico',
-          'apple-touch-icon.png',
-          'pwa-192x192.png',
-          'pwa-512x512.png',
-          'pwa-maskable-512x512.png'
-        ],
-        manifest: {
-          id: '/',
-          name: 'Advaltad Growth Foundation',
-          short_name: 'Advaltad',
-          description: 'NGO Ambassador & Social web platform - Advaltad Growth and Support Foundation',
-          theme_color: '#0A5C36',
-          background_color: '#FFFFFF',
-          display: 'standalone',
-          orientation: 'portrait',
-          start_url: '/',
-          scope: '/',
-          icons: [
-            {
-              src: '/pwa-192x192.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any'
-            },
-            {
-              src: '/pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any'
-            },
-            {
-              src: '/pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable'
-            }
+      ...(VitePWA
+        ? [
+            VitePWA({
+              registerType: 'autoUpdate',
+              includeAssets: [
+                'favicon.ico',
+                'apple-touch-icon.png',
+                'pwa-192x192.png',
+                'pwa-512x512.png',
+                'pwa-maskable-512x512.png'
+              ],
+              manifest: {
+                id: '/',
+                name: 'Advaltad Growth Foundation',
+                short_name: 'Advaltad',
+                description: 'NGO Ambassador & Social web platform - Advaltad Growth and Support Foundation',
+                theme_color: '#0A5C36',
+                background_color: '#FFFFFF',
+                display: 'standalone',
+                orientation: 'portrait',
+                start_url: '/',
+                scope: '/',
+                icons: [
+                  {
+                    src: '/pwa-192x192.png',
+                    sizes: '192x192',
+                    type: 'image/png',
+                    purpose: 'any'
+                  },
+                  {
+                    src: '/pwa-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'any'
+                  },
+                  {
+                    src: '/pwa-maskable-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'maskable'
+                  }
+                ]
+              },
+              workbox: {
+                maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+                globPatterns: ['**/*.{js,css,html,ico,png,svg,jpeg,jpg,webp,woff,woff2}'],
+                cleanupOutdatedCaches: true,
+                clientsClaim: true,
+                skipWaiting: true,
+                runtimeCaching: [
+                  {
+                    urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
+                    handler: 'NetworkFirst',
+                    options: {
+                      cacheName: 'supabase-api-cache',
+                      networkTimeoutSeconds: 5,
+                      expiration: {
+                        maxEntries: 100,
+                        maxAgeSeconds: 60 * 60 * 24 // 24 hours
+                      },
+                      cacheableResponse: {
+                        statuses: [0, 200]
+                      }
+                    }
+                  },
+                  {
+                    urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/.*/i,
+                    handler: 'StaleWhileRevalidate',
+                    options: {
+                      cacheName: 'supabase-storage-avatars-cache',
+                      expiration: {
+                        maxEntries: 100,
+                        maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                      },
+                      cacheableResponse: {
+                        statuses: [0, 200]
+                      }
+                    }
+                  },
+                  {
+                    urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
+                    handler: 'CacheFirst',
+                    options: {
+                      cacheName: 'google-fonts-cache',
+                      expiration: {
+                        maxEntries: 20,
+                        maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+                      },
+                      cacheableResponse: {
+                        statuses: [0, 200]
+                      }
+                    }
+                  },
+                  {
+                    urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
+                    handler: 'StaleWhileRevalidate',
+                    options: {
+                      cacheName: 'images-cache',
+                      expiration: {
+                        maxEntries: 60,
+                        maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                      }
+                    }
+                  }
+                ]
+              },
+              devOptions: {
+                enabled: true,
+                type: 'module'
+              }
+            })
           ]
-        },
-        workbox: {
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpeg,jpg,webp,woff,woff2}'],
-          cleanupOutdatedCaches: true,
-          clientsClaim: true,
-          skipWaiting: true,
-          runtimeCaching: [
-            {
-              urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'supabase-api-cache',
-                networkTimeoutSeconds: 5,
-                expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 // 24 hours
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
-            },
-            {
-              urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/.*/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'supabase-storage-avatars-cache',
-                expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
-            },
-            {
-              urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-cache',
-                expiration: {
-                  maxEntries: 20,
-                  maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
-            },
-            {
-              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'images-cache',
-                expiration: {
-                  maxEntries: 60,
-                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-                }
-              }
-            }
-          ]
-        },
-        devOptions: {
-          enabled: true,
-          type: 'module'
-        }
-      }),
+        : []),
       {
         name: 'api-routes',
         configureServer(server) {
