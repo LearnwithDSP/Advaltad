@@ -17,7 +17,12 @@ const EMAILS_LOG_LOCAL_STORAGE_KEY = "advaltad_sent_emails";
 export async function getSentEmails(): Promise<SentEmailLog[]> {
   try {
     const data = localStorage.getItem(EMAILS_LOG_LOCAL_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    // Default to empty records if empty
+    return [];
   } catch (err) {
     console.warn("getSentEmails error:", err);
     return [];
