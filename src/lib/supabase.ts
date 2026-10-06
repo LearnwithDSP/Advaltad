@@ -1,13 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import {
-  INITIAL_SEED_AMBASSADORS,
-  INITIAL_SEED_WALLETS,
-  INITIAL_SEED_BLOGS,
-  INITIAL_SEED_WITHDRAWALS,
-  INITIAL_SEED_ACTIVITIES,
-  INITIAL_SEED_AUDIT_LOGS,
-  INITIAL_SEED_DEPOSITS
-} from "./seedData";
 
 /**
  * Unified debugging function for logging the specific 'ambassador_id' being used during
@@ -61,7 +52,7 @@ export function logWithdrawalFetchTrace(params: WithdrawalFetchTraceParams): voi
   }
 }
 
-// Safe universal env helper to prevent "process is not defined" in browser/Vite/Vercel builds
+// Safe universal env helper to read VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const getEnvVar = (key: string): string => {
   try {
     if (typeof import.meta !== "undefined" && (import.meta as any)?.env?.[key]) {
@@ -76,8 +67,17 @@ const getEnvVar = (key: string): string => {
   return "";
 };
 
-const supabaseUrl = getEnvVar("VITE_SUPABASE_URL") || getEnvVar("SUPABASE_URL");
-const supabaseAnonKey = getEnvVar("VITE_SUPABASE_ANON_KEY") || getEnvVar("SUPABASE_ANON_KEY");
+const supabaseUrl =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) ||
+  getEnvVar("VITE_SUPABASE_URL") ||
+  getEnvVar("SUPABASE_URL") ||
+  "";
+
+const supabaseAnonKey =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  getEnvVar("VITE_SUPABASE_ANON_KEY") ||
+  getEnvVar("SUPABASE_ANON_KEY") ||
+  "";
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
@@ -158,8 +158,8 @@ export interface DbAmbassador {
   phone: string;
   phone_number?: string;
   password?: string;
-  status: "pending" | "approved" | "disapproved";
-  badge_status?: "pending" | "approved" | "disapproved";
+  status: "pending" | "approved" | "disapproved" | "rejected";
+  badge_status?: "pending" | "approved" | "disapproved" | "rejected" | string;
   is_approved?: boolean;
   avu_balance: number;
   ledger_balance?: number;
@@ -388,16 +388,15 @@ export function extractExactAvuBalance(row: any): number {
 }
 
 function getLocalDb(): DbAmbassador[] {
-  if (typeof window === "undefined") return INITIAL_SEED_AMBASSADORS;
+  if (typeof window === "undefined") return [];
   const data = localStorage.getItem(LOCAL_STORAGE_KEY);
   if (data) {
     try {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length >= 10) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     } catch (_) {}
   }
-  saveLocalDb(INITIAL_SEED_AMBASSADORS);
-  return INITIAL_SEED_AMBASSADORS;
+  return [];
 }
 
 function saveLocalDb(db: DbAmbassador[]) {
@@ -408,12 +407,12 @@ function saveLocalDb(db: DbAmbassador[]) {
 export function mapRowToAmbassador(row: any): DbAmbassador {
   const isApprovedCol = row.is_approved === true || row.is_approved === "true" || row.is_approved === 1;
   const rawStatus = (row.badge_status || row.status || "").toString().toLowerCase().trim();
-  const isDisapprovedStatus = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
+  const isRejectedStatus = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
   const isApprovedStatus = isApprovedCol || rawStatus === "approved" || rawStatus === "active" || rawStatus === "verified";
 
-  const mappedStatus: "pending" | "approved" | "disapproved" = 
-    isDisapprovedStatus ? "disapproved" :
-    isApprovedStatus ? "approved" : "pending";
+  const mappedBadgeStatus: "pending" | "approved" | "rejected" = 
+    isApprovedStatus ? "approved" :
+    isRejectedStatus ? "rejected" : "pending";
 
   const nameVal = row.professional_name || row.name || "";
   const cityVal = row.base_city || row.city || "";
@@ -429,8 +428,8 @@ export function mapRowToAmbassador(row: any): DbAmbassador {
   const exactBal = extractExactAvuBalance(row);
 
   return {
-    id: staticId,
-    user_id: row.user_id || staticId,
+    id: row.id || staticId,
+    user_id: row.user_id || row.id || staticId,
     db_id: row.id || undefined,
     ambassador_id: staticId,
     name: nameVal,
@@ -444,8 +443,8 @@ export function mapRowToAmbassador(row: any): DbAmbassador {
     email: rawEmail,
     phone: phoneVal,
     phone_number: phoneVal,
-    status: mappedStatus,
-    badge_status: mappedStatus,
+    status: mappedBadgeStatus === "rejected" ? "disapproved" : mappedBadgeStatus,
+    badge_status: mappedBadgeStatus,
     is_approved: isApprovedStatus,
     avu_balance: exactBal,
     ledger_balance: exactBal,
@@ -741,22 +740,14 @@ export const db = {
 
     if (resultList.length === 0) {
       resultList = getLocalDb();
-    } else if (resultList.length < INITIAL_SEED_AMBASSADORS.length) {
-      const existingIds = new Set(resultList.map(a => (a.id || a.email || "").toLowerCase().trim()));
-      for (const seed of INITIAL_SEED_AMBASSADORS) {
-        const seedId = (seed.id || "").toLowerCase().trim();
-        const seedEmail = (seed.email || "").toLowerCase().trim();
-        if (!existingIds.has(seedId) && !existingIds.has(seedEmail)) {
-          resultList.push(seed);
-        }
-      }
     }
 
     for (const amb of resultList) {
       const staticId = getStaticAmbassadorId(amb.user_id || amb.ambassador_id || amb.id || amb.email || amb.db_id);
-      amb.id = staticId;
-      amb.user_id = staticId;
       amb.ambassador_id = staticId;
+      if (!amb.db_id && isUuid(amb.id)) {
+        amb.db_id = amb.id;
+      }
 
       if (typeof amb.avu_balance !== "number" || isNaN(amb.avu_balance) || amb.avu_balance < 0) {
         amb.avu_balance = 0;
@@ -1181,8 +1172,7 @@ export const db = {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (_) {}
     }
-    localStorage.setItem(BLOGS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_BLOGS));
-    return INITIAL_SEED_BLOGS;
+    return [];
   },
 
   async getDonations(): Promise<DbDonation[]> {
@@ -1249,8 +1239,7 @@ export const db = {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (_) {}
     }
-    localStorage.setItem(DEPOSITS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_DEPOSITS));
-    return INITIAL_SEED_DEPOSITS;
+    return [];
   },
 
   async createDeposit(deposit: Omit<DbDeposit, "id" | "created_at">): Promise<DbDeposit> {
@@ -1824,10 +1813,7 @@ export const db = {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (_) {}
     }
-    if (typeof window !== "undefined") {
-      localStorage.setItem(WALLETS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_WALLETS));
-    }
-    return INITIAL_SEED_WALLETS;
+    return [];
   },
 
   async getActivities(): Promise<DbActivity[]> {
@@ -1857,10 +1843,6 @@ export const db = {
       }
     }
     let combined = Array.from(map.values());
-    if (combined.length === 0) {
-      localStorage.setItem(ACTIVITIES_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_ACTIVITIES));
-      combined = [...INITIAL_SEED_ACTIVITIES];
-    }
     combined.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     return combined;
   },
@@ -1886,8 +1868,7 @@ export const db = {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (_) {}
     }
-    localStorage.setItem(AUDIT_LOGS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_AUDIT_LOGS));
-    return INITIAL_SEED_AUDIT_LOGS;
+    return [];
   },
 
   async createAdmin(admin: Omit<DbAdmin, "id" | "created_at">): Promise<DbAdmin> {
@@ -2733,15 +2714,6 @@ export const db = {
       }
     }
     let all = Array.from(map.values());
-    if (all.length === 0) {
-      if (typeof window !== "undefined") {
-        localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SEED_WITHDRAWALS));
-      }
-      for (const item of INITIAL_SEED_WITHDRAWALS) {
-        map.set(item.id, item);
-      }
-      all = [...INITIAL_SEED_WITHDRAWALS];
-    }
     all.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
     if (ambassadorIdOrEmail) {
