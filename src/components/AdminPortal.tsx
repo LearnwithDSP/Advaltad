@@ -39,15 +39,6 @@ import { RegionalGrowthChart } from "./RegionalGrowthChart";
 import { OverviewSummaryCharts } from "./OverviewSummaryCharts";
 import PendingWithdrawals from "./PendingWithdrawals";
 import { traceDbOperation, traceGenericOperation, logDbOperation, logAmbassadorApprovalLifecycle } from "../lib/db-logger";
-import {
-  INITIAL_SEED_AMBASSADORS,
-  INITIAL_SEED_WALLETS,
-  INITIAL_SEED_BLOGS,
-  INITIAL_SEED_WITHDRAWALS,
-  INITIAL_SEED_ACTIVITIES,
-  INITIAL_SEED_AUDIT_LOGS,
-  INITIAL_SEED_SENT_EMAILS
-} from "../lib/seedData";
 
 interface AdminPortalProps {
   onLogout: () => void;
@@ -121,7 +112,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<"overview" | "ambassadors" | "activities" | "blogs" | "wallets" | "withdrawals" | "history" | "payments">("overview");
 
   // Withdrawal requests state
-  const [withdrawals, setWithdrawals] = useState<DbAvuWithdrawal[]>(INITIAL_SEED_WITHDRAWALS);
+  const [withdrawals, setWithdrawals] = useState<DbAvuWithdrawal[]>([]);
   const [withdrawalFilter, setWithdrawalFilter] = useState<"all" | "Pending" | "Approved" | "Disapproved">("all");
   const [withdrawalSearch, setWithdrawalSearch] = useState("");
   const [isUpdatingWithdrawal, setIsUpdatingWithdrawal] = useState<string | null>(null);
@@ -135,15 +126,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [generatedPublicLink, setGeneratedPublicLink] = useState("");
 
   // Database records
-  const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>(INITIAL_SEED_AMBASSADORS);
-  const [activities, setActivities] = useState<DbActivity[]>(INITIAL_SEED_ACTIVITIES);
-  const [auditLogs, setAuditLogs] = useState<DbAuditLog[]>(INITIAL_SEED_AUDIT_LOGS);
+  const [ambassadors, setAmbassadors] = useState<DbAmbassador[]>([]);
+  const [activities, setActivities] = useState<DbActivity[]>([]);
+  const [auditLogs, setAuditLogs] = useState<DbAuditLog[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending" | "disapproved">("all");
 
   // Blog states
-  const [blogs, setBlogs] = useState<DbBlog[]>(INITIAL_SEED_BLOGS);
+  const [blogs, setBlogs] = useState<DbBlog[]>([]);
   const [blogTitle, setBlogTitle] = useState("");
   const [blogTag, setBlogTag] = useState("");
   const [blogExcerpt, setBlogExcerpt] = useState("");
@@ -153,7 +144,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [isBlogFormOpen, setIsBlogFormOpen] = useState(false);
 
   // Wallet states
-  const [wallets, setWallets] = useState<DbAmbassadorWallet[]>(INITIAL_SEED_WALLETS);
+  const [wallets, setWallets] = useState<DbAmbassadorWallet[]>([]);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [selectedWalletAmbassador, setSelectedWalletAmbassador] = useState<DbAmbassador | null>(null);
   const [walletFundAmount, setWalletFundAmount] = useState("");
@@ -198,7 +189,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   } | null>(null);
 
   // Transactional Email states
-  const [sentEmails, setSentEmails] = useState<SentEmailLog[]>(INITIAL_SEED_SENT_EMAILS);
+  const [sentEmails, setSentEmails] = useState<SentEmailLog[]>([]);
   const [historySubTab, setHistorySubTab] = useState<"audit" | "emails">("audit");
   const [selectedEmailForView, setSelectedEmailForView] = useState<SentEmailLog | null>(null);
 
@@ -216,12 +207,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     completedLiquidationsNaira: number;
     isLoading: boolean;
   }>({
-    totalAmbassadors: 24,
-    totalAvuInCirculation: 398700,
-    pendingWithdrawalsCount: 5,
-    pendingWithdrawalsValue: 23200,
-    completedLiquidationsValue: 33500,
-    completedLiquidationsNaira: 33500000,
+    totalAmbassadors: 0,
+    totalAvuInCirculation: 0,
+    pendingWithdrawalsCount: 0,
+    pendingWithdrawalsValue: 0,
+    completedLiquidationsValue: 0,
+    completedLiquidationsNaira: 0,
     isLoading: false
   });
 
@@ -337,33 +328,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         }
       }
 
-      // Robust fallback: If DB query yielded 0 or DB is unconfigured, calculate directly from canonical datasets
+      // If DB query yielded 0 or DB is unconfigured, populate directly from Supabase queries
       if (totalAmb === 0) {
         const ambList = await db.getAmbassadors();
-        totalAmb = ambList.length || INITIAL_SEED_AMBASSADORS.length;
+        totalAmb = ambList ? ambList.length : 0;
       }
       if (avuCirculation === 0) {
         const walletsList = await db.getWallets();
-        const sumW = walletsList.reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
-        avuCirculation = sumW > 0 ? sumW : INITIAL_SEED_WALLETS.reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
+        const sumW = (walletsList || []).reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
+        avuCirculation = sumW;
       }
       if (pendingCnt === 0 || compVal === 0) {
         const wList = await db.getAvuWithdrawals();
-        const pendingW = wList.filter(w => (w.status || "").toLowerCase() === "pending");
-        const approvedW = wList.filter(w => (w.status || "").toLowerCase() === "approved");
-        if (pendingCnt === 0) {
-          pendingCnt = pendingW.length || 5;
-          pendingVal = pendingW.length > 0
-            ? pendingW.reduce((sum, r) => sum + (Number(r.requested_avu || r.avu_amount || 0)), 0)
-            : 23200;
+        const pendingW = (wList || []).filter(w => (w.status || "").toLowerCase() === "pending");
+        const approvedW = (wList || []).filter(w => (w.status || "").toLowerCase() === "approved");
+        if (pendingCnt === 0 && pendingW.length > 0) {
+          pendingCnt = pendingW.length;
+          pendingVal = pendingW.reduce((sum, r) => sum + (Number(r.requested_avu || r.avu_amount || 0)), 0);
         }
-        if (compVal === 0) {
-          compVal = approvedW.length > 0
-            ? approvedW.reduce((sum, r) => sum + (Number(r.requested_avu || r.avu_amount || 0)), 0)
-            : 33500;
-          compNaira = approvedW.length > 0
-            ? approvedW.reduce((sum, r) => sum + (Number(r.naira_equivalent) || ((Number(r.requested_avu || r.avu_amount || 0)) * 1000)), 0)
-            : 33500000;
+        if (compVal === 0 && approvedW.length > 0) {
+          compVal = approvedW.reduce((sum, r) => sum + (Number(r.requested_avu || r.avu_amount || 0)), 0);
+          compNaira = approvedW.reduce(
+            (sum, r) => sum + (Number(r.naira_equivalent) || ((Number(r.requested_avu || r.avu_amount || 0)) * 1000)),
+            0
+          );
         }
       }
 
@@ -764,16 +752,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       if (!walletsData || walletsData.length === 0) {
         walletsData = await db.getWallets();
       }
-      if (!walletsData || walletsData.length === 0) {
-        walletsData = INITIAL_SEED_WALLETS;
-      }
+      walletsData = walletsData || [];
       setWallets(walletsData);
 
       // Compute Total AVU In Circulation
       let avuCirculation = walletsData.reduce((sum, w: any) => sum + (Number(w.balance) || 0), 0);
-      if (avuCirculation === 0) {
-        avuCirculation = INITIAL_SEED_WALLETS.reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
-      }
 
       // 3. Process Ambassadors
       const depositsData: DbDeposit[] = depositsRes || [];
@@ -829,22 +812,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       if (!allAmbassadors || allAmbassadors.length === 0) {
         allAmbassadors = await db.getAmbassadors();
       }
-      if (!allAmbassadors || allAmbassadors.length === 0) {
-        allAmbassadors = INITIAL_SEED_AMBASSADORS;
-      }
+      allAmbassadors = allAmbassadors || [];
       setAmbassadors(allAmbassadors);
 
       // Compute Total Registered Ambassadors Count
       let totalAmb = typeof ambCountRes?.count === "number" && ambCountRes.count > 0 
         ? ambCountRes.count 
         : allAmbassadors.length;
-      if (totalAmb === 0) totalAmb = INITIAL_SEED_AMBASSADORS.length;
 
       // 4. Process Withdrawals & Metrics
       let allWithdrawalsList: DbAvuWithdrawal[] = allWithdrawalsRes || [];
-      if (!allWithdrawalsList || allWithdrawalsList.length === 0) {
-        allWithdrawalsList = INITIAL_SEED_WITHDRAWALS;
-      }
       setWithdrawals(allWithdrawalsList);
 
       // Pending Withdrawals Count & Value
@@ -858,10 +835,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         const pendingW = allWithdrawalsList.filter(w => (w.status || "").toLowerCase() === "pending");
         pendingCnt = pendingW.length;
         pendingVal = pendingW.reduce((sum, r) => sum + (Number(r.requested_avu || r.avu_amount || 0)), 0);
-      }
-      if (pendingCnt === 0) {
-        pendingCnt = 5;
-        pendingVal = 23200;
       }
 
       // Completed Liquidations Value & Naira
@@ -879,22 +852,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         compVal = approvedW.reduce((sum, r) => sum + (Number(r.requested_avu || r.avu_amount || 0)), 0);
         compNaira = approvedW.reduce((sum, r) => sum + (Number(r.naira_equivalent) || ((Number(r.requested_avu || r.avu_amount || 0)) * 1000)), 0);
       }
-      if (compVal === 0) {
-        compVal = 33500;
-        compNaira = 33500000;
-      }
 
       // 5. Update Remaining States
-      const allActivities = activitiesRes && activitiesRes.length > 0 ? activitiesRes : INITIAL_SEED_ACTIVITIES;
+      const allActivities = activitiesRes && activitiesRes.length > 0 ? activitiesRes : [];
       setActivities(allActivities);
 
-      const allBlogs = blogsRes && blogsRes.length > 0 ? blogsRes : INITIAL_SEED_BLOGS;
+      const allBlogs = blogsRes && blogsRes.length > 0 ? blogsRes : [];
       setBlogs(allBlogs);
 
-      const allAuditLogs = auditLogsRes && auditLogsRes.length > 0 ? auditLogsRes : INITIAL_SEED_AUDIT_LOGS;
+      const allAuditLogs = auditLogsRes && auditLogsRes.length > 0 ? auditLogsRes : [];
       setAuditLogs(allAuditLogs);
 
-      const allSentEmails = sentEmailsRes && sentEmailsRes.length > 0 ? sentEmailsRes : INITIAL_SEED_SENT_EMAILS;
+      const allSentEmails = sentEmailsRes && sentEmailsRes.length > 0 ? sentEmailsRes : [];
       setSentEmails(allSentEmails);
 
       // 6. Synchronize KPI State
@@ -3121,7 +3090,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                       </div>
                       <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 shadow-sm space-y-1">
                         <span className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider block">Approved & Deducted</span>
-                        <p className="text-xl font-black text-emerald-900 font-mono">{approvedWithdrawalsCount || (kpiMetrics.completedLiquidationsValue > 0 ? 3 : 0)}</p>
+                        <p className="text-xl font-black text-emerald-900 font-mono">{approvedWithdrawalsCount}</p>
                       </div>
                       <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/80 shadow-sm space-y-1">
                         <span className="text-[10px] font-extrabold text-rose-700 uppercase tracking-wider block">Disapproved</span>
