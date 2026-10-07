@@ -1551,9 +1551,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
       let result;
       if (newStatus === "Approved") {
-        result = await handleApprove(withdrawalId, adminId);
+        result = await handleApprove(
+          withdrawalId,
+          adminId,
+          currentAdmin?.email,
+          adminNotes[withdrawalId]
+        );
       } else {
-        result = await handleReject(withdrawalId, adminId);
+        result = await handleReject(
+          withdrawalId,
+          adminId,
+          currentAdmin?.email,
+          adminNotes[withdrawalId]
+        );
       }
 
       if (result.success) {
@@ -1572,14 +1582,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         );
 
         if (newStatus === "Approved") {
+          const newBal = result.newBalance;
+          if (newBal !== undefined) {
+            setAmbassadors(prev =>
+              prev.map(a => {
+                const isMatch =
+                  (withdrawal.ambassador_id && a.id && a.id.toLowerCase() === withdrawal.ambassador_id.toLowerCase()) ||
+                  (withdrawal.email && a.email && a.email.toLowerCase() === withdrawal.email.toLowerCase()) ||
+                  (withdrawal.ambassador_email && a.email && a.email.toLowerCase() === withdrawal.ambassador_email.toLowerCase()) ||
+                  (withdrawal.ambassador_name && a.professional_name && a.professional_name.toLowerCase() === withdrawal.ambassador_name.toLowerCase()) ||
+                  (withdrawal.ambassador_name && a.name && a.name.toLowerCase() === withdrawal.ambassador_name.toLowerCase());
+                return isMatch
+                  ? { ...a, avu_balance: newBal, ledger_balance: newBal, wallet_balance: newBal, balance: newBal }
+                  : a;
+              })
+            );
+          }
           addToast(
-            "Withdrawal Approved",
-            `Approved withdrawal of ${withdrawal.avu_amount} AVU (₦${withdrawal.naira_equivalent.toLocaleString()}) for ${withdrawal.ambassador_name}. Ambassador wallet deducted.`
+            "Withdrawal Approved & Deducted",
+            `Approved withdrawal of ${withdrawal.avu_amount || withdrawal.requested_avu} AVU (₦${(withdrawal.naira_equivalent || 0).toLocaleString()}) for ${withdrawal.ambassador_name}. Ambassador wallet balance deducted immediately.${newBal !== undefined ? ` New balance: ${newBal} AVU.` : ""}`,
+            "success"
           );
         } else {
           addToast(
             "Withdrawal Disapproved",
-            `Disapproved withdrawal request for ${withdrawal.ambassador_name}. Balance left untouched.`
+            `Disapproved withdrawal request for ${withdrawal.ambassador_name}. Balance left untouched.`,
+            "info"
           );
         }
         await fetchWithdrawals();
