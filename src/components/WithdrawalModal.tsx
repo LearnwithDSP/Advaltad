@@ -269,7 +269,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
 
       const compatiblePayload = {
         ambassador_id: targetAmbassadorId,
-        ambassador_name: targetName,
+        ambassador_name: targetName || accountName.trim() || "Ambassador",
         email: targetEmail || "ambassador@advaltad.org",
         ambassador_email: targetEmail || "ambassador@advaltad.org",
         current_balance: walletBalance,
@@ -280,7 +280,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
         conversion_rate: 1000,
         bank_name: effectiveBank,
         account_number: cleanAccount,
-        account_name: targetName,
+        account_name: accountName.trim() || targetName || "Beneficiary",
         status: "Pending" as const
       };
 
