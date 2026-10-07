@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { db, DbAmbassador, DbActivity, DbDeposit, DbAvuWithdrawal, isSupabaseConfigured, supabase, supabaseAdmin, extractExactAvuBalance, mapRowToAmbassador, fetchWalletBalance, handleWithdrawalSubmit, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace } from "../lib/supabase";
@@ -1770,10 +1770,10 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     if (!recipientSearchQuery.trim()) return true;
     const q = recipientSearchQuery.toLowerCase().trim();
     const ambId = (amb.ambassador_id || amb.user_id || amb.id || "").toLowerCase();
-    const name = (amb.name || "").toLowerCase();
+    const name = (amb.name || amb.professional_name || "").toLowerCase();
     const email = (amb.email || "").toLowerCase();
-    const city = (amb.city || "").toLowerCase();
-    const field = (amb.field || "").toLowerCase();
+    const city = (amb.city || amb.base_city || "").toLowerCase();
+    const field = (amb.field || amb.focus_interest || "").toLowerCase();
     return name.includes(q) || ambId.includes(q) || email.includes(q) || city.includes(q) || field.includes(q);
   });
 
@@ -1782,6 +1782,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     const target = transferTargetId.trim().toLowerCase();
     return (
       (amb.id && amb.id.toLowerCase() === target) ||
+      (amb.user_id && amb.user_id.toLowerCase() === target) ||
+      (amb.db_id && amb.db_id.toLowerCase() === target) ||
+      (amb.ambassador_id && amb.ambassador_id.toLowerCase() === target) ||
       (amb.email && amb.email.toLowerCase() === target)
     );
   });
@@ -2193,12 +2196,41 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
     };
   };
 
-  // Pre-fetch & validate balance when entering P2P tab
+  // Load and refresh recipient ambassadors for P2P Transfer
+  const fetchRecipients = useCallback(async () => {
+    try {
+      if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+        const client = supabaseAdmin || supabase;
+        let res = await client.from("ambassadors").select("*");
+        if (res.error) {
+          const fb = await client.from("Ambassadors").select("*");
+          if (!fb.error && fb.data) res = fb;
+        }
+        if (res.data && res.data.length > 0) {
+          const mapped = res.data.map(mapRowToAmbassador);
+          setDbAmbassadors(mapped);
+          return mapped;
+        }
+      }
+      const list = await db.getAmbassadors();
+      if (list && list.length > 0) {
+        setDbAmbassadors(list);
+        return list;
+      }
+    } catch (err) {
+      console.warn("[AmbassadorDashboard] Error fetching recipients for P2P:", err);
+    }
+  }, []);
+
+  // Pre-fetch & validate balance when entering P2P tab, and ensure recipient list is loaded
   useEffect(() => {
     if (activeTab === "p2p") {
       fetchAndValidateSenderBalance();
+      if (dbAmbassadors.length === 0) {
+        fetchRecipients();
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, dbAmbassadors.length, fetchRecipients]);
 
   const handleP2PTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3328,9 +3360,9 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         onChange={(e) => {
                           const val = e.target.value;
                           setTransferTargetId(val);
-                          const match = approvedOtherAmbassadors.find(a => a.id === val || a.email === val);
+                          const match = approvedOtherAmbassadors.find(a => a.id === val || a.email === val || a.user_id === val || a.db_id === val);
                           if (match) {
-                            setRecipientSearchQuery(`${match.name} (${match.city})`);
+                            setRecipientSearchQuery(`${match.name || match.professional_name || "Ambassador"} (${match.city || match.base_city || "Nigeria"})`);
                           } else {
                             setRecipientSearchQuery("");
                           }
@@ -3338,13 +3370,18 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
                       >
                         <option value="" className="bg-slate-900 text-slate-400">
-                          -- Choose Recipient Ambassador --
+                          {approvedOtherAmbassadors.length === 0 ? "-- Loading Recipient Ambassadors... --" : "-- Choose Recipient Ambassador --"}
                         </option>
-                        {approvedOtherAmbassadors.map((amb) => (
-                          <option key={amb.id || amb.email} value={amb.id || amb.email} className="bg-slate-900 text-white">
-                            {amb.name} ({amb.city}) - {amb.email}
-                          </option>
-                        ))}
+                        {approvedOtherAmbassadors.map((amb) => {
+                          const ambName = amb.name || amb.professional_name || (amb.email ? amb.email.split("@")[0] : "Ambassador");
+                          const ambCity = amb.city || amb.base_city || "Nigeria";
+                          const ambVal = amb.id || amb.email;
+                          return (
+                            <option key={ambVal} value={ambVal} className="bg-slate-900 text-white">
+                              {ambName} ({ambCity}) - {amb.email}
+                            </option>
+                          );
+                        })}
                       </select>
 
                       {/* Search Combobox Input */}
@@ -3379,18 +3416,23 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                             className="absolute z-50 left-0 right-0 mt-1 max-h-52 overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 space-y-1"
                           >
                             {filteredCandidateAmbassadors.length === 0 ? (
-                              <div className="p-3 text-center text-xs text-slate-500 font-medium">No matching ambassadors found</div>
+                              <div className="p-3 text-center text-xs text-slate-500 font-medium">
+                                {approvedOtherAmbassadors.length === 0 ? "Loading ambassadors..." : "No matching ambassadors found"}
+                              </div>
                             ) : (
                               filteredCandidateAmbassadors.map(amb => {
                                 const ambVal = amb.id || amb.email;
                                 const isSelected = transferTargetId === ambVal;
+                                const ambName = amb.name || amb.professional_name || (amb.email ? amb.email.split("@")[0] : "Ambassador");
+                                const ambCity = amb.city || amb.base_city || "Nigeria";
+                                const ambField = amb.field || amb.focus_interest || "Fellowship";
                                 return (
                                   <button
                                     key={ambVal}
                                     type="button"
                                     onClick={() => {
                                       setTransferTargetId(ambVal);
-                                      setRecipientSearchQuery(`${amb.name} (${amb.city})`);
+                                      setRecipientSearchQuery(`${ambName} (${ambCity})`);
                                       setIsRecipientDropdownOpen(false);
                                     }}
                                     className={`w-full text-left p-2.5 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer ${
@@ -3398,8 +3440,8 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                                     }`}
                                   >
                                     <div>
-                                      <div className="font-bold">{amb.name}</div>
-                                      <div className="text-[10px] text-slate-400">{amb.city} • {amb.field}</div>
+                                      <div className="font-bold">{ambName}</div>
+                                      <div className="text-[10px] text-slate-400">{ambCity} • {ambField}</div>
                                     </div>
                                     <div className="text-right">
                                       <span className="text-[10px] font-mono text-emerald-400 font-bold">{(amb.avu_balance || 0).toLocaleString()} AVU</span>
@@ -3418,11 +3460,11 @@ export const AmbassadorDashboard: React.FC<AmbassadorDashboardProps> = ({ onLogo
                       <div className="p-3.5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center">
-                            {selectedRecipient.name.substring(0, 2).toUpperCase()}
+                            {(selectedRecipient.name || selectedRecipient.professional_name || "AM").substring(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-bold text-white">{selectedRecipient.name}</p>
-                            <p className="text-[10px] text-slate-400">{selectedRecipient.city}</p>
+                            <p className="font-bold text-white">{selectedRecipient.name || selectedRecipient.professional_name || "Ambassador"}</p>
+                            <p className="text-[10px] text-slate-400">{selectedRecipient.city || selectedRecipient.base_city || "Nigeria"}</p>
                           </div>
                         </div>
                         <span className="text-[10px] font-mono text-emerald-400 font-bold">Verified Ambassador</span>
