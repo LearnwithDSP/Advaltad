@@ -580,15 +580,15 @@ export async function fetchWalletBalance(identifier?: string | null): Promise<nu
       // Tier 1: Query ambassadors / Ambassadors table
       for (const tableName of ["ambassadors", "Ambassadors"]) {
         try {
-          let query = client.from(tableName).select("id, user_id, email, avu_balance, ledger_balance, points, tokens, avu_tokens, wallet_balance, balance");
+          let query = client.from(tableName).select("*");
           if (targetEmail) {
             query = query.ilike("email", targetEmail);
           } else if (isStrictUuid) {
-            query = query.or(`id.eq.${cleanId},user_id.eq.${cleanId}`);
-          } else if (targetDbId) {
-            query = query.or(`id.eq.${targetDbId},user_id.eq.${targetDbId}`);
+            query = query.eq("id", cleanId);
+          } else if (targetDbId && isUuid(targetDbId)) {
+            query = query.eq("id", targetDbId);
           } else {
-            query = query.eq("ambassador_id", cleanId);
+            query = query.ilike("email", cleanLower);
           }
 
           const { data, error } = await query.maybeSingle();
@@ -714,27 +714,32 @@ export const db = {
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       try {
         const client = supabaseAdmin || supabase;
-        let tableToUse = "ambassadors";
         let { data, error } = await client
           .from("ambassadors")
           .select("*")
           .order("created_at", { ascending: false });
         
-        if (error || !data) {
-          tableToUse = "Ambassadors";
-          const fallback = await client
-            .from("Ambassadors")
-            .select("*")
-            .order("created_at", { ascending: false });
-          data = fallback.data;
-          error = fallback.error;
+        if (error || !data || data.length === 0) {
+          // Fallback 1: Query ambassadors without ordering in case created_at column is missing
+          const fallbackNoOrder = await client.from("ambassadors").select("*");
+          if (!fallbackNoOrder.error && fallbackNoOrder.data && fallbackNoOrder.data.length > 0) {
+            data = fallbackNoOrder.data;
+            error = null;
+          } else {
+            // Fallback 2: Check capitalized Ambassadors table
+            const fallbackCap = await client.from("Ambassadors").select("*");
+            if (!fallbackCap.error && fallbackCap.data && fallbackCap.data.length > 0) {
+              data = fallbackCap.data;
+              error = null;
+            }
+          }
         }
 
-        if (!error && data) {
+        if (!error && data && data.length > 0) {
           resultList = data.map(mapRowToAmbassador);
         }
       } catch (err) {
-        console.warn("Supabase fetch notice:", err);
+        console.warn("Supabase fetch notice in getAmbassadors:", err);
       }
     }
 
@@ -2844,22 +2849,42 @@ export const db = {
           } catch (_) {}
         }
 
-        const payload: any = {
+        const verifiedPayload: any = {
           id: fresh.id,
-          ambassador_id: validAmbId || "dfc61d53-827b-461d-8bc5-0506b529de7e",
+          ambassador_name: fresh.ambassador_name,
+          email: fresh.email,
           requested_avu: reqAmount,
           naira_equivalent: nairaEq,
           bank_name: fresh.bank_name,
           account_number: fresh.account_number,
           account_name: fresh.account_name,
-          ambassador_name: fresh.ambassador_name,
-          email: fresh.email,
-          current_balance: Number(fresh.current_balance || 0),
-          status: "Pending",
+          status: "pending",
           created_at: timestamp
         };
 
-        const { data: inserted, error: insErr } = await client.from("avu_withdrawals").insert([payload]).select().maybeSingle();
+        if (validAmbId && isUuid(validAmbId)) {
+          verifiedPayload.ambassador_id = validAmbId;
+        }
+
+        let { data: inserted, error: insErr } = await client.from("avu_withdrawals").insert([verifiedPayload]).select().maybeSingle();
+
+        // If insert failed due to column mismatch (e.g. ambassador_id column does not exist)
+        if (insErr) {
+          console.warn("[db.createAvuWithdrawal] Primary insert warning, retrying with clean schema:", insErr.message);
+          delete verifiedPayload.ambassador_id;
+          let retryRes = await client.from("avu_withdrawals").insert([verifiedPayload]).select().maybeSingle();
+          if (retryRes.error) {
+            // Try with titlecase "Pending" in case check constraint requires titlecase
+            verifiedPayload.status = "Pending";
+            let retryRes2 = await client.from("avu_withdrawals").insert([verifiedPayload]).select().maybeSingle();
+            inserted = retryRes2.data;
+            insErr = retryRes2.error;
+          } else {
+            inserted = retryRes.data;
+            insErr = null;
+          }
+        }
+
         if (!insErr && inserted) {
           if (inserted.id) fresh.id = inserted.id;
           serverSaved = true;
@@ -3036,7 +3061,7 @@ export async function handleApprove(
     const reviewer = adminEmail || "Executive Treasury Admin";
     const timestamp = new Date().toISOString();
 
-    // 0. Primary attempt via serverless /api/withdraw-action
+    // 0. Primary attempt via server /api/withdraw-action route (atomic transaction)
     try {
       const apiRes = await fetch("/api/withdraw-action", {
         method: "POST",
@@ -3052,6 +3077,12 @@ export async function handleApprove(
       if (apiRes.ok) {
         const json = await apiRes.json();
         if (json?.success) {
+          const newBal = json.newBalance;
+          const reqAmt = json.requestedAmount;
+          const ambId = json.ambassadorId;
+          const ambEmail = json.ambassadorEmail;
+          const ambName = json.ambassadorName;
+
           if (typeof window !== "undefined") {
             const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
             if (localData) {
@@ -3068,144 +3099,247 @@ export async function handleApprove(
                 }
               } catch (_) {}
             }
-            if (json.newBalance !== undefined) {
-              localStorage.setItem("advaltad_cached_wallet_balance", String(json.newBalance));
+
+            const localAmbs = localStorage.getItem("advaltad_ambassadors");
+            if (localAmbs && newBal !== undefined) {
+              try {
+                const ambList = JSON.parse(localAmbs);
+                for (let i = 0; i < ambList.length; i++) {
+                  const a = ambList[i];
+                  if (
+                    (ambId && a.id && a.id.toLowerCase() === ambId.toLowerCase()) ||
+                    (ambEmail && a.email && a.email.toLowerCase() === ambEmail.toLowerCase())
+                  ) {
+                    ambList[i].avu_balance = newBal;
+                    ambList[i].ledger_balance = newBal;
+                    ambList[i].wallet_balance = newBal;
+                    ambList[i].balance = newBal;
+                  }
+                }
+                localStorage.setItem("advaltad_ambassadors", JSON.stringify(ambList));
+              } catch (_) {}
+            }
+
+            if (newBal !== undefined) {
+              localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
             }
             localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
-            window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: withdrawalId, status: "Approved" } }));
-            window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", { detail: { balance: json.newBalance } }));
+            localStorage.setItem("advaltad_wallet_sync_ping", JSON.stringify({
+              ambassadorId: ambId,
+              email: ambEmail,
+              newBalance: newBal,
+              deductedAmount: reqAmt,
+              timestamp: Date.now()
+            }));
+
+            // Step 3: Trigger UI state update for ambassador's dashboard
+            window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", {
+              detail: { id: withdrawalId, status: "Approved", ambassadorId: ambId, newBalance: newBal }
+            }));
+            window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", {
+              detail: {
+                ambassadorId: ambId,
+                email: ambEmail,
+                newBalance: newBal,
+                deductedAmount: reqAmt,
+                timestamp: Date.now()
+              }
+            }));
           }
-          return { success: true, newBalance: json.newBalance, requestedAmount: json.requestedAmount };
+
+          try {
+            await db.logActivity({
+              ambassador_id: ambId || withdrawalId,
+              ambassador_name: ambName || "Ambassador",
+              type: "avu_transfer",
+              desc: `Withdrawal Approved: Deducted ${reqAmt} AVU. New balance: ${newBal} AVU.`,
+              amount: `-${reqAmt} AVU`
+            });
+
+            await db.createAuditLog({
+              admin_id: effectiveAdminId,
+              admin_name: reviewer,
+              admin_email: adminEmail || "treasury@advaltad.org",
+              ambassador_id: ambId || withdrawalId,
+              ambassador_name: ambName || "Ambassador",
+              action: "approved"
+            });
+          } catch (_) {}
+
+          return { success: true, newBalance: newBal, requestedAmount: reqAmt, data: json };
+        } else if (json?.error) {
+          throw new Error(json.error);
         }
       }
+    } catch (apiErr: any) {
+      if (apiErr?.message && !apiErr.message.includes("fetch") && !apiErr.message.includes("Unexpected token") && !apiErr.message.includes("NetworkError")) {
+        throw apiErr;
+      }
+      console.warn("[handleApprove] /api/withdraw-action fallback to direct client transaction:", apiErr?.message);
+    }
+
+    if (!isSupabaseConfigured || (!supabase && !supabaseAdmin)) {
+      throw new Error("Supabase is not configured.");
+    }
+    const client = supabaseAdmin || supabase;
+
+    // 1. Locate the withdrawal request record from avu_withdrawals table
+    let wRow: any = null;
+    try {
+      const { data, error } = await client
+        .from("avu_withdrawals")
+        .select("*")
+        .eq("id", withdrawalId)
+        .maybeSingle();
+      if (!error && data) {
+        wRow = data;
+      }
+    } catch (e) {
+      console.warn("[handleApprove] Query avu_withdrawals note:", e);
+    }
+
+    if (!wRow) {
+      // Fallback check across cache / local list
+      const allWithdrawals = await db.getAvuWithdrawals();
+      const cachedW = allWithdrawals.find(w => w.id === withdrawalId);
+      if (cachedW) {
+        wRow = cachedW;
+      }
+    }
+
+    if (!wRow) {
+      throw new Error(`Withdrawal request with ID "${withdrawalId}" could not be located in database.`);
+    }
+
+    const requestedAmount = Number(wRow.requested_avu ?? wRow.avu_amount ?? wRow.amount ?? 0);
+    const targetEmail = (wRow.email || wRow.ambassador_email || "").trim().toLowerCase();
+    const targetAmbId = (wRow.ambassador_id || "").trim();
+    const targetName = (wRow.ambassador_name || wRow.account_name || "").trim();
+
+    // 2. Locate the Ambassador record in ambassadors table
+    let ambRow: any = null;
+
+    // a) Try by ambassador_id if it is a valid UUID
+    if (targetAmbId && isUuid(targetAmbId)) {
+      const { data: byId } = await client
+        .from("ambassadors")
+        .select("id, professional_name, email, avu_balance, badge_status")
+        .eq("id", targetAmbId)
+        .maybeSingle();
+      if (byId) ambRow = byId;
+    }
+
+    // b) Try by email
+    if (!ambRow && targetEmail) {
+      const { data: byEmail } = await client
+        .from("ambassadors")
+        .select("id, professional_name, email, avu_balance, badge_status")
+        .ilike("email", targetEmail)
+        .maybeSingle();
+      if (byEmail) ambRow = byEmail;
+    }
+
+    // c) Try by professional_name
+    if (!ambRow && targetName) {
+      const { data: byName } = await client
+        .from("ambassadors")
+        .select("id, professional_name, email, avu_balance, badge_status")
+        .ilike("professional_name", targetName)
+        .maybeSingle();
+      if (byName) ambRow = byName;
+    }
+
+    // d) If still not found, fetch all ambassadors and match in-memory
+    if (!ambRow) {
+      const { data: allAmbs } = await client
+        .from("ambassadors")
+        .select("id, professional_name, email, avu_balance, badge_status");
+      if (allAmbs && allAmbs.length > 0) {
+        ambRow = allAmbs.find((a: any) =>
+          (targetEmail && a.email && a.email.toLowerCase().trim() === targetEmail) ||
+          (targetAmbId && a.id && a.id.toLowerCase().trim() === targetAmbId.toLowerCase()) ||
+          (targetName && a.professional_name && a.professional_name.toLowerCase().trim() === targetName.toLowerCase())
+        );
+      }
+    }
+
+    if (!ambRow) {
+      throw new Error(`Could not find matching Ambassador in database for "${targetName || targetEmail}".`);
+    }
+
+    // 3. Compute exact deducted balance
+    const currentBal = Number(ambRow.avu_balance || 0);
+    const computedNewBal = Math.max(0, Number((currentBal - requestedAmount).toFixed(3)));
+
+    console.info(`[handleApprove] Deducting ${requestedAmount} AVU from Ambassador "${ambRow.professional_name || ambRow.email}". Previous: ${currentBal}, New: ${computedNewBal}`);
+
+    // 4. CRITICAL: Deduct exact AVU tokens from ambassador's wallet balance directly in ambassadors table
+    // Note: ambassadors schema contains ONLY: id, professional_name, base_city, focus_interest, email, phone_number, badge_status, avu_balance, created_at
+    const { error: deductErr } = await client
+      .from("ambassadors")
+      .update({ avu_balance: computedNewBal })
+      .eq("id", ambRow.id);
+
+    if (deductErr) {
+      console.error("[handleApprove] Failed to update ambassadors.avu_balance by ID:", deductErr);
+      // Secondary fallback: update by email
+      if (ambRow.email) {
+        const { error: deductEmailErr } = await client
+          .from("ambassadors")
+          .update({ avu_balance: computedNewBal })
+          .ilike("email", ambRow.email);
+        if (deductEmailErr) {
+          throw new Error(`Failed to deduct AVU balance in Supabase: ${deductErr.message}`);
+        }
+      } else {
+        throw new Error(`Failed to deduct AVU balance in Supabase: ${deductErr.message}`);
+      }
+    }
+
+    // 5. Update the withdrawal request status in avu_withdrawals table
+    // Try lowercase 'approved' first (matching schema), then 'Approved' if constraint requires
+    let { error: wUpErr } = await client
+      .from("avu_withdrawals")
+      .update({ status: "approved" })
+      .eq("id", withdrawalId);
+
+    if (wUpErr) {
+      console.warn("[handleApprove] Lowercase 'approved' update warning, trying 'Approved':", wUpErr.message);
+      const retryRes = await client
+        .from("avu_withdrawals")
+        .update({ status: "Approved" })
+        .eq("id", withdrawalId);
+      if (retryRes.error) {
+        console.error("[handleApprove] Failed to update avu_withdrawals status:", retryRes.error);
+      }
+    }
+
+    // Optional non-blocking metadata update on avu_withdrawals
+    try {
+      await client
+        .from("avu_withdrawals")
+        .update({
+          admin_note: adminNote,
+          reviewed_by: reviewer,
+          reviewed_at: timestamp
+        })
+        .eq("id", withdrawalId);
     } catch (_) {}
 
-    // 1. Locate the withdrawal request record
-    const allWithdrawals = await db.getAvuWithdrawals();
-    let target = allWithdrawals.find(w => w.id === withdrawalId);
-
-    // If not in cache, query Supabase directly
-    if (!target && isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      const client = supabaseAdmin || supabase;
-      const { data: wRow } = await client.from("avu_withdrawals").select("*").eq("id", withdrawalId).maybeSingle();
-      if (wRow) {
-        target = {
-          id: wRow.id,
-          ambassador_id: wRow.ambassador_id || "",
-          ambassador_name: wRow.ambassador_name || wRow.account_name || "Ambassador",
-          email: wRow.email || wRow.ambassador_email || "",
-          ambassador_email: wRow.ambassador_email || wRow.email || "",
-          current_balance: Number(wRow.current_balance || 0),
-          requested_avu: Number(wRow.requested_avu ?? wRow.avu_amount ?? wRow.amount ?? 0),
-          bank_name: wRow.bank_name || "",
-          account_number: wRow.account_number || "",
-          account_name: wRow.account_name || "",
-          avu_amount: Number(wRow.avu_amount ?? wRow.requested_avu ?? wRow.amount ?? 0),
-          naira_equivalent: Number(wRow.naira_equivalent || 0),
-          conversion_rate: Number(wRow.conversion_rate || 1000),
-          status: "Pending",
-          created_at: wRow.created_at || timestamp
-        };
-      }
-    }
-
-    const requestedAmount = Number(target?.requested_avu ?? target?.avu_amount ?? 0);
-    const targetAmbassadorId = target?.ambassador_id || "";
-    const targetEmail = target?.ambassador_email || target?.email || "";
-    const targetName = target?.ambassador_name || target?.account_name || "Ambassador";
-
-    // 2. Attempt Supabase RPC execution if available
-    if (isSupabaseConfigured && supabase) {
+    // 6. Optional update to secondary wallet tables if present (non-blocking)
+    for (const wTable of ["ambassador_wallets", "ambassador_wallet", "wallets"]) {
       try {
-        await supabase.rpc("approve_avu_withdrawal", {
-          p_withdrawal_id: withdrawalId,
-          p_admin_id: effectiveAdminId
-        });
+        let q = client.from(wTable).update({ avu_balance: computedNewBal, balance: computedNewBal });
+        if (ambRow.id && isUuid(ambRow.id)) {
+          q = q.eq("ambassador_id", ambRow.id);
+        } else if (ambRow.email) {
+          q = q.ilike("email", ambRow.email);
+        }
+        await q;
       } catch (_) {}
     }
 
-    // 3. Guarantee record status update on avu_withdrawals table in Supabase
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      const client = supabaseAdmin || supabase;
-      const updatePayload: any = {
-        status: "Approved",
-        updated_at: timestamp
-      };
-
-      try {
-        await client.from("avu_withdrawals").update(updatePayload).eq("id", withdrawalId);
-      } catch (_) {}
-    }
-
-    // 4. CRITICAL: Deduct exact AVU tokens from ambassador's wallet across all tables in Supabase
-    let computedNewBal = 0;
-    let balanceUpdated = false;
-
-    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
-      const client = supabaseAdmin || supabase;
-      try {
-        // Query ambassadors / Ambassadors table
-        for (const tName of ["ambassadors", "Ambassadors"]) {
-          let q = client.from(tName).select("id, email, avu_balance, wallet_balance, balance");
-          if (targetAmbassadorId && isUuid(targetAmbassadorId)) {
-            q = q.or(`id.eq.${targetAmbassadorId},user_id.eq.${targetAmbassadorId}` + (targetEmail ? `,email.ilike.${targetEmail}` : ""));
-          } else if (targetEmail) {
-            q = q.ilike("email", targetEmail);
-          } else if (targetAmbassadorId) {
-            q = q.eq("id", targetAmbassadorId);
-          }
-
-          const { data: ambRow } = await q.maybeSingle();
-          if (ambRow) {
-            const currentBal = Number(ambRow.avu_balance ?? ambRow.wallet_balance ?? ambRow.balance ?? 0);
-            computedNewBal = Math.max(0, Number((currentBal - requestedAmount).toFixed(3)));
-            balanceUpdated = true;
-
-            await client.from(tName).update({
-              avu_balance: computedNewBal,
-              wallet_balance: computedNewBal,
-              balance: computedNewBal,
-              updated_at: timestamp
-            }).eq("id", ambRow.id);
-          }
-        }
-
-        // Also update ambassador_wallet (singular) & ambassador_wallets (plural)
-        for (const wTable of ["ambassador_wallet", "ambassador_wallets"]) {
-          try {
-            let currentWBal = computedNewBal;
-            if (!balanceUpdated) {
-              let wSel = client.from(wTable).select("balance, avu_balance");
-              if (targetAmbassadorId && isUuid(targetAmbassadorId)) wSel = wSel.eq("ambassador_id", targetAmbassadorId);
-              else if (targetEmail) wSel = wSel.ilike("email", targetEmail);
-              const { data: wRow } = await wSel.maybeSingle();
-              if (wRow) {
-                const prevW = Number(wRow.balance ?? wRow.avu_balance ?? 0);
-                computedNewBal = Math.max(0, Number((prevW - requestedAmount).toFixed(3)));
-                currentWBal = computedNewBal;
-                balanceUpdated = true;
-              }
-            }
-
-            let wQ = client.from(wTable).update({
-              balance: currentWBal,
-              avu_balance: currentWBal,
-              updated_at: timestamp
-            });
-            if (targetAmbassadorId && isUuid(targetAmbassadorId)) {
-              wQ = wQ.eq("ambassador_id", targetAmbassadorId);
-            } else if (targetEmail) {
-              wQ = wQ.ilike("email", targetEmail);
-            }
-            await wQ;
-          } catch (_) {}
-        }
-      } catch (deductErr) {
-        console.warn("[handleApprove] Supabase wallet deduction warning:", deductErr);
-      }
-    }
-
-    // 5. Update local storage mirrors and caches
+    // 7. Update local storage mirrors and caches
     if (typeof window !== "undefined") {
       // Update avu withdrawals local storage
       const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
@@ -3229,108 +3363,74 @@ export async function handleApprove(
       if (localAmbs) {
         try {
           const ambList = JSON.parse(localAmbs);
-          let updatedAmb = false;
           for (let i = 0; i < ambList.length; i++) {
             const a = ambList[i];
             if (
-              (targetAmbassadorId && a.id && a.id.toLowerCase() === targetAmbassadorId.toLowerCase()) ||
-              (targetAmbassadorId && a.user_id && a.user_id.toLowerCase() === targetAmbassadorId.toLowerCase()) ||
-              (targetEmail && a.email && a.email.toLowerCase() === targetEmail.toLowerCase())
+              (ambRow.id && a.id && a.id.toLowerCase() === ambRow.id.toLowerCase()) ||
+              (ambRow.email && a.email && a.email.toLowerCase() === ambRow.email.toLowerCase())
             ) {
-              const prev = Number(a.avu_balance ?? a.wallet_balance ?? 0);
-              if (!balanceUpdated) {
-                computedNewBal = Math.max(0, Number((prev - requestedAmount).toFixed(3)));
-              }
               ambList[i].avu_balance = computedNewBal;
               ambList[i].ledger_balance = computedNewBal;
               ambList[i].wallet_balance = computedNewBal;
               ambList[i].balance = computedNewBal;
-              updatedAmb = true;
             }
           }
-          if (updatedAmb) {
-            localStorage.setItem("advaltad_ambassadors", JSON.stringify(ambList));
-          }
+          localStorage.setItem("advaltad_ambassadors", JSON.stringify(ambList));
         } catch (_) {}
       }
 
-      // Update wallets local storage
-      const localWallets = localStorage.getItem("advaltad_wallets");
-      if (localWallets) {
-        try {
-          const wList = JSON.parse(localWallets);
-          let updatedW = false;
-          for (let i = 0; i < wList.length; i++) {
-            const w = wList[i];
-            if (
-              (targetAmbassadorId && w.ambassador_id && w.ambassador_id.toLowerCase() === targetAmbassadorId.toLowerCase()) ||
-              (targetEmail && w.email && w.email.toLowerCase() === targetEmail.toLowerCase())
-            ) {
-              wList[i].balance = computedNewBal;
-              updatedW = true;
-            }
-          }
-          if (updatedW) {
-            localStorage.setItem("advaltad_wallets", JSON.stringify(wList));
-          }
-        } catch (_) {}
-      }
+      // Update cached wallet balance
+      localStorage.setItem("advaltad_cached_wallet_balance", String(computedNewBal));
+      localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
+      localStorage.setItem("advaltad_wallet_sync_ping", JSON.stringify({
+        ambassadorId: ambRow.id,
+        email: ambRow.email,
+        newBalance: computedNewBal,
+        deductedAmount: requestedAmount,
+        timestamp: Date.now()
+      }));
 
-      // Update cached wallet balance if this session corresponds to the ambassador
-      const sessionEmail = localStorage.getItem("advaltad_session_email");
-      const sessionUserId = localStorage.getItem("advaltad_session_user_id");
-      if (
-        (sessionEmail && targetEmail && sessionEmail.toLowerCase() === targetEmail.toLowerCase()) ||
-        (sessionUserId && targetAmbassadorId && sessionUserId.toLowerCase() === targetAmbassadorId.toLowerCase())
-      ) {
-        localStorage.setItem("advaltad_cached_wallet_balance", String(computedNewBal));
-      }
-    }
-
-    // 6. Log activity and audit trail
-    await db.logActivity({
-      ambassador_id: targetAmbassadorId,
-      ambassador_name: targetName,
-      type: "avu_transfer",
-      desc: `Withdrawal Approved: Disbursed ₦${(target?.naira_equivalent || requestedAmount * 1000).toLocaleString()} to ${target?.bank_name || 'Bank'} (${target?.account_number || ''}). Deducted ${requestedAmount} AVU from balance. New balance: ${computedNewBal} AVU.`,
-      amount: `-${requestedAmount} AVU`
-    });
-
-    await db.createAuditLog({
-      admin_id: effectiveAdminId,
-      admin_name: reviewer,
-      admin_email: adminEmail || "treasury@advaltad.org",
-      ambassador_id: targetAmbassadorId,
-      ambassador_name: targetName,
-      action: "approved"
-    });
-
-    // 7. Dispatch events for real-time synchronization across all tabs and components
-    if (typeof window !== "undefined") {
+      // Broadcast events across components and tabs
       window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", {
-        detail: { id: withdrawalId, status: "Approved", ambassadorId: targetAmbassadorId, newBalance: computedNewBal }
+        detail: { id: withdrawalId, status: "Approved", ambassadorId: ambRow.id, newBalance: computedNewBal }
       }));
       window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", {
         detail: {
-          ambassadorId: targetAmbassadorId,
-          email: targetEmail,
+          ambassadorId: ambRow.id,
+          email: ambRow.email,
           newBalance: computedNewBal,
           deductedAmount: requestedAmount,
           timestamp: Date.now()
         }
       }));
-      // Cross-tab synchronization via localStorage pings
-      localStorage.setItem("advaltad_wallet_sync_ping", JSON.stringify({
-        ambassadorId: targetAmbassadorId,
-        email: targetEmail,
-        newBalance: computedNewBal,
-        deductedAmount: requestedAmount,
-        timestamp: Date.now()
-      }));
-      localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
     }
 
-    return { success: true, newBalance: computedNewBal, requestedAmount };
+    // 8. Log activity and audit trail
+    try {
+      await db.logActivity({
+        ambassador_id: ambRow.id,
+        ambassador_name: ambRow.professional_name || targetName,
+        type: "avu_transfer",
+        desc: `Withdrawal Approved: Disbursed ₦${Number(wRow.naira_equivalent || requestedAmount * 1000).toLocaleString()} to ${wRow.bank_name || 'Bank'} (${wRow.account_number || ''}). Deducted ${requestedAmount} AVU. New balance: ${computedNewBal} AVU.`,
+        amount: `-${requestedAmount} AVU`
+      });
+
+      await db.createAuditLog({
+        admin_id: effectiveAdminId,
+        admin_name: reviewer,
+        admin_email: adminEmail || "treasury@advaltad.org",
+        ambassador_id: ambRow.id,
+        ambassador_name: ambRow.professional_name || targetName,
+        action: "approved"
+      });
+    } catch (_) {}
+
+    return {
+      success: true,
+      newBalance: computedNewBal,
+      requestedAmount,
+      data: { id: withdrawalId, status: "Approved", ambassador_id: ambRow.id, newBalance: computedNewBal }
+    };
   } catch (err: any) {
     console.error("[handleApprove] Approval exception:", err);
     return { success: false, error: err };
@@ -3341,7 +3441,7 @@ export async function handleApprove(
  * Admin Processing Pending Requests - Reject / Disapprove
  * 
  * - Leaves ambassador balance untouched.
- * - Updates status to 'Disapproved' and notifies.
+ * - Updates status to 'rejected' / 'Disapproved' and notifies.
  */
 export async function handleReject(
   withdrawalId: string,
@@ -3356,73 +3456,39 @@ export async function handleReject(
     const reviewer = adminEmail || "Executive Treasury Admin";
     const timestamp = new Date().toISOString();
 
-    // 0. Primary attempt via serverless /api/withdraw-action
-    try {
-      const apiRes = await fetch("/api/withdraw-action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "reject",
-          withdrawal_id: withdrawalId,
-          admin_id: effectiveAdminId,
-          admin_email: reviewer,
-          admin_note: adminNote
-        })
-      });
-      if (apiRes.ok) {
-        const json = await apiRes.json();
-        if (json?.success) {
-          if (typeof window !== "undefined") {
-            const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
-            if (localData) {
-              try {
-                const list: DbAvuWithdrawal[] = JSON.parse(localData);
-                const idx = list.findIndex(w => w.id === withdrawalId);
-                if (idx !== -1) {
-                  list[idx].status = "Disapproved";
-                  list[idx].reviewed_by = reviewer;
-                  list[idx].reviewed_at = timestamp;
-                  if (adminNote) list[idx].admin_note = adminNote;
-                  list[idx].updated_at = timestamp;
-                  localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
-                }
-              } catch (_) {}
-            }
-            localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
-            window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: withdrawalId, status: "Disapproved" } }));
-          }
-          return { success: true };
-        }
-      }
-    } catch (_) {}
-
-    const allWithdrawals = await db.getAvuWithdrawals();
-    const target = allWithdrawals.find(w => w.id === withdrawalId);
-
-    // Call RPC if available
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.rpc("reject_avu_withdrawal", {
-          p_withdrawal_id: withdrawalId,
-          p_admin_id: effectiveAdminId
-        });
-      } catch (_) {}
-    }
-
-    // Direct table update
     if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
       const client = supabaseAdmin || supabase;
-      const updatePayload: any = {
-        status: "Disapproved",
-        updated_at: timestamp
-      };
+      let { error: rejErr } = await client
+        .from("avu_withdrawals")
+        .update({ status: "rejected" })
+        .eq("id", withdrawalId);
+
+      if (rejErr) {
+        let retryRes = await client
+          .from("avu_withdrawals")
+          .update({ status: "disapproved" })
+          .eq("id", withdrawalId);
+
+        if (retryRes.error) {
+          await client
+            .from("avu_withdrawals")
+            .update({ status: "Disapproved" })
+            .eq("id", withdrawalId);
+        }
+      }
 
       try {
-        await client.from("avu_withdrawals").update(updatePayload).eq("id", withdrawalId);
+        await client
+          .from("avu_withdrawals")
+          .update({
+            admin_note: adminNote,
+            reviewed_by: reviewer,
+            reviewed_at: timestamp
+          })
+          .eq("id", withdrawalId);
       } catch (_) {}
     }
 
-    // Update local storage
     if (typeof window !== "undefined") {
       const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
       if (localData) {
@@ -3443,14 +3509,27 @@ export async function handleReject(
       window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", { detail: { id: withdrawalId, status: "Disapproved" } }));
     }
 
-    if (target) {
-      await db.logActivity({
-        ambassador_id: target.ambassador_id,
-        ambassador_name: target.ambassador_name,
-        type: "status_change",
-        desc: `Withdrawal Disapproved: Request for ${target.requested_avu || target.avu_amount} AVU was rejected by treasury.${adminNote ? ` Note: ${adminNote}` : ""}`
+    let targetName = "Ambassador";
+    let targetAmbId = withdrawalId;
+    try {
+      const allW = await db.getAvuWithdrawals();
+      const match = allW.find(w => w.id === withdrawalId);
+      if (match) {
+        targetName = match.ambassador_name || match.account_name || "Ambassador";
+        targetAmbId = match.ambassador_id || withdrawalId;
+      }
+    } catch (_) {}
+
+    try {
+      await db.createAuditLog({
+        admin_id: effectiveAdminId,
+        admin_name: reviewer,
+        admin_email: adminEmail || "treasury@advaltad.org",
+        ambassador_id: targetAmbId,
+        ambassador_name: targetName,
+        action: "disapproved"
       });
-    }
+    } catch (_) {}
 
     return { success: true };
   } catch (err: any) {
