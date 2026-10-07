@@ -18,7 +18,7 @@ import {
   Mail,
   ChevronRight
 } from "lucide-react";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { supabase, isSupabaseConfigured, handleApprove as executeApprove, handleReject as executeReject } from "../../lib/supabase";
 
 // ----------------------------------------------------------------------------
 // Type Definitions
@@ -361,7 +361,8 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
 
   /**
    * Approve Action:
-   * Calls `supabase.rpc('approve_avu_withdrawal', { p_withdrawal_id: id, p_admin_id: adminId })`
+   * Deducts exact requested AVU from ambassador wallet in Supabase,
+   * updates status to 'Approved', and updates realtime state.
    */
   const handleApprove = async (withdrawal: AvuWithdrawalRecord) => {
     if (actionState.id) return; // Prevent duplicate or concurrent execution
@@ -374,69 +375,31 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
         ? adminId
         : "00000000-0000-0000-0000-000000000000";
 
-      console.log(`[Admin/PendingWithdrawals] Calling RPC 'approve_avu_withdrawal' for ID: ${targetId}...`);
+      console.log(`[Admin/PendingWithdrawals] Calling executeApprove for ID: ${targetId}...`);
 
-      const { data, error } = await supabase.rpc("approve_avu_withdrawal", {
-        p_withdrawal_id: targetId,
-        p_admin_id: effectiveAdminId
-      });
-
-      if (error) {
-        console.error("[Admin/PendingWithdrawals] RPC 'approve_avu_withdrawal' failed:", error);
-
-        // Check if error is due to insufficient balance
-        if (
-          error.message?.toLowerCase().includes("insufficient") ||
-          error.code === "P0001"
-        ) {
-          throw new Error("Ambassador has insufficient AVU balance to approve this withdrawal request.");
-        }
-
-        // Secondary resilient fallback: direct database update or serverless action
-        console.warn("[Admin/PendingWithdrawals] Falling back to direct status update for approval...");
-        const directRes = await supabase
-          .from("avu_withdrawals")
-          .update({
-            status: "Approved",
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", targetId);
-
-        if (directRes.error) {
-          // Try serverless API route fallback
-          const apiRes = await fetch("/api/withdraw-action", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "approve",
-              withdrawal_id: targetId,
-              admin_id: effectiveAdminId
-            })
-          });
-          const apiData = await apiRes.json().catch(() => ({}));
-          if (!apiRes.ok || !apiData.success) {
-            throw new Error(apiData.error || directRes.error.message || error.message);
-          }
-        }
-      } else if (data && data.success === false) {
-        throw new Error(data.error || "Approval RPC returned failure status.");
+      const res = await executeApprove(targetId, effectiveAdminId);
+      if (!res.success) {
+        throw res.error || new Error("Failed to process withdrawal approval and deduction.");
       }
 
       // Optimistic UI update: remove row immediately from pending queue
       setWithdrawals((prev) => prev.filter((item) => item.id !== targetId));
 
       const ambName = getAmbassadorDisplayName(withdrawal);
-      notifySuccess(`Approved liquidation of ${withdrawal.requested_avu} AVU for ${ambName}.`);
+      const requestedAmt = res.requestedAmount || withdrawal.requested_avu || 0;
+      const successMsg = `Approved liquidation of ${requestedAmt.toLocaleString()} AVU for ${ambName}. Balance deducted immediately.${res.newBalance !== undefined ? ` New balance: ${res.newBalance.toLocaleString()} AVU.` : ""}`;
+      notifySuccess(successMsg);
 
-      // Dispatch event for other dashboard widgets
-      window.dispatchEvent(
-        new CustomEvent("advaltad_withdrawals_updated", {
-          detail: { id: targetId, status: "Approved" }
-        })
-      );
+      if (onSuccessNotification) {
+        onSuccessNotification(successMsg);
+      }
     } catch (err: any) {
       console.error("[Admin/PendingWithdrawals] Approval execution error:", err);
-      notifyError(err?.message || "Failed to approve withdrawal request.");
+      const errMsg = err?.message || "Failed to approve withdrawal request.";
+      notifyError(errMsg);
+      if (onErrorNotification) {
+        onErrorNotification(errMsg);
+      }
     } finally {
       setActionState({ id: null, action: null });
     }
@@ -444,7 +407,7 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
 
   /**
    * Reject / Disapprove Action:
-   * Calls `supabase.rpc('reject_avu_withdrawal', { p_withdrawal_id: id, p_admin_id: adminId })`
+   * Leaves ambassador balance intact and updates withdrawal request to 'Disapproved'.
    */
   const handleReject = async (withdrawal: AvuWithdrawalRecord) => {
     if (actionState.id) return; // Prevent duplicate or concurrent execution
@@ -457,60 +420,30 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
         ? adminId
         : "00000000-0000-0000-0000-000000000000";
 
-      console.log(`[Admin/PendingWithdrawals] Calling RPC 'reject_avu_withdrawal' for ID: ${targetId}...`);
+      console.log(`[Admin/PendingWithdrawals] Calling executeReject for ID: ${targetId}...`);
 
-      const { data, error } = await supabase.rpc("reject_avu_withdrawal", {
-        p_withdrawal_id: targetId,
-        p_admin_id: effectiveAdminId
-      });
-
-      if (error) {
-        console.warn("[Admin/PendingWithdrawals] RPC 'reject_avu_withdrawal' note:", error.message);
-
-        // Resilient fallback: Direct status update to 'Disapproved'
-        const directRes = await supabase
-          .from("avu_withdrawals")
-          .update({
-            status: "Disapproved",
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", targetId);
-
-        if (directRes.error) {
-          // Try serverless API route fallback
-          const apiRes = await fetch("/api/withdraw-action", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "reject",
-              withdrawal_id: targetId,
-              admin_id: effectiveAdminId
-            })
-          });
-          const apiData = await apiRes.json().catch(() => ({}));
-          if (!apiRes.ok || !apiData.success) {
-            throw new Error(apiData.error || directRes.error.message || error.message);
-          }
-        }
-      } else if (data && data.success === false) {
-        throw new Error(data.error || "Reject RPC returned failure status.");
+      const res = await executeReject(targetId, effectiveAdminId);
+      if (!res.success) {
+        throw res.error || new Error("Failed to process disapproval.");
       }
 
       // Optimistic UI update: remove row immediately from pending queue
       setWithdrawals((prev) => prev.filter((item) => item.id !== targetId));
 
       const ambName = getAmbassadorDisplayName(withdrawal);
-      notifySuccess(`Disapproved withdrawal request for ${ambName}. Balance remains intact.`);
+      const infoMsg = `Disapproved withdrawal request for ${ambName}. Balance remains intact.`;
+      notifySuccess(infoMsg);
 
-      // Dispatch event for other dashboard widgets
-      window.dispatchEvent(
-        new CustomEvent("advaltad_withdrawals_updated", {
-          detail: { id: targetId, status: "Disapproved" }
-        })
-      );
+      if (onSuccessNotification) {
+        onSuccessNotification(infoMsg);
+      }
     } catch (err: any) {
       console.error("[Admin/PendingWithdrawals] Rejection execution error:", err);
-      notifyError(err?.message || "Failed to reject withdrawal request.");
+      const errMsg = err?.message || "Failed to reject withdrawal request.";
+      notifyError(errMsg);
+      if (onErrorNotification) {
+        onErrorNotification(errMsg);
+      }
     } finally {
       setActionState({ id: null, action: null });
     }
