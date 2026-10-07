@@ -590,25 +590,195 @@ export default defineConfig(({ mode }) => {
                   const note = String(admin_note || adminNote || '').trim();
                   const timestamp = new Date().toISOString();
 
-                  const statusTitle = isApprove ? 'Approved' : 'Disapproved';
+                  if (!targetId) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Withdrawal ID is required.' }));
+                    return;
+                  }
 
-                  try {
-                    const upRes = await supabaseClient.from('avu_withdrawals').update({
-                      status: statusTitle,
+                  // 1. Fetch withdrawal request record from avu_withdrawals
+                  const { data: wRow, error: wErr } = await supabaseClient
+                    .from('avu_withdrawals')
+                    .select('*')
+                    .eq('id', targetId)
+                    .maybeSingle();
+
+                  if (wErr || !wRow) {
+                    res.statusCode = 404;
+                    res.end(JSON.stringify({ success: false, error: wErr?.message || 'Withdrawal request not found in database.' }));
+                    return;
+                  }
+
+                  if (!isApprove) {
+                    // Reject / Disapprove Flow
+                    let rejRes = await supabaseClient.from('avu_withdrawals').update({
+                      status: 'Disapproved',
                       updated_at: timestamp
                     }).eq('id', targetId);
 
-                    if (upRes.error && (upRes.error.message?.includes('insufficient') || upRes.error.code === 'P0001')) {
-                      res.statusCode = 400;
-                      res.end(JSON.stringify({ success: false, error: 'Insufficient AVU balance in ambassador wallet to approve this withdrawal request.' }));
+                    if (rejRes.error) {
+                      await supabaseClient.from('avu_withdrawals').update({
+                        status: 'disapproved'
+                      }).eq('id', targetId);
+                    }
+
+                    try {
+                      await supabaseClient.from('avu_withdrawals').update({
+                        admin_note: note,
+                        reviewed_by: reviewer,
+                        reviewed_at: timestamp
+                      }).eq('id', targetId);
+                    } catch (_) {}
+
+                    res.statusCode = 200;
+                    res.end(JSON.stringify({ success: true, action: 'reject', status: 'Disapproved' }));
+                    return;
+                  }
+
+                  // APPROVE FLOW:
+                  // 2. Locate Ambassador record in ambassadors table
+                  const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
+                  const targetAmbId = String(wRow.ambassador_id || '').trim();
+                  const targetEmail = String(wRow.email || wRow.ambassador_email || '').trim().toLowerCase();
+                  const targetName = String(wRow.ambassador_name || wRow.account_name || '').trim();
+                  const requestedAmount = Number(wRow.requested_avu ?? wRow.avu_amount ?? wRow.amount ?? 0);
+
+                  let ambRow: any = null;
+
+                  if (targetAmbId && isUuid(targetAmbId)) {
+                    const { data: byId } = await supabaseClient
+                      .from('ambassadors')
+                      .select('*')
+                      .eq('id', targetAmbId)
+                      .maybeSingle();
+                    if (byId) ambRow = byId;
+                  }
+
+                  if (!ambRow && targetEmail) {
+                    const { data: byEmail } = await supabaseClient
+                      .from('ambassadors')
+                      .select('*')
+                      .ilike('email', targetEmail)
+                      .maybeSingle();
+                    if (byEmail) ambRow = byEmail;
+                  }
+
+                  if (!ambRow && targetName) {
+                    const { data: byName } = await supabaseClient
+                      .from('ambassadors')
+                      .select('*')
+                      .ilike('professional_name', targetName)
+                      .maybeSingle();
+                    if (byName) ambRow = byName;
+                  }
+
+                  if (!ambRow) {
+                    const { data: allAmbs } = await supabaseClient
+                      .from('ambassadors')
+                      .select('*');
+                    if (allAmbs && allAmbs.length > 0) {
+                      ambRow = allAmbs.find((a: any) =>
+                        (targetEmail && a.email && a.email.toLowerCase().trim() === targetEmail) ||
+                        (targetAmbId && a.id && a.id.toLowerCase().trim() === targetAmbId.toLowerCase()) ||
+                        (targetName && a.professional_name && a.professional_name.toLowerCase().trim() === targetName.toLowerCase())
+                      );
+                    }
+                  }
+
+                  if (!ambRow) {
+                    res.statusCode = 404;
+                    res.end(JSON.stringify({ success: false, error: `Ambassador account for "${targetName || targetEmail}" could not be located in database.` }));
+                    return;
+                  }
+
+                  const currentBal = Number(ambRow.avu_balance || 0);
+                  if (requestedAmount > currentBal) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({
+                      success: false,
+                      error: `Ambassador has insufficient AVU balance (${currentBal} AVU) for requested liquidation of ${requestedAmount} AVU.`
+                    }));
+                    return;
+                  }
+
+                  const newBalance = Math.max(0, Number((currentBal - requestedAmount).toFixed(3)));
+
+                  // 3. Execute Atomic Operations:
+                  // Step A: Update avu_withdrawals status to 'Approved'
+                  let upRes = await supabaseClient
+                    .from('avu_withdrawals')
+                    .update({ status: 'Approved', updated_at: timestamp })
+                    .eq('id', targetId);
+
+                  if (upRes.error) {
+                    upRes = await supabaseClient
+                      .from('avu_withdrawals')
+                      .update({ status: 'approved' })
+                      .eq('id', targetId);
+                  }
+
+                  if (upRes.error) {
+                    res.statusCode = 500;
+                    res.end(JSON.stringify({ success: false, error: upRes.error.message || 'Failed to update withdrawal status.' }));
+                    return;
+                  }
+
+                  // Step B: Deduct the requested amount from ambassador's avu_balance in ambassadors table
+                  const { error: ambDeductErr } = await supabaseClient
+                    .from('ambassadors')
+                    .update({ avu_balance: newBalance })
+                    .eq('id', ambRow.id);
+
+                  if (ambDeductErr) {
+                    if (ambRow.email) {
+                      const { error: emailDeductErr } = await supabaseClient
+                        .from('ambassadors')
+                        .update({ avu_balance: newBalance })
+                        .ilike('email', ambRow.email);
+                      if (emailDeductErr) {
+                        res.statusCode = 500;
+                        res.end(JSON.stringify({ success: false, error: ambDeductErr.message || 'Failed to deduct ambassador AVU balance.' }));
+                        return;
+                      }
+                    } else {
+                      res.statusCode = 500;
+                      res.end(JSON.stringify({ success: false, error: ambDeductErr.message || 'Failed to deduct ambassador AVU balance.' }));
                       return;
                     }
+                  }
+
+                  // Metadata updates on avu_withdrawals
+                  try {
+                    await supabaseClient.from('avu_withdrawals').update({
+                      admin_note: note,
+                      reviewed_by: reviewer,
+                      reviewed_at: timestamp
+                    }).eq('id', targetId);
                   } catch (_) {}
 
+                  // Optional secondary wallet tables update
+                  for (const wTable of ['ambassador_wallets', 'ambassador_wallet', 'wallets']) {
+                    try {
+                      let q = supabaseClient.from(wTable).update({ avu_balance: newBalance, balance: newBalance });
+                      if (ambRow.id && isUuid(ambRow.id)) q = q.eq('ambassador_id', ambRow.id);
+                      else if (ambRow.email) q = q.ilike('email', ambRow.email);
+                      await q;
+                    } catch (_) {}
+                  }
+
                   res.statusCode = 200;
-                  res.end(JSON.stringify({ success: true, action: isApprove ? 'approve' : 'reject', status: statusTitle }));
+                  res.end(JSON.stringify({
+                    success: true,
+                    action: 'approve',
+                    status: 'Approved',
+                    newBalance,
+                    requestedAmount,
+                    ambassadorId: ambRow.id,
+                    ambassadorEmail: ambRow.email,
+                    ambassadorName: ambRow.professional_name || targetName
+                  }));
                 } catch (err: any) {
-                  res.statusCode = 200;
+                  res.statusCode = 500;
                   res.end(JSON.stringify({ success: false, error: err?.message || 'Withdraw action error' }));
                 }
               });
