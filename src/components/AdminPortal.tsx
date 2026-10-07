@@ -31,7 +31,7 @@ import {
   X,
   Send
 } from "lucide-react";
-import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace } from "../lib/supabase";
+import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace, mapRowToAmbassador } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
 import { triggerApprovalEmail, getSentEmails, SentEmailLog } from "../lib/emailService";
 import { FinancialOverviewChart } from "./FinancialOverviewChart";
@@ -198,6 +198,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   // Loading state for database fetching
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Aggregate KPI Metrics State
   const [kpiMetrics, setKpiMetrics] = useState<{
@@ -611,6 +612,67 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     }
   };
 
+  const fetchAmbassadors = useCallback(async () => {
+    setIsLoadingDb(true);
+    setFetchError(null);
+    try {
+      const client = supabaseAdmin || supabase;
+      if (!client || !isSupabaseConfigured) {
+        console.warn("Supabase client not configured, loading from local/db getAmbassadors...");
+        const fallback = await db.getAmbassadors();
+        if (fallback && fallback.length > 0) {
+          setAmbassadors(fallback);
+        }
+        return;
+      }
+
+      let { data, error, count } = await client
+        .from("ambassadors")
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false });
+
+      if (error || !data || data.length === 0) {
+        console.warn("Supabase fetch notice with created_at order, falling back without order:", error);
+        const noOrderRes = await client
+          .from("ambassadors")
+          .select("*", { count: "exact" });
+        if (!noOrderRes.error && noOrderRes.data && noOrderRes.data.length > 0) {
+          data = noOrderRes.data;
+          count = noOrderRes.count;
+          error = null;
+        } else {
+          const capRes = await client
+            .from("Ambassadors")
+            .select("*", { count: "exact" });
+          if (!capRes.error && capRes.data && capRes.data.length > 0) {
+            data = capRes.data;
+            count = capRes.count;
+            error = null;
+          }
+        }
+      }
+
+      if (error) {
+        console.error("Supabase fetch error:", error);
+        setFetchError(error.message);
+        const fallback = await db.getAmbassadors();
+        if (fallback && fallback.length > 0) {
+          setAmbassadors(fallback);
+          setFetchError(null);
+        }
+      } else {
+        console.log("Successfully fetched ambassadors:", data?.length);
+        const mapped = (data || []).map(mapRowToAmbassador);
+        setAmbassadors(mapped);
+      }
+    } catch (err: any) {
+      console.error("Unexpected error in fetchAmbassadors:", err);
+      setFetchError(err.message || "Failed to fetch ambassadors");
+    } finally {
+      setIsLoadingDb(false);
+    }
+  }, []);
+
   const loadDbData = async () => {
     setIsLoadingDb(true);
     setDbError("");
@@ -638,6 +700,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           try {
             const res = await client.from("ambassadors").select("*", { count: "exact", head: true });
             if (res.error) {
+              const res2 = await client.from("ambassadors").select("*", { count: "exact" });
+              if (!res2.error && typeof res2.count === "number") return res2;
               const fb = await client.from("Ambassadors").select("*", { count: "exact", head: true });
               return fb.error ? { count: null } : fb;
             }
@@ -652,9 +716,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         (async () => {
           if (!client || !isSupabaseConfigured) return { data: null };
           try {
-            const res = await client.from("ambassadors").select("*").order("created_at", { ascending: false });
+            let res = await client.from("ambassadors").select("*").order("created_at", { ascending: false });
             if (res.error || !res.data || res.data.length === 0) {
-              const fb = await client.from("Ambassadors").select("*").order("created_at", { ascending: false });
+              const fallbackNoOrder = await client.from("ambassadors").select("*");
+              if (!fallbackNoOrder.error && fallbackNoOrder.data && fallbackNoOrder.data.length > 0) {
+                return fallbackNoOrder;
+              }
+              const fb = await client.from("Ambassadors").select("*");
               return fb.error ? { data: null } : fb;
             }
             return res;
@@ -785,57 +853,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       let avuCirculation = walletsData.reduce((sum, w: any) => sum + (Number(w.balance) || 0), 0);
 
       // 3. Process Ambassadors
-      const depositsData: DbDeposit[] = depositsRes || [];
       let allAmbassadors: DbAmbassador[] = [];
       const rawAmbRows = ambRowsRes?.data;
       if (rawAmbRows && rawAmbRows.length > 0) {
-        allAmbassadors = rawAmbRows.map((row: any) => {
-          const isApprovedCol = row.is_approved === true || row.is_approved === "true" || row.is_approved === 1;
-          const rawStatus = (row.badge_status || row.status || "approved").toString().toLowerCase().trim();
-          const isRejected = rawStatus === "disapproved" || rawStatus === "rejected" || rawStatus === "suspended";
-          const isPending = rawStatus === "pending";
-          const mappedBadgeStatus: "pending" | "approved" | "rejected" = 
-            isRejected ? "rejected" : 
-            isPending ? "pending" : "approved";
-
-          const nameVal = row.professional_name || row.name || "Ambassador";
-          const cityVal = row.base_city || row.city || "Nigeria";
-          const fieldVal = row.focus_interest || row.field || "Community Development";
-          const phoneVal = row.phone_number || row.phone || "";
-
-          const ambId = row.id || row.user_id || "";
-          const ambEmail = row.email || "";
-
-          const wallet = walletsData.find(w => 
-            w.ambassador_id === ambId || 
-            (row.id && w.ambassador_id === row.id) ||
-            (ambEmail && w.email && w.email.toLowerCase() === ambEmail.toLowerCase()) ||
-            (ambEmail && w.ambassador_id && w.ambassador_id.toLowerCase() === ambEmail.toLowerCase())
-          );
-
-          const walletBal = typeof row.avu_balance === "number" ? row.avu_balance : (wallet ? wallet.balance : (parseFloat(row.avu_balance) || 0));
-
-          return {
-            id: ambId,
-            user_id: row.user_id || ambId,
-            db_id: row.id || ambId,
-            ambassador_id: ambId,
-            name: nameVal,
-            professional_name: nameVal,
-            city: cityVal,
-            base_city: cityVal,
-            field: fieldVal,
-            focus_interest: fieldVal,
-            email: ambEmail,
-            phone: phoneVal,
-            phone_number: phoneVal,
-            status: mappedBadgeStatus === "rejected" ? "disapproved" : mappedBadgeStatus,
-            badge_status: mappedBadgeStatus,
-            is_approved: mappedBadgeStatus === "approved",
-            avu_balance: walletBal,
-            created_at: row.created_at || new Date().toISOString()
-          };
-        });
+        allAmbassadors = rawAmbRows.map(mapRowToAmbassador);
       }
 
       if (!allAmbassadors || allAmbassadors.length === 0) {
@@ -1995,9 +2016,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
 
   // Filter calculations
   // Tab 1: Approved Ambassadors (Active Roster) - all 222 populate here immediately
-  const approvedAmbassadors = (ambassadors || []).filter(a => a.badge_status === "approved");
+  const approvedAmbassadors = (ambassadors || []).filter(a => {
+    const s = (a.badge_status || a.status || "").toString().toLowerCase().trim();
+    return s === "approved" || s === "active" || a.is_approved === true;
+  });
   // Tab 2: Pending Applications / Approvals - shows any new sign-ups needing admin review
-  const pendingAmbassadors = (ambassadors || []).filter(a => a.badge_status === "pending" || !a.badge_status);
+  const pendingAmbassadors = (ambassadors || []).filter(a => {
+    const s = (a.badge_status || a.status || "").toString().toLowerCase().trim();
+    return s === "pending" || (!s && a.badge_status !== "approved" && a.badge_status !== "active" && !a.is_approved);
+  });
 
   // Search & Filter for Tab 1: Approved Ambassadors (Active Roster)
   const filteredApprovedAmbassadors = approvedAmbassadors.filter(a => {
@@ -2006,7 +2033,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     const name = (a.professional_name || a.name || "").toLowerCase();
     const email = (a.email || "").toLowerCase();
     const city = (a.base_city || a.city || "").toLowerCase();
-    return name.includes(q) || email.includes(q) || city.includes(q);
+    const field = (a.focus_interest || a.field || "").toLowerCase();
+    return name.includes(q) || email.includes(q) || city.includes(q) || field.includes(q);
   });
 
   // Search & Filter for Tab 2: Pending Applications
@@ -2016,7 +2044,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     const name = (a.professional_name || a.name || "").toLowerCase();
     const email = (a.email || "").toLowerCase();
     const city = (a.base_city || a.city || "").toLowerCase();
-    return name.includes(q) || email.includes(q) || city.includes(q);
+    const field = (a.focus_interest || a.field || "").toLowerCase();
+    return name.includes(q) || email.includes(q) || city.includes(q) || field.includes(q);
   });
 
   const AMBASSADORS_PER_PAGE = 25;
@@ -2832,11 +2861,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     {ambassadorSubTab === "approved" && (
                       <div className="space-y-4">
                         <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
-                          {filteredApprovedAmbassadors.length === 0 ? (
+                          {isLoadingDb ? (
+                            <div className="p-16 text-center text-slate-400 text-xs">
+                              <div className="w-8 h-8 border-3 border-[#0A5C36] border-t-transparent rounded-full animate-spin mb-3 mx-auto" />
+                              <p className="font-bold text-slate-700 text-sm">Loading Ambassadors Roster...</p>
+                              <p className="text-slate-400 mt-1">Retrieving live records directly from Supabase registry.</p>
+                            </div>
+                          ) : filteredApprovedAmbassadors.length === 0 ? (
                             <div className="p-16 text-center text-slate-400 text-xs">
                               <Users size={36} className="mx-auto mb-3 text-slate-300" />
-                              <p className="font-bold text-slate-700 text-sm">No ambassadors found matching query.</p>
-                              <p className="text-slate-400 mt-1">Try resetting your search query or check the connection.</p>
+                              <p className="font-bold text-slate-700 text-sm">
+                                {searchQuery ? `No ambassadors found matching "${searchQuery}"` : "No ambassadors found in roster."}
+                              </p>
+                              <p className="text-slate-400 mt-1">
+                                {searchQuery ? "Try resetting your search query to see all records." : "Check your connection or click below to retry fetching from Supabase."}
+                              </p>
+                              {fetchError && (
+                                <p className="text-rose-500 font-mono text-[11px] mt-2 bg-rose-50 p-2 rounded-lg inline-block border border-rose-200">
+                                  {fetchError}
+                                </p>
+                              )}
+                              <div className="mt-4 flex items-center justify-center gap-2">
+                                {searchQuery && (
+                                  <button
+                                    onClick={() => setSearchQuery("")}
+                                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                  >
+                                    Clear Search
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => fetchAmbassadors()}
+                                  className="px-4 py-2 bg-[#0A5C36] hover:bg-[#08482A] text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <History size={13} />
+                                  Refresh from Supabase
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <div className="overflow-x-auto">
