@@ -95,7 +95,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const programSponsored = programField?.value || metadata.program_sponsored || "General";
         const phone = data.customer?.phone || "";
 
-        // 3. Upsert deposit with success status
+        // 3. Attempt atomic credit_ambassador_wallet_safe RPC
+        const { data: rpcData, error: rpcError } = await supabaseClient.rpc(
+          "credit_ambassador_wallet_safe",
+          {
+            p_ambassador_id: ambassadorId || email,
+            p_amount_avu: avuToEarn,
+            p_naira_paid: amountNaira,
+            p_reference: reference,
+            p_provider: "paystack"
+          }
+        );
+
+        if (!rpcError && rpcData?.success) {
+          console.log(`[WEBHOOK CONTROL] Atomic RPC credit succeeded for ${reference}:`, rpcData);
+          return res.status(200).json({ received: true, success: true, new_balance: rpcData.new_balance });
+        }
+
+        // 4. Fallback: Upsert deposit with success status
         if (existingDep) {
           await supabaseClient
             .from("deposits")
