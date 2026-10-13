@@ -636,7 +636,32 @@ export default defineConfig(({ mode }) => {
                   }
 
                   // APPROVE FLOW:
-                  // 2. Locate Ambassador record in ambassadors table
+                  // 1. First attempt: Atomic PostgreSQL RPC function
+                  try {
+                    const { data: rpcData, error: rpcErr } = await supabaseClient.rpc('approve_and_deduct_avu_withdrawal', {
+                      p_withdrawal_id: targetId,
+                      p_admin_email: reviewer
+                    });
+                    if (!rpcErr && rpcData?.success) {
+                      res.statusCode = 200;
+                      res.end(JSON.stringify({
+                        success: true,
+                        action: 'approve',
+                        status: 'Approved',
+                        newBalance: rpcData.new_balance ?? rpcData.newBalance,
+                        requestedAmount: rpcData.deducted_amount ?? rpcData.deductedAmount ?? Number(wRow.requested_avu || wRow.avu_amount || 0),
+                        ambassadorId: wRow.ambassador_id,
+                        ambassadorEmail: wRow.email || wRow.ambassador_email,
+                        ambassadorName: wRow.ambassador_name || wRow.account_name,
+                        message: 'Withdrawal approved and deducted atomically via RPC.'
+                      }));
+                      return;
+                    }
+                  } catch (rpcEx) {
+                    console.warn('[vite.config.ts withdraw-action] RPC attempt note:', rpcEx);
+                  }
+
+                  // 2. Locate Ambassador record in ambassadors table (fallback)
                   const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
                   const targetAmbId = String(wRow.ambassador_id || '').trim();
                   const targetEmail = String(wRow.email || wRow.ambassador_email || '').trim().toLowerCase();
