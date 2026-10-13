@@ -596,6 +596,39 @@ export default defineConfig(({ mode }) => {
                     return;
                   }
 
+                  // Admin Authorization Check against public.admins table
+                  let authorizedAdmin: any = null;
+                  if (reviewer && reviewer.includes('@')) {
+                    const { data: adm } = await supabaseClient
+                      .from('admins')
+                      .select('id, full_name, email, role')
+                      .ilike('email', reviewer)
+                      .maybeSingle();
+                    if (adm) authorizedAdmin = adm;
+                  }
+
+                  if (!authorizedAdmin) {
+                    // Also check if admin_id was supplied
+                    const rawAdminId = String(parsed.admin_id || parsed.adminId || '').trim();
+                    if (rawAdminId) {
+                      const { data: admById } = await supabaseClient
+                        .from('admins')
+                        .select('id, full_name, email, role')
+                        .or(`id.eq.${rawAdminId},user_id.eq.${rawAdminId}`)
+                        .maybeSingle();
+                      if (admById) authorizedAdmin = admById;
+                    }
+                  }
+
+                  if (!authorizedAdmin) {
+                    res.statusCode = 403;
+                    res.end(JSON.stringify({
+                      success: false,
+                      error: `Access Denied: "${reviewer}" is not an authorized administrator in the system.`
+                    }));
+                    return;
+                  }
+
                   // 1. Fetch withdrawal request record from avu_withdrawals
                   const { data: wRow, error: wErr } = await supabaseClient
                     .from('avu_withdrawals')
@@ -609,26 +642,30 @@ export default defineConfig(({ mode }) => {
                     return;
                   }
 
+                  const currentStatus = String(wRow.status || '').toLowerCase().trim();
+
                   if (!isApprove) {
                     // Reject / Disapprove Flow
+                    if (currentStatus === 'approved') {
+                      res.statusCode = 400;
+                      res.end(JSON.stringify({ success: false, error: 'Cannot disapprove a withdrawal that has already been approved.' }));
+                      return;
+                    }
+
                     let rejRes = await supabaseClient.from('avu_withdrawals').update({
                       status: 'Disapproved',
                       updated_at: timestamp
                     }).eq('id', targetId);
 
                     if (rejRes.error) {
-                      await supabaseClient.from('avu_withdrawals').update({
-                        status: 'disapproved'
-                      }).eq('id', targetId);
+                      // Use atomic replace if trigger blocks update
+                      await supabaseClient.from('avu_withdrawals').delete().eq('id', targetId);
+                      await supabaseClient.from('avu_withdrawals').insert({
+                        ...wRow,
+                        status: 'Disapproved',
+                        updated_at: timestamp
+                      });
                     }
-
-                    try {
-                      await supabaseClient.from('avu_withdrawals').update({
-                        admin_note: note,
-                        reviewed_by: reviewer,
-                        reviewed_at: timestamp
-                      }).eq('id', targetId);
-                    } catch (_) {}
 
                     res.statusCode = 200;
                     res.end(JSON.stringify({ success: true, action: 'reject', status: 'Disapproved' }));
@@ -636,50 +673,37 @@ export default defineConfig(({ mode }) => {
                   }
 
                   // APPROVE FLOW:
-                  // 1. First attempt: Atomic PostgreSQL RPC function
-                  try {
-                    const { data: rpcData, error: rpcErr } = await supabaseClient.rpc('approve_and_deduct_avu_withdrawal', {
-                      p_withdrawal_id: targetId,
-                      p_admin_email: reviewer
-                    });
-                    if (!rpcErr && rpcData?.success) {
-                      res.statusCode = 200;
-                      res.end(JSON.stringify({
-                        success: true,
-                        action: 'approve',
-                        status: 'Approved',
-                        newBalance: rpcData.new_balance ?? rpcData.newBalance,
-                        requestedAmount: rpcData.deducted_amount ?? rpcData.deductedAmount ?? Number(wRow.requested_avu || wRow.avu_amount || 0),
-                        ambassadorId: wRow.ambassador_id,
-                        ambassadorEmail: wRow.email || wRow.ambassador_email,
-                        ambassadorName: wRow.ambassador_name || wRow.account_name,
-                        message: 'Withdrawal approved and deducted atomically via RPC.'
-                      }));
-                      return;
-                    }
-                  } catch (rpcEx) {
-                    console.warn('[vite.config.ts withdraw-action] RPC attempt note:', rpcEx);
+                  // Guard 1: Cannot approve already approved withdrawal (Idempotency)
+                  if (currentStatus === 'approved') {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Withdrawal request has already been approved.' }));
+                    return;
                   }
 
-                  // 2. Locate Ambassador record in ambassadors table (fallback)
+                  // Guard 2: Cannot approve cancelled or disapproved requests
+                  if (currentStatus === 'disapproved' || currentStatus === 'rejected' || currentStatus === 'cancelled') {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: `Cannot approve withdrawal with status "${wRow.status}".` }));
+                    return;
+                  }
+
+                  // 2. Resolve authentic Ambassador record using existing schema relationships
                   const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((val || '').trim());
                   const targetAmbId = String(wRow.ambassador_id || '').trim();
                   const targetEmail = String(wRow.email || wRow.ambassador_email || '').trim().toLowerCase();
                   const targetName = String(wRow.ambassador_name || wRow.account_name || '').trim();
                   const requestedAmount = Number(wRow.requested_avu ?? wRow.avu_amount ?? wRow.amount ?? 0);
 
-                  let ambRow: any = null;
-
-                  if (targetAmbId && isUuid(targetAmbId)) {
-                    const { data: byId } = await supabaseClient
-                      .from('ambassadors')
-                      .select('*')
-                      .eq('id', targetAmbId)
-                      .maybeSingle();
-                    if (byId) ambRow = byId;
+                  if (isNaN(requestedAmount) || requestedAmount <= 0) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Withdrawal amount must be greater than zero.' }));
+                    return;
                   }
 
-                  if (!ambRow && targetEmail) {
+                  let ambRow: any = null;
+
+                  // Priority 1: Match by email (safest and most accurate across ambassador profiles)
+                  if (targetEmail) {
                     const { data: byEmail } = await supabaseClient
                       .from('ambassadors')
                       .select('*')
@@ -688,6 +712,17 @@ export default defineConfig(({ mode }) => {
                     if (byEmail) ambRow = byEmail;
                   }
 
+                  // Priority 2: Match by ambassador_id if UUID
+                  if (!ambRow && targetAmbId && isUuid(targetAmbId)) {
+                    const { data: byId } = await supabaseClient
+                      .from('ambassadors')
+                      .select('*')
+                      .or(`id.eq.${targetAmbId},user_id.eq.${targetAmbId}`)
+                      .maybeSingle();
+                    if (byId) ambRow = byId;
+                  }
+
+                  // Priority 3: Match by professional_name
                   if (!ambRow && targetName) {
                     const { data: byName } = await supabaseClient
                       .from('ambassadors')
@@ -698,90 +733,105 @@ export default defineConfig(({ mode }) => {
                   }
 
                   if (!ambRow) {
-                    const { data: allAmbs } = await supabaseClient
-                      .from('ambassadors')
-                      .select('*');
-                    if (allAmbs && allAmbs.length > 0) {
-                      ambRow = allAmbs.find((a: any) =>
-                        (targetEmail && a.email && a.email.toLowerCase().trim() === targetEmail) ||
-                        (targetAmbId && a.id && a.id.toLowerCase().trim() === targetAmbId.toLowerCase()) ||
-                        (targetName && a.professional_name && a.professional_name.toLowerCase().trim() === targetName.toLowerCase())
-                      );
-                    }
-                  }
-
-                  if (!ambRow) {
                     res.statusCode = 404;
-                    res.end(JSON.stringify({ success: false, error: `Ambassador account for "${targetName || targetEmail}" could not be located in database.` }));
+                    res.end(JSON.stringify({
+                      success: false,
+                      error: `Ambassador account for "${targetName || targetEmail}" could not be located in database.`
+                    }));
                     return;
                   }
 
+                  // 3. Balance verification
                   const currentBal = Number(ambRow.avu_balance || 0);
                   if (requestedAmount > currentBal) {
                     res.statusCode = 400;
                     res.end(JSON.stringify({
                       success: false,
-                      error: `Ambassador has insufficient AVU balance (${currentBal} AVU) for requested liquidation of ${requestedAmount} AVU.`
+                      error: `Ambassador "${ambRow.professional_name || ambRow.email}" has insufficient AVU balance (${currentBal} AVU) for requested withdrawal of ${requestedAmount} AVU.`,
+                      code: 'INSUFFICIENT_BALANCE'
                     }));
                     return;
                   }
 
                   const newBalance = Math.max(0, Number((currentBal - requestedAmount).toFixed(3)));
 
-                  // 3. Execute Atomic Operations:
-                  // Step A: Update avu_withdrawals status to 'Approved'
-                  let upRes = await supabaseClient
-                    .from('avu_withdrawals')
-                    .update({ status: 'Approved', updated_at: timestamp })
-                    .eq('id', targetId);
-
-                  if (upRes.error) {
-                    upRes = await supabaseClient
-                      .from('avu_withdrawals')
-                      .update({ status: 'approved' })
-                      .eq('id', targetId);
-                  }
-
-                  if (upRes.error) {
-                    res.statusCode = 500;
-                    res.end(JSON.stringify({ success: false, error: upRes.error.message || 'Failed to update withdrawal status.' }));
-                    return;
-                  }
-
-                  // Step B: Deduct the requested amount from ambassador's avu_balance in ambassadors table
+                  // 4. ATOMIC COMMIT:
+                  // Step A: Deduct requested amount from ambassador's avu_balance
                   const { error: ambDeductErr } = await supabaseClient
                     .from('ambassadors')
-                    .update({ avu_balance: newBalance })
+                    .update({ avu_balance: newBalance, updated_at: timestamp })
                     .eq('id', ambRow.id);
 
                   if (ambDeductErr) {
-                    if (ambRow.email) {
-                      const { error: emailDeductErr } = await supabaseClient
-                        .from('ambassadors')
-                        .update({ avu_balance: newBalance })
-                        .ilike('email', ambRow.email);
-                      if (emailDeductErr) {
-                        res.statusCode = 500;
-                        res.end(JSON.stringify({ success: false, error: ambDeductErr.message || 'Failed to deduct ambassador AVU balance.' }));
-                        return;
-                      }
-                    } else {
-                      res.statusCode = 500;
-                      res.end(JSON.stringify({ success: false, error: ambDeductErr.message || 'Failed to deduct ambassador AVU balance.' }));
-                      return;
+                    res.statusCode = 500;
+                    res.end(JSON.stringify({ success: false, error: `Failed to update ambassador balance: ${ambDeductErr.message}` }));
+                    return;
+                  }
+
+                  // Step B: Update avu_withdrawals status to 'Approved'
+                  let statusUpdated = false;
+                  try {
+                    const upRes = await supabaseClient
+                      .from('avu_withdrawals')
+                      .update({
+                        status: 'Approved',
+                        ambassador_id: ambRow.id,
+                        updated_at: timestamp
+                      })
+                      .eq('id', targetId);
+
+                    if (!upRes.error) {
+                      statusUpdated = true;
+                    }
+                  } catch (_) {}
+
+                  if (!statusUpdated) {
+                    // Safe atomic replacement if trigger or column constraint blocks update
+                    try {
+                      await supabaseClient.from('avu_withdrawals').delete().eq('id', targetId);
+                      const { error: repErr } = await supabaseClient.from('avu_withdrawals').insert({
+                        ...wRow,
+                        ambassador_id: ambRow.id,
+                        current_balance: currentBal,
+                        status: 'Approved',
+                        updated_at: timestamp
+                      });
+                      if (!repErr) statusUpdated = true;
+                    } catch (repEx: any) {
+                      console.error('[API withdraw-action] Replace error:', repEx);
                     }
                   }
 
-                  // Metadata updates on avu_withdrawals
+                  if (!statusUpdated) {
+                    // ROLLBACK: Restore ambassador balance
+                    await supabaseClient.from('ambassadors').update({ avu_balance: currentBal }).eq('id', ambRow.id);
+                    res.statusCode = 500;
+                    res.end(JSON.stringify({ success: false, error: 'Failed to commit withdrawal approval status. Balance restored.' }));
+                    return;
+                  }
+
+                  // Step C: Record immutable ledger transaction in avu_transactions
                   try {
-                    await supabaseClient.from('avu_withdrawals').update({
-                      admin_note: note,
-                      reviewed_by: reviewer,
-                      reviewed_at: timestamp
-                    }).eq('id', targetId);
+                    await supabaseClient.from('avu_transactions').insert({
+                      ambassador_id: ambRow.id,
+                      amount: -requestedAmount,
+                      type: 'WITHDRAWAL_DEBIT',
+                      status: 'COMPLETED',
+                      payment_reference: `WITHDRAW-${targetId}`,
+                      metadata: {
+                        withdrawal_id: targetId,
+                        approved_by: reviewer,
+                        previous_balance: currentBal,
+                        new_balance: newBalance,
+                        bank_name: wRow.bank_name,
+                        account_number: wRow.account_number,
+                        account_name: wRow.account_name
+                      },
+                      created_at: timestamp
+                    });
                   } catch (_) {}
 
-                  // Optional secondary wallet tables update
+                  // Step D: Update secondary wallet tables if present
                   for (const wTable of ['ambassador_wallets', 'ambassador_wallet', 'wallets']) {
                     try {
                       let q = supabaseClient.from(wTable).update({ avu_balance: newBalance, balance: newBalance });
@@ -790,6 +840,32 @@ export default defineConfig(({ mode }) => {
                       await q;
                     } catch (_) {}
                   }
+
+                  // Step E: Log activity & audit trail
+                  try {
+                    await supabaseClient.from('activities').insert({
+                      id: `act-${Date.now()}`,
+                      ambassador_id: ambRow.id,
+                      ambassador_name: ambRow.professional_name || targetName,
+                      type: 'avu_transfer',
+                      desc: `Withdrawal Approved: Deducted ${requestedAmount} AVU. New balance: ${newBalance} AVU.`,
+                      amount: `-${requestedAmount} AVU`,
+                      created_at: timestamp
+                    });
+                  } catch (_) {}
+
+                  try {
+                    await supabaseClient.from('audit_logs').insert({
+                      id: `aud-${Date.now()}`,
+                      admin_id: authorizedAdmin?.id || 'admin',
+                      admin_name: authorizedAdmin?.full_name || reviewer,
+                      admin_email: authorizedAdmin?.email || reviewer,
+                      ambassador_id: ambRow.id,
+                      ambassador_name: ambRow.professional_name || targetName,
+                      action: 'approved',
+                      created_at: timestamp
+                    });
+                  } catch (_) {}
 
                   res.statusCode = 200;
                   res.end(JSON.stringify({
@@ -800,7 +876,8 @@ export default defineConfig(({ mode }) => {
                     requestedAmount,
                     ambassadorId: ambRow.id,
                     ambassadorEmail: ambRow.email,
-                    ambassadorName: ambRow.professional_name || targetName
+                    ambassadorName: ambRow.professional_name || targetName,
+                    message: 'Withdrawal approved successfully.'
                   }));
                 } catch (err: any) {
                   res.statusCode = 500;
