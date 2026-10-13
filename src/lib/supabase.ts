@@ -3081,7 +3081,58 @@ export async function handleApprove(
     const reviewer = adminEmail || "Executive Treasury Admin";
     const timestamp = new Date().toISOString();
 
-    // 0. Primary attempt via server /api/withdraw-action route (atomic transaction)
+    // 0. Primary attempt: Call atomic PostgreSQL RPC function 'approve_and_deduct_avu_withdrawal'
+    if (isSupabaseConfigured && (supabaseAdmin || supabase)) {
+      try {
+        const client = supabaseAdmin || supabase;
+        const { data: rpcData, error: rpcErr } = await client.rpc('approve_and_deduct_avu_withdrawal', {
+          p_withdrawal_id: withdrawalId,
+          p_admin_email: reviewer
+        });
+
+        if (!rpcErr && rpcData?.success) {
+          const newBal = Number(rpcData.new_balance ?? rpcData.newBalance ?? 0);
+          const reqAmt = Number(rpcData.deducted_amount ?? rpcData.deductedAmount ?? 0);
+
+          if (typeof window !== "undefined") {
+            const localData = localStorage.getItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY);
+            if (localData) {
+              try {
+                const list: DbAvuWithdrawal[] = JSON.parse(localData);
+                const idx = list.findIndex(w => w.id === withdrawalId);
+                if (idx !== -1) {
+                  list[idx].status = "Approved";
+                  list[idx].reviewed_by = reviewer;
+                  list[idx].reviewed_at = timestamp;
+                  if (adminNote) list[idx].admin_note = adminNote;
+                  list[idx].updated_at = timestamp;
+                  localStorage.setItem(AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, JSON.stringify(list));
+                }
+              } catch (_) {}
+            }
+            localStorage.setItem("advaltad_cached_wallet_balance", String(newBal));
+            localStorage.setItem("advaltad_withdrawals_sync_ping", String(Date.now()));
+            localStorage.setItem("advaltad_wallet_sync_ping", JSON.stringify({
+              newBalance: newBal,
+              deductedAmount: reqAmt,
+              timestamp: Date.now()
+            }));
+            window.dispatchEvent(new CustomEvent("advaltad_withdrawals_updated", {
+              detail: { id: withdrawalId, status: "Approved", newBalance: newBal }
+            }));
+            window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", {
+              detail: { newBalance: newBal, deductedAmount: reqAmt, timestamp: Date.now() }
+            }));
+          }
+
+          return { success: true, newBalance: newBal, requestedAmount: reqAmt, data: rpcData };
+        }
+      } catch (rpcEx) {
+        console.warn("[handleApprove] approve_and_deduct_avu_withdrawal RPC attempt warning:", rpcEx);
+      }
+    }
+
+    // 1. Secondary attempt via server /api/withdraw-action route (atomic transaction)
     try {
       const apiRes = await fetch("/api/withdraw-action", {
         method: "POST",
