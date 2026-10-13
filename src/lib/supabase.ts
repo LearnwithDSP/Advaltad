@@ -2104,6 +2104,26 @@ export const db = {
       // Mark deposit status as success
       await this.updateDepositStatus(paystackRef, "success");
 
+      // Attempt atomic PostgreSQL RPC first
+      if (isSupabaseConfigured && (supabase || supabaseAdmin)) {
+        const client = supabaseAdmin || supabase;
+        try {
+          const { data: rpcData, error: rpcError } = await client.rpc("credit_ambassador_wallet_safe", {
+            p_ambassador_id: ambassadorId || email,
+            p_amount_avu: avuToEarn,
+            p_naira_paid: amountNaira,
+            p_reference: paystackRef,
+            p_provider: "paystack"
+          });
+          if (!rpcError && rpcData && rpcData.success) {
+            console.log("[processFundingSuccess] RPC credit_ambassador_wallet_safe succeeded:", rpcData);
+            return { success: true, newBalance: Number(rpcData.new_balance) || 0 };
+          }
+        } catch (rpcErr) {
+          console.warn("[processFundingSuccess] RPC attempt exception, proceeding to direct engine fallback:", rpcErr);
+        }
+      }
+
       // Credit the ambassador with avuToEarn using unified rock-solid engine
       const creditRes = await this.creditAmbassadorAvu({
         email: email || undefined,
