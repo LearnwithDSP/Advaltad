@@ -29,7 +29,10 @@ import {
   ArrowDownToLine,
   Clock,
   X,
-  Send
+  Send,
+  Copy,
+  Check,
+  Loader2
 } from "lucide-react";
 import { db, DbAmbassador, DbAdmin, DbActivity, DbBlog, DbAmbassadorWallet, DbDeposit, DbAuditLog, DbAvuWithdrawal, supabase, supabaseAdmin, isSupabaseConfigured, handleApprove, handleReject, AVU_WITHDRAWALS_LOCAL_STORAGE_KEY, logWithdrawalFetchTrace, mapRowToAmbassador } from "../lib/supabase";
 import { PAYSTACK_PUBLIC_KEY, getPaystackPublicKey, loadPaystackScript } from "../lib/paystack";
@@ -116,7 +119,53 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
   const [withdrawalFilter, setWithdrawalFilter] = useState<"all" | "Pending" | "Approved" | "Disapproved">("all");
   const [withdrawalSearch, setWithdrawalSearch] = useState("");
   const [isUpdatingWithdrawal, setIsUpdatingWithdrawal] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const [adminNotes, setAdminNotes] = useState<{ [key: string]: string }>({});
+  const [copiedDetail, setCopiedDetail] = useState<string | null>(null);
+
+  // Success bubble notification queue state
+  const [successBubbles, setSuccessBubbles] = useState<{ id: string; ambassadorName: string; amount: number }[]>([]);
+
+  const copyBankDetail = (text: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedDetail(label);
+    setTimeout(() => setCopiedDetail(null), 2000);
+  };
+
+  /**
+   * Synthesize a short, pleasant high-frequency completion chime directly using
+   * the browser's Web Audio API (AudioContext), with no external MP3 dependencies.
+   */
+  const playSuccessSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+      
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {
+      console.warn('AudioContext not allowed or supported', e);
+    }
+  };
+
+  const triggerSuccessBubble = (ambassadorName: string, amount: number) => {
+    const id = "bubble-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
+    setSuccessBubbles(prev => [...prev, { id, ambassadorName, amount }]);
+    setTimeout(() => {
+      setSuccessBubbles(prev => prev.filter(b => b.id !== id));
+    }, 4000);
+  };
 
   // Payment Gateway Tab states
   const [selectedAmbId, setSelectedAmbId] = useState("");
@@ -1538,33 +1587,138 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
     }
   };
 
+  /**
+   * Action Handler: Approve and Deduct
+   * Directly invokes the atomic PostgreSQL RPC function 'approve_and_deduct_avu_withdrawal',
+   * locks row, deducts requested AVU from ambassador wallet, updates status,
+   * synthesizes completion chime, and pops a success bubble notification.
+   */
+  const handleApproveAndDeduct = async (withdrawalId: string, ambassadorName: string, amount: number) => {
+    setProcessingId(withdrawalId);
+    setIsUpdatingWithdrawal(withdrawalId);
+    try {
+      const adminUserEmail = currentAdmin?.email || "admin@advaltad.org";
+      let rpcSuccess = false;
+      let rpcData: any = null;
+
+      // Primary invocation: Atomic PostgreSQL RPC function in Supabase
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase.rpc("approve_and_deduct_avu_withdrawal", {
+            p_withdrawal_id: withdrawalId,
+            p_admin_email: adminUserEmail
+          });
+
+          if (error) {
+            console.warn("[AdminPortal] RPC invoke warning, falling back to atomic handler:", error.message);
+          } else if (data) {
+            rpcData = data;
+            rpcSuccess = data.success !== false;
+          }
+        } catch (rpcErr) {
+          console.warn("[AdminPortal] RPC exception caught:", rpcErr);
+        }
+      }
+
+      // Resilient fallback if RPC returned null or dev server without migration
+      if (!rpcSuccess) {
+        const fallbackRes = await handleApprove(
+          withdrawalId,
+          currentAdmin?.id,
+          adminUserEmail,
+          adminNotes[withdrawalId]
+        );
+        if (fallbackRes.success) {
+          rpcSuccess = true;
+          rpcData = {
+            success: true,
+            new_balance: fallbackRes.newBalance,
+            deducted_amount: fallbackRes.requestedAmount ?? amount,
+            message: "Withdrawal approved and deducted successfully."
+          };
+        } else {
+          throw fallbackRes.error || new Error(rpcData?.message || "Approval failed.");
+        }
+      }
+
+      if (rpcSuccess) {
+        playSuccessSound();
+        triggerSuccessBubble(ambassadorName, amount);
+
+        const newBal = rpcData?.new_balance ?? rpcData?.newBalance;
+
+        // Immediate optimistic row state update
+        setWithdrawals((prev) =>
+          prev.map((w) =>
+            w.id === withdrawalId
+              ? {
+                  ...w,
+                  status: "Approved",
+                  reviewed_by: currentAdmin?.name || "Admin",
+                  reviewed_at: new Date().toISOString(),
+                  admin_note: adminNotes[withdrawalId] || w.admin_note
+                }
+              : w
+          )
+        );
+
+        if (newBal !== undefined) {
+          setAmbassadors((prev) =>
+            prev.map((a) => {
+              const isMatch =
+                (a.professional_name && a.professional_name.toLowerCase() === ambassadorName.toLowerCase()) ||
+                (a.name && a.name.toLowerCase() === ambassadorName.toLowerCase()) ||
+                a.id === withdrawalId;
+              return isMatch
+                ? { ...a, avu_balance: newBal, ledger_balance: newBal, wallet_balance: newBal, balance: newBal }
+                : a;
+            })
+          );
+        }
+
+        // Refresh pending table and metrics
+        await fetchPendingWithdrawals();
+        await fetchDashboardMetrics();
+        await loadDbData();
+      } else {
+        alert(rpcData?.message || "Approval failed.");
+      }
+    } catch (err: any) {
+      console.error("Approve and deduct error:", err);
+      alert(err.message || "Network error while approving withdrawal.");
+    } finally {
+      setProcessingId(null);
+      setIsUpdatingWithdrawal(null);
+    }
+  };
+
   const handleUpdateWithdrawalStatus = async (
     withdrawalId: string,
     newStatus: "Approved" | "Disapproved",
     withdrawal: DbAvuWithdrawal
   ) => {
+    if (newStatus === "Approved") {
+      await handleApproveAndDeduct(
+        withdrawalId,
+        withdrawal.ambassador_name || "Ambassador",
+        withdrawal.avu_amount || withdrawal.requested_avu || 0
+      );
+      return;
+    }
+
     setIsUpdatingWithdrawal(withdrawalId);
+    setProcessingId(withdrawalId);
     try {
       const adminId = (currentAdmin?.id && /^[0-9a-f-]{36}$/i.test(currentAdmin.id))
         ? currentAdmin.id
         : "00000000-0000-0000-0000-000000000000";
 
-      let result;
-      if (newStatus === "Approved") {
-        result = await handleApprove(
-          withdrawalId,
-          adminId,
-          currentAdmin?.email,
-          adminNotes[withdrawalId]
-        );
-      } else {
-        result = await handleReject(
-          withdrawalId,
-          adminId,
-          currentAdmin?.email,
-          adminNotes[withdrawalId]
-        );
-      }
+      const result = await handleReject(
+        withdrawalId,
+        adminId,
+        currentAdmin?.email,
+        adminNotes[withdrawalId]
+      );
 
       if (result.success) {
         setWithdrawals(prev =>
@@ -1581,35 +1735,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           )
         );
 
-        if (newStatus === "Approved") {
-          const newBal = result.newBalance;
-          if (newBal !== undefined) {
-            setAmbassadors(prev =>
-              prev.map(a => {
-                const isMatch =
-                  (withdrawal.ambassador_id && a.id && a.id.toLowerCase() === withdrawal.ambassador_id.toLowerCase()) ||
-                  (withdrawal.email && a.email && a.email.toLowerCase() === withdrawal.email.toLowerCase()) ||
-                  (withdrawal.ambassador_email && a.email && a.email.toLowerCase() === withdrawal.ambassador_email.toLowerCase()) ||
-                  (withdrawal.ambassador_name && a.professional_name && a.professional_name.toLowerCase() === withdrawal.ambassador_name.toLowerCase()) ||
-                  (withdrawal.ambassador_name && a.name && a.name.toLowerCase() === withdrawal.ambassador_name.toLowerCase());
-                return isMatch
-                  ? { ...a, avu_balance: newBal, ledger_balance: newBal, wallet_balance: newBal, balance: newBal }
-                  : a;
-              })
-            );
-          }
-          addToast(
-            "Withdrawal Approved & Deducted",
-            `Approved withdrawal of ${withdrawal.avu_amount || withdrawal.requested_avu} AVU (₦${(withdrawal.naira_equivalent || 0).toLocaleString()}) for ${withdrawal.ambassador_name}. Ambassador wallet balance deducted immediately.${newBal !== undefined ? ` New balance: ${newBal} AVU.` : ""}`,
-            "success"
-          );
-        } else {
-          addToast(
-            "Withdrawal Disapproved",
-            `Disapproved withdrawal request for ${withdrawal.ambassador_name}. Balance left untouched.`,
-            "info"
-          );
-        }
+        addToast(
+          "Withdrawal Disapproved",
+          `Disapproved withdrawal request for ${withdrawal.ambassador_name}. Balance left untouched.`,
+          "info"
+        );
         await fetchWithdrawals();
         await loadDbData();
       } else {
@@ -1624,6 +1754,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       addToast("Error", err?.message || "Failed to update withdrawal request.", "error");
     } finally {
       setIsUpdatingWithdrawal(null);
+      setProcessingId(null);
     }
   };
 
@@ -3616,13 +3747,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             const isPending = (w.status || "").toLowerCase() === "pending";
                             const isApproved = (w.status || "").toLowerCase() === "approved";
                             const isDisapproved = (w.status || "").toLowerCase() === "disapproved" || (w.status || "").toLowerCase() === "rejected";
-                            const isUpdating = isUpdatingWithdrawal === w.id;
+                            const isCurrentProcessing = processingId === w.id || isUpdatingWithdrawal === w.id;
+                            const isAnyActionLocked = processingId !== null || isUpdatingWithdrawal !== null;
 
                             const statusBadge = isApproved ? (
-                              <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                                <CheckCircle size={11} />
-                                Approved
-                              </span>
+                              <motion.span
+                                initial={{ scale: 0.95 }}
+                                animate={{ scale: 1 }}
+                                className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                              >
+                                <CheckCircle size={12} className="text-emerald-600" />
+                                Approved &amp; Deducted
+                              </motion.span>
                             ) : isDisapproved ? (
                               <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
                                 <XCircle size={11} />
@@ -3638,8 +3774,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                             return (
                               <div
                                 key={w.id}
-                                className={`p-5 sm:p-6 transition-colors ${
-                                  isPending ? "bg-amber-50/20" : "bg-white"
+                                className={`p-5 sm:p-6 transition-all ${
+                                  isPending ? "bg-amber-50/20" : isApproved ? "bg-emerald-50/15" : "bg-white"
                                 }`}
                               >
                                 <div className="flex flex-col lg:flex-row gap-5 items-start lg:items-center justify-between">
@@ -3655,19 +3791,48 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                       {statusBadge}
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                                       <div className="space-y-0.5">
                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Email Address</span>
                                         <p className="font-mono text-slate-700 truncate">{w.ambassador_email}</p>
                                       </div>
                                       <div className="space-y-0.5">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Destination Bank</span>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Destination Bank</span>
+                                          {w.bank_name && (
+                                            <button
+                                              type="button"
+                                              onClick={() => copyBankDetail(w.bank_name || '', `bank-${w.id}`)}
+                                              className="text-[10px] text-slate-400 hover:text-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                                              title="Copy Bank Name"
+                                            >
+                                              {copiedDetail === `bank-${w.id}` ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                                              <span className="text-[9px]">{copiedDetail === `bank-${w.id}` ? "Copied" : "Copy"}</span>
+                                            </button>
+                                          )}
+                                        </div>
                                         <p className="font-bold text-slate-800">{w.bank_name}</p>
                                       </div>
                                       <div className="space-y-0.5">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bank Beneficiary / Payee</span>
-                                        <p className="font-mono font-bold text-slate-900">
-                                          {w.account_number} <span className="font-sans font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">(Payee: {w.account_name || w.ambassador_name})</span>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bank Payee &amp; Account</span>
+                                          {w.account_number && (
+                                            <button
+                                              type="button"
+                                              onClick={() => copyBankDetail(w.account_number || '', `acc-${w.id}`)}
+                                              className="text-[10px] text-slate-400 hover:text-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                                              title="Copy Account Number"
+                                            >
+                                              {copiedDetail === `acc-${w.id}` ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                                              <span className="text-[9px]">{copiedDetail === `acc-${w.id}` ? "Copied" : "Copy"}</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                        <p className="font-mono font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                                          <span>{w.account_number}</span>
+                                          <span className="font-sans font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px]">
+                                            Bank Payee: {w.account_name || w.ambassador_name}
+                                          </span>
                                         </p>
                                       </div>
                                     </div>
@@ -3726,24 +3891,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                                         <div className="flex items-center gap-2">
                                           <button
                                             type="button"
-                                            disabled={isUpdating}
-                                            onClick={() => handleUpdateWithdrawalStatus(w.id, "Approved", w)}
-                                            className="flex-1 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm disabled:opacity-50"
-                                            title="Approve and deduct AVU balance"
+                                            disabled={isAnyActionLocked}
+                                            onClick={() => handleApproveAndDeduct(w.id, w.ambassador_name || "Ambassador", w.avu_amount || w.requested_avu || 0)}
+                                            className="flex-1 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01] active:scale-[0.99]"
+                                            title="Approve and deduct AVU balance atomically"
                                           >
-                                            {isUpdating ? (
-                                              <span className="animate-spin text-xs">&bull;</span>
+                                            {isCurrentProcessing ? (
+                                              <>
+                                                <Loader2 size={13} className="animate-spin" />
+                                                <span>Deducting...</span>
+                                              </>
                                             ) : (
-                                              <CheckCircle size={12} />
+                                              <>
+                                                <CheckCircle size={13} />
+                                                <span>Approve &amp; Deduct</span>
+                                              </>
                                             )}
-                                            <span>Approve & Deduct</span>
                                           </button>
 
                                           <button
                                             type="button"
-                                            disabled={isUpdating}
+                                            disabled={isAnyActionLocked}
                                             onClick={() => handleUpdateWithdrawalStatus(w.id, "Disapproved", w)}
-                                            className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                                            className="px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                             title="Disapprove withdrawal request"
                                           >
                                             <XCircle size={12} />
@@ -4707,6 +4877,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Top-Right Dedicated Success Bubble Notification Container (#0A5C36) */}
+      <div className="fixed top-6 right-6 z-[120] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {successBubbles.map((bubble) => (
+            <motion.div
+              key={bubble.id}
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.25 }}
+              style={{ backgroundColor: "#0A5C36" }}
+              className="pointer-events-auto text-white p-4 rounded-2xl shadow-2xl border border-emerald-400/40 flex items-start gap-3.5 relative overflow-hidden"
+            >
+              <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center shrink-0 text-emerald-300 mt-0.5">
+                <CheckCircle className="w-5 h-5 text-emerald-300" />
+              </div>
+              <div className="flex-1 min-w-0 pr-6 text-left">
+                <h4 className="text-xs font-black tracking-tight text-emerald-100 uppercase">
+                  Withdrawal Approved &amp; Balance Deducted!
+                </h4>
+                <p className="text-xs text-emerald-100/90 mt-1 leading-relaxed">
+                  Deducted {bubble.amount.toLocaleString()} AVU from {bubble.ambassadorName}. Ready for manual bank settlement.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuccessBubbles((prev) => prev.filter((b) => b.id !== bubble.id))}
+                className="text-emerald-300 hover:text-white transition-colors p-1 rounded-lg hover:bg-emerald-700/40 cursor-pointer absolute top-2.5 right-2.5"
+                title="Close notification"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
       {/* Floating Toast Notification Container */}
       <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
