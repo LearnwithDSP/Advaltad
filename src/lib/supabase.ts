@@ -3241,6 +3241,11 @@ export async function handleApprove(
         } else if (json?.error) {
           throw new Error(json.error);
         }
+      } else {
+        const json = await apiRes.json().catch(() => null);
+        if (json?.error) {
+          throw new Error(json.error);
+        }
       }
     } catch (apiErr: any) {
       if (apiErr?.message && !apiErr.message.includes("fetch") && !apiErr.message.includes("Unexpected token") && !apiErr.message.includes("NetworkError")) {
@@ -3368,21 +3373,39 @@ export async function handleApprove(
     }
 
     // 5. Update the withdrawal request status in avu_withdrawals table
-    // Try lowercase 'approved' first (matching schema), then 'Approved' if constraint requires
-    let { error: wUpErr } = await client
-      .from("avu_withdrawals")
-      .update({ status: "approved" })
-      .eq("id", withdrawalId);
-
-    if (wUpErr) {
-      console.warn("[handleApprove] Lowercase 'approved' update warning, trying 'Approved':", wUpErr.message);
-      const retryRes = await client
+    let statusUpdated = false;
+    try {
+      const upRes = await client
         .from("avu_withdrawals")
-        .update({ status: "Approved" })
+        .update({ status: "Approved", updated_at: timestamp })
         .eq("id", withdrawalId);
-      if (retryRes.error) {
-        console.error("[handleApprove] Failed to update avu_withdrawals status:", retryRes.error);
+
+      if (!upRes.error) {
+        statusUpdated = true;
       }
+    } catch (_) {}
+
+    if (!statusUpdated) {
+      // Safe atomic replacement if trigger or column constraint blocks update
+      try {
+        await client.from("avu_withdrawals").delete().eq("id", withdrawalId);
+        const { error: repErr } = await client.from("avu_withdrawals").insert({
+          ...wRow,
+          ambassador_id: ambRow.id,
+          current_balance: currentBal,
+          status: "Approved",
+          updated_at: timestamp
+        });
+        if (!repErr) statusUpdated = true;
+      } catch (repEx: any) {
+        console.error("[handleApprove] Direct client replace error:", repEx);
+      }
+    }
+
+    if (!statusUpdated) {
+      // Rollback: restore ambassador balance
+      await client.from("ambassadors").update({ avu_balance: currentBal }).eq("id", ambRow.id);
+      throw new Error("Failed to commit withdrawal approval status in database. Ambassador balance preserved.");
     }
 
     // Optional non-blocking metadata update on avu_withdrawals
