@@ -386,9 +386,36 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
   // --------------------------------------------------------------------------
 
   /**
+   * Synthesize a short, pleasant high-frequency completion chime directly using
+   * browser Web Audio API (AudioContext).
+   */
+  const playSuccessSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+      
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {
+      console.warn("AudioContext not allowed or supported", e);
+    }
+  };
+
+  /**
    * Approve Action:
-   * Deducts exact requested AVU from ambassador wallet in Supabase,
-   * updates status to 'Approved', and updates realtime state.
+   * Calls atomic RPC 'approve_and_deduct_avu_withdrawal',
+   * deducts exact requested AVU from ambassador wallet in Supabase,
+   * updates status to 'Approved', synthesizes chime sound, and updates realtime state.
    */
   const handleApprove = async (withdrawal: AvuWithdrawalRecord) => {
     if (actionState.id) return; // Prevent duplicate or concurrent execution
@@ -401,19 +428,45 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
         ? adminId
         : "00000000-0000-0000-0000-000000000000";
 
-      console.log(`[PendingWithdrawals] Calling executeApprove for ID: ${targetId}...`);
+      const ambName = getAmbassadorDisplayName(withdrawal);
+      const requestedAmt = withdrawal.requested_avu || withdrawal.avu_amount || withdrawal.amount || 0;
 
-      const res = await executeApprove(targetId, effectiveAdminId);
-      if (!res.success) {
-        throw res.error || new Error("Failed to process withdrawal approval and deduction.");
+      let rpcSuccess = false;
+      let newBal: number | undefined;
+
+      // 1. Primary execution: call atomic PostgreSQL RPC function in Supabase
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase.rpc("approve_and_deduct_avu_withdrawal", {
+            p_withdrawal_id: targetId,
+            p_admin_email: effectiveAdminId
+          });
+
+          if (!error && data?.success) {
+            rpcSuccess = true;
+            newBal = data.new_balance;
+          }
+        } catch (rpcErr) {
+          console.warn("[PendingWithdrawals] RPC invoke warning:", rpcErr);
+        }
       }
+
+      // 2. Resilient fallback
+      if (!rpcSuccess) {
+        const res = await executeApprove(targetId, effectiveAdminId);
+        if (!res.success) {
+          throw res.error || new Error("Failed to process withdrawal approval and deduction.");
+        }
+        newBal = res.newBalance;
+      }
+
+      // Play completion chime
+      playSuccessSound();
 
       // Optimistic UI update: remove row immediately from pending queue
       setWithdrawals((prev) => prev.filter((item) => item.id !== targetId));
 
-      const ambName = getAmbassadorDisplayName(withdrawal);
-      const requestedAmt = res.requestedAmount || withdrawal.requested_avu || 0;
-      const successMsg = `Approved liquidation of ${requestedAmt.toLocaleString()} AVU for ${ambName}. Balance deducted immediately.${res.newBalance !== undefined ? ` New balance: ${res.newBalance.toLocaleString()} AVU.` : ""}`;
+      const successMsg = `Deducted ${requestedAmt.toLocaleString()} AVU from ${ambName}. Ready for manual bank settlement.${newBal !== undefined ? ` New balance: ${newBal.toLocaleString()} AVU.` : ""}`;
       notifySuccess(successMsg);
 
       if (onSuccessNotification) {
@@ -787,9 +840,24 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
                     {/* Bank & Account Details Column */}
                     <td className="py-4 px-5 align-top">
                       <div className="space-y-1.5">
-                        <div className="flex items-center gap-1.5 font-bold text-white text-xs">
-                          <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{item.bank_name}</span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-bold text-white text-xs">
+                            <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>{item.bank_name}</span>
+                          </div>
+                          {item.bank_name && (
+                            <button
+                              onClick={() => copyToClipboard(item.bank_name || "", `bank-${item.id}`)}
+                              className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
+                              title="Copy Bank Name"
+                            >
+                              {copiedId === `bank-${item.id}` ? (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -812,11 +880,22 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
                         </div>
 
                         {item.account_name && (
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                            <CreditCard className="w-3 h-3 text-slate-500" />
-                            <span className="truncate max-w-[180px]">
-                              {item.account_name}
+                          <div className="text-[11px] text-slate-300 flex items-center gap-1.5 flex-wrap">
+                            <CreditCard className="w-3 h-3 text-emerald-400 shrink-0" />
+                            <span className="font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-1.5 py-0.5 rounded text-[10px]">
+                              Bank Payee: {item.account_name}
                             </span>
+                            <button
+                              onClick={() => copyToClipboard(item.account_name || "", `name-${item.id}`)}
+                              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                              title="Copy Bank Payee Name"
+                            >
+                              {copiedId === `name-${item.id}` ? (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
                           </div>
                         )}
                       </div>
