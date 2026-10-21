@@ -1642,10 +1642,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
       }
 
       if (rpcSuccess) {
+        const newBal = rpcData?.new_balance ?? rpcData?.newBalance;
+
         playSuccessSound();
         triggerSuccessBubble(ambassadorName, amount);
-
-        const newBal = rpcData?.new_balance ?? rpcData?.newBalance;
+        addToast(
+          "Withdrawal Approved",
+          `Deducted ${amount} AVU from ${ambassadorName}.${newBal !== undefined ? ` New balance: ${newBal} AVU.` : ""}`,
+          "success"
+        );
 
         // Immediate optimistic row state update
         setWithdrawals((prev) =>
@@ -1681,11 +1686,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
         await fetchDashboardMetrics();
         await loadDbData();
       } else {
-        alert(rpcData?.message || "Approval failed.");
+        const failMsg = rpcData?.message || "Approval failed.";
+        addToast("Approval Failed", failMsg, "error");
+        alert(failMsg);
       }
     } catch (err: any) {
       console.error("Approve and deduct error:", err);
-      alert(err.message || "Network error while approving withdrawal.");
+      const errMsg = err?.message || "Network error while approving withdrawal.";
+      addToast("Approval Failed", errMsg, "error");
+      alert(errMsg);
     } finally {
       setProcessingId(null);
       setIsUpdatingWithdrawal(null);
@@ -3677,6 +3686,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout }) => {
                     <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 text-left">
                       <PendingWithdrawals
                         adminId={currentAdmin?.id}
+                        adminEmail={currentAdmin?.email || "admin@advaltad.org"}
                         onSuccessNotification={(msg) => {
                           addToast("Withdrawal Processed", msg, "success");
                           fetchWithdrawals();
