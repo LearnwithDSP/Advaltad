@@ -265,38 +265,52 @@ export const WalletTopupModal: React.FC<WalletTopupModalProps> = ({
         amount: Math.round(numericAmt * 100), // Converted to KOBO (1 NGN = 100 Kobo)
         ref: paymentRef,
         metadata: metadata,
-        callback: async (response: any) => {
+        callback: function (response: any) {
           // ==================================================================
           // CRITICAL STEP: User completed payment in browser.
           // Call credit_ambassador_wallet_safe RPC directly for instant credit!
+          // Note: Must use standard function wrapper so Paystack inline.js
+          // "[object Function]" validation check passes without throwing.
           // ==================================================================
-          const confirmedRef = response.reference || paymentRef;
-          setProcessStep("Payment verified! Atomically crediting AVU balance...");
+          (async () => {
+            const confirmedRef = response?.reference || paymentRef;
+            setProcessStep("Payment verified! Atomically crediting AVU balance...");
 
-          try {
-            let finalNewBalance = 0;
-            let alreadyProcessed = false;
+            try {
+              let finalNewBalance = 0;
+              let alreadyProcessed = false;
 
-            // Attempt Layer 1: Call atomic PostgreSQL RPC
-            if (supabase && isSupabaseConfigured) {
-              const { data: rpcData, error: rpcError } = await supabase.rpc(
-                "credit_ambassador_wallet_safe",
-                {
-                  p_ambassador_id: ambassadorId,
-                  p_amount_avu: avuToEarn,
-                  p_naira_paid: numericAmt,
-                  p_reference: confirmedRef,
-                  p_provider: "paystack"
+              // Attempt Layer 1: Call atomic PostgreSQL RPC
+              if (supabase && isSupabaseConfigured) {
+                const { data: rpcData, error: rpcError } = await supabase.rpc(
+                  "credit_ambassador_wallet_safe",
+                  {
+                    p_ambassador_id: ambassadorId,
+                    p_amount_avu: avuToEarn,
+                    p_naira_paid: numericAmt,
+                    p_reference: confirmedRef,
+                    p_provider: "paystack"
+                  }
+                );
+
+                if (!rpcError && rpcData) {
+                  console.log("[WalletTopupModal] RPC credit_ambassador_wallet_safe result:", rpcData);
+                  finalNewBalance = Number(rpcData.new_balance) || 0;
+                  alreadyProcessed = Boolean(rpcData.already_processed);
+                } else {
+                  console.warn("[WalletTopupModal] RPC execution notice, attempting unified engine fallback:", rpcError);
+                  // Fallback to unified local engine
+                  const fallbackRes = await db.processFundingSuccess(
+                    ambassadorId,
+                    email,
+                    numericAmt,
+                    avuToEarn,
+                    confirmedRef
+                  );
+                  finalNewBalance = fallbackRes.newBalance;
                 }
-              );
-
-              if (!rpcError && rpcData) {
-                console.log("[WalletTopupModal] RPC credit_ambassador_wallet_safe result:", rpcData);
-                finalNewBalance = Number(rpcData.new_balance) || 0;
-                alreadyProcessed = Boolean(rpcData.already_processed);
               } else {
-                console.warn("[WalletTopupModal] RPC execution notice, attempting unified engine fallback:", rpcError);
-                // Fallback to unified local engine
+                // Local Dev / Mock Fallback
                 const fallbackRes = await db.processFundingSuccess(
                   ambassadorId,
                   email,
@@ -306,73 +320,65 @@ export const WalletTopupModal: React.FC<WalletTopupModalProps> = ({
                 );
                 finalNewBalance = fallbackRes.newBalance;
               }
-            } else {
-              // Local Dev / Mock Fallback
-              const fallbackRes = await db.processFundingSuccess(
-                ambassadorId,
-                email,
-                numericAmt,
-                avuToEarn,
-                confirmedRef
+
+              // Construct Receipt
+              const receipt: DepositReceipt = {
+                reference: confirmedRef,
+                ambassadorName: fundingByName || ambassadorName,
+                ambassadorEmail: email,
+                amountNaira: numericAmt,
+                avuEarned: avuToEarn,
+                date: new Date().toLocaleString(),
+                fundingByName: fundingByName,
+                programSponsored: programSponsored,
+                alreadyProcessed
+              };
+
+              setCompletedReceipt(receipt);
+              setIsProcessing(false);
+              setProcessStep("");
+
+              // Notify parent components and listeners
+              if (onSuccess) onSuccess(finalNewBalance);
+              if (onBalanceUpdated) onBalanceUpdated(finalNewBalance);
+
+              // Dispatch cross-window / tab broadcast
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", {
+                  detail: { newBalance: finalNewBalance, reference: confirmedRef }
+                }));
+              }
+
+              notify(
+                "success",
+                "Wallet Credited Successfully",
+                `+${avuToEarn.toLocaleString()} AVU added to your wallet! Ref: ${confirmedRef}`
               );
-              finalNewBalance = fallbackRes.newBalance;
+            } catch (postPaymentErr: any) {
+              console.error("[WalletTopupModal] Post-payment processing error:", postPaymentErr);
+              // Even if local fetch failed, the webhook will complete it on server
+              setIsProcessing(false);
+              setCompletedReceipt({
+                reference: confirmedRef,
+                ambassadorName: fundingByName || ambassadorName,
+                ambassadorEmail: email,
+                amountNaira: numericAmt,
+                avuEarned: avuToEarn,
+                date: new Date().toLocaleString(),
+                fundingByName: fundingByName,
+                programSponsored: programSponsored
+              });
+              notify(
+                "info",
+                "Payment Received",
+                "Payment received! Webhook is synchronizing your balance with the blockchain ledger."
+              );
             }
-
-            // Construct Receipt
-            const receipt: DepositReceipt = {
-              reference: confirmedRef,
-              ambassadorName: fundingByName || ambassadorName,
-              ambassadorEmail: email,
-              amountNaira: numericAmt,
-              avuEarned: avuToEarn,
-              date: new Date().toLocaleString(),
-              fundingByName: fundingByName,
-              programSponsored: programSponsored,
-              alreadyProcessed
-            };
-
-            setCompletedReceipt(receipt);
-            setIsProcessing(false);
-            setProcessStep("");
-
-            // Notify parent components and listeners
-            if (onSuccess) onSuccess(finalNewBalance);
-            if (onBalanceUpdated) onBalanceUpdated(finalNewBalance);
-
-            // Dispatch cross-window / tab broadcast
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("advaltad_wallet_updated", {
-                detail: { newBalance: finalNewBalance, reference: confirmedRef }
-              }));
-            }
-
-            notify(
-              "success",
-              "Wallet Credited Successfully",
-              `+${avuToEarn.toLocaleString()} AVU added to your wallet! Ref: ${confirmedRef}`
-            );
-          } catch (postPaymentErr: any) {
-            console.error("[WalletTopupModal] Post-payment processing error:", postPaymentErr);
-            // Even if local fetch failed, the webhook will complete it on server
-            setIsProcessing(false);
-            setCompletedReceipt({
-              reference: confirmedRef,
-              ambassadorName: fundingByName || ambassadorName,
-              ambassadorEmail: email,
-              amountNaira: numericAmt,
-              avuEarned: avuToEarn,
-              date: new Date().toLocaleString(),
-              fundingByName: fundingByName,
-              programSponsored: programSponsored
-            });
-            notify(
-              "info",
-              "Payment Received",
-              "Payment received! Webhook is synchronizing your balance with the blockchain ledger."
-            );
-          }
+          })().catch((asyncErr) => {
+            console.error("[WalletTopupModal] Callback async execution error:", asyncErr);
+          });
         },
-        onClose: () => {
+        onClose: function () {
           setIsProcessing(false);
           setProcessStep("");
           notify("info", "Payment Window Closed", "Paystack payment modal was closed.");
