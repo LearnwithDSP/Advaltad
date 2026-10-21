@@ -55,27 +55,9 @@ CREATE TABLE IF NOT EXISTS public.avu_transactions (
 CREATE INDEX IF NOT EXISTS idx_avu_transactions_ambassador ON public.avu_transactions(ambassador_id);
 CREATE INDEX IF NOT EXISTS idx_avu_transactions_reference ON public.avu_transactions(payment_reference);
 
--- Step 3: Trigger to automatically sync avu_amount and requested_avu safely
-CREATE OR REPLACE FUNCTION public.sync_avu_withdrawal_amounts()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF NEW.requested_avu IS NOT NULL AND NEW.avu_amount IS NULL THEN
-        NEW.avu_amount := NEW.requested_avu;
-    ELSIF NEW.avu_amount IS NOT NULL AND NEW.requested_avu IS NULL THEN
-        NEW.requested_avu := NEW.avu_amount;
-    END IF;
-    NEW.updated_at := timezone('utc'::text, now());
-    RETURN NEW;
-END;
-$$;
-
+-- Step 3: Remove faulty triggers on public.avu_withdrawals that break on missing columns
 DROP TRIGGER IF EXISTS trg_sync_avu_withdrawal_amounts ON public.avu_withdrawals;
-CREATE TRIGGER trg_sync_avu_withdrawal_amounts
-    BEFORE INSERT OR UPDATE ON public.avu_withdrawals
-    FOR EACH ROW
-    EXECUTE FUNCTION public.sync_avu_withdrawal_amounts();
+DROP FUNCTION IF EXISTS public.sync_avu_withdrawal_amounts();
 
 -- Step 4: Single Authoritative PostgreSQL RPC Function
 -- Handles row locking, admin check, balance verification, atomic debit, ledger, and status transition
@@ -234,7 +216,7 @@ BEGIN
         created_at
     )
     VALUES (
-        v_ambassador.id,
+        COALESCE(v_ambassador.user_id, v_ambassador.id),
         -v_amount,
         'WITHDRAWAL_DEBIT',
         'COMPLETED',
