@@ -54,6 +54,7 @@ export interface AvuWithdrawalRecord {
 
 export interface PendingWithdrawalsProps {
   adminId?: string;
+  adminEmail?: string;
   onSuccessNotification?: (message: string) => void;
   onErrorNotification?: (message: string) => void;
   className?: string;
@@ -103,6 +104,7 @@ export function getAmbassadorEmail(item: AvuWithdrawalRecord): string {
  */
 export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
   adminId = "00000000-0000-0000-0000-000000000000",
+  adminEmail,
   onSuccessNotification,
   onErrorNotification,
   className = ""
@@ -427,6 +429,10 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
       const effectiveAdminId = /^[0-9a-f-]{36}$/i.test(adminId)
         ? adminId
         : "00000000-0000-0000-0000-000000000000";
+      const effectiveAdminEmail = (adminEmail && adminEmail.includes("@"))
+        ? adminEmail
+        : (typeof window !== "undefined" && localStorage.getItem("advaltad_admin_session_email"))
+        || "ramonbisola1@gmail.com";
 
       const ambName = getAmbassadorDisplayName(withdrawal);
       const requestedAmt = withdrawal.requested_avu || withdrawal.avu_amount || withdrawal.amount || 0;
@@ -439,7 +445,7 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
         try {
           const { data, error } = await supabase.rpc("approve_and_deduct_avu_withdrawal", {
             p_withdrawal_id: targetId,
-            p_admin_email: effectiveAdminId
+            p_admin_email: effectiveAdminEmail
           });
 
           if (!error && data?.success) {
@@ -453,7 +459,7 @@ export const PendingWithdrawals: React.FC<PendingWithdrawalsProps> = ({
 
       // 2. Resilient fallback
       if (!rpcSuccess) {
-        const res = await executeApprove(targetId, effectiveAdminId);
+        const res = await executeApprove(targetId, effectiveAdminId, effectiveAdminEmail);
         if (!res.success) {
           throw res.error || new Error("Failed to process withdrawal approval and deduction.");
         }
